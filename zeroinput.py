@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 
-serial_port			= '/dev/rs485'
+serial_port		= '/dev/rs485'
 # data pipe from vzlogger, set as log in /etc/vzlogger.conf, "verbosity": 15 required, use mkfifo to create it before vz starts!
 vzlogger_log_file	= '/home/vzlogger/vzlogger.fifo'
 persistent_vz_file	= '/var/log/vzlogger.log'
@@ -23,10 +23,10 @@ from datetime import timedelta, datetime
 
 def handle_data(d):	# display the esmart data
 	if not verbose: return
-	battery_cur		= d['chg_cur'] - d['load_cur']
+	battery_cur	= d['chg_cur'] - d['load_cur']
 	battery_power	= d['chg_power'] - d['load_power']
 	system("clear")
-	print("%s\t SOC %i\t Mode %s"				% (strftime("%H:%M:%S"),	d['soc'],		esmart.DEVICE_MODE[d['chg_mode']]))
+	print("%s\t SOC %i\t Mode %s"			% (strftime("%H:%M:%S"),		d['soc'],	esmart.DEVICE_MODE[d['chg_mode']]))
 	print("PV\t %.1f V\t %.1f A\t %i W" 		% (d['pv_volt'],			d['chg_cur'],	d['chg_power']))
 	print("Battery\t %.1f V\t %.1f A\t %i W"	% (d['bat_volt'],			battery_cur,	battery_power))
 	print("Load\t %.1f V\t %.1f A\t %i W"		% (d['load_volt'],			d['load_cur'],	d['load_power']))
@@ -50,19 +50,19 @@ def avg(inlist):	# return the average of a list variable
 	if len(inlist) == 0: return(0)
 	return( sum(inlist) / len(inlist) )
 
-send_power		= 0
-last_send		= 0
+send_power	= 0
+last_send	= 0
 last_runtime 	= 0
-bat_cont		= 0
-bat_history		= [0]*8	# history vars with *n interval steps
+bat_cont	= 0
+bat_history	= [0]*8	# history vars with *n interval steps
 extra_history	= [0]*8
 send_history	= [0]*4
-pv_red			= 0.85	# PV reduction on low battery in % / 100
-powercurve		= [1,3,5,8,10,12,14,17,20,23,26,30,34,39,45,51,60,70,80,90,100]	# in %
+pv_red		= 0.85	# PV reduction on low battery in % / 100
+powercurve	= [1,3,5,8,10,12,14,17,20,23,26,30,34,39,45,51,60,70,80,90,100]	# in %
 
 timeout_repeat	= datetime.now()
-vz_in			= open(vzlogger_log_file,'r')
-esm				= esmart.esmart()
+vz_in		= open(vzlogger_log_file,'r')
+esm		= esmart.esmart()
 esm.set_callback(handle_data)
 
 while True:	# infinite loop, stop the script with ctl+c
@@ -120,7 +120,7 @@ while True:	# infinite loop, stop the script with ctl+c
 
 		else:
 			if bat_cont < 48:	# set a new timeout
-				send_power 		= 0
+				send_power 	= 0
 				send_history	= [0]*4
 				extra_history	= [0]*8
 				timeout_repeat = datetime.now() + timedelta(minutes=1) 	# wait a minute
@@ -156,8 +156,8 @@ while True:	# infinite loop, stop the script with ctl+c
 			send_history = send_history[1:]+[send_power]	# build a send_power history
 			
 			if verbose: print(	'\ninput history', send_history,	# show saw tooth values
-								'\n\t1/2 ', round((1-(send_history[-1] / (0.01+send_history[-2])))*100,1),'%',
-								'\n\t3/4 ', round((1-(send_history[-3] / (0.01+send_history[-4])))*100,1),'%')
+						'\n\t1/2 ', round((1-(send_history[-1] / (0.01+send_history[-2])))*100,1),'%',
+						'\n\t3/4 ', round((1-(send_history[-3] / (0.01+send_history[-4])))*100,1),'%')
 			
 			if not close_values(send_history[-1],send_history[-2],4) and not close_values(send_history[-3],send_history[-4],4):
 				send_power = int(avg(send_history))
@@ -171,11 +171,11 @@ while True:	# infinite loop, stop the script with ctl+c
 				status_text = 'MIN power limit'
 				
 			if send_power	> 900 * number_of_gti:	# the limit of the gti
-				send_power	= 900 * number_of_gti
+				send_power = 900 * number_of_gti
 				status_text = 'MAX power limit'
 			
 		with open('/tmp/vz/soyo.log','w') as fo:	# send some values to vzlogger
-			fo.write('%i: soyosend = %i\n'	% ( time(), -1*send_power ) )	# the keywords have to be created 
+			fo.write('%i: soyosend = %i\n'		% ( time(), -1*send_power ) )	# the keywords have to be created 
 			fo.write('%i: pv_w = %i\n'		% ( time(), -1*d['chg_power'] ) )	# as channels in vzlogger to make it work there!
 			fo.write('%i: pv_u = %f\n'		% ( time(), d['pv_volt']  ) )
 			fo.write('%i: bat_v = %f\n'		% ( time(), d['bat_volt'] ) )
@@ -185,7 +185,7 @@ while True:	# infinite loop, stop the script with ctl+c
 		
 		if verbose: 
 				print('interval %.2f s'	% (time()-last_runtime))
-				print('meter %i W' 		% (Ls_read))	# show the meter readings
+				print('meter %i W' 	% (Ls_read))	# show the meter readings
 				print('input %i W %s'	% (send_power, status_text))	# show the input data
 		
 		last_runtime = time()
