@@ -16,7 +16,7 @@ if '-v' in argv:
 else: 
 	verbose = False
 
-import esmart
+import esmart	# https://github.com/E-t0m/esmart_mppt/blob/ed1e1d91912831a1ee5f26eaf59ace57098c4eac/esmart.py
 import serial
 from time import sleep, strftime, time
 from datetime import timedelta, datetime
