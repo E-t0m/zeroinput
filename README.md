@@ -1,6 +1,6 @@
 # zeroinput
 set power demand to zero
-for soyosource gti inverter(s) and 3esmart MPPT charge controller on a single RS485 line.
+for soyosource gti inverter(s) and esmart3 MPPT charge controller on a single RS485 line.
 
 This script uses a https://volkszaehler.org/ installation for energy meter input and data display.
 
