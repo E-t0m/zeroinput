@@ -3,7 +3,7 @@
 
 serial_port		= '/dev/rs485'
 # data pipe from vzlogger, set as log in /etc/vzlogger.conf, "verbosity": 15 required, use mkfifo to create it before vz starts!
-vzlogger_log_file	= '/home/vzlogger/vzlogger.fifo'
+vzlogger_log_file	= '/tmp/vz/vzlogger.fifo'
 persistent_vz_file	= '/var/log/vzlogger.log'
 number_of_gti		= 2
 
