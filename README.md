@@ -7,7 +7,7 @@ This script uses a https://volkszaehler.org/ installation for energy meter input
 All values are set for a 16s LiFePO4 battery with nominal 51.2 Volt.
 Limits are set to 1 C current of 25Ah cells, which is 25 A discharge current.
 
-There is an introduction in german language at https://forum.drbacke.de/viewtopic.php?t=5409
+![scheme](https://user-images.githubusercontent.com/110770475/185705907-b9e98c0f-1543-417c-aed6-432e5230b275.jpg)
 
 ##  An example how a day can look like in volkszaehler browser
 - red shows the imported power from the net
@@ -15,3 +15,5 @@ There is an introduction in german language at https://forum.drbacke.de/viewtopi
 - yellow shows the PV power
 
 ![basic](https://user-images.githubusercontent.com/110770475/183761064-bd2632d8-4438-4288-b05c-e8126de78463.png)
+
+There is an introduction in german language at https://forum.drbacke.de/viewtopic.php?t=5409
