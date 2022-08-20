@@ -54,11 +54,14 @@ send_power	= 0
 last_send	= 0
 last_runtime 	= 0
 bat_cont	= 0
-bat_history	= [0]*8	# history vars with *n interval steps
+pv_cont		= 0
+bat_history	= [0]*10	# history vars with *n interval steps
+pv_history	= [0]*20
 extra_history	= [0]*8
 send_history	= [0]*4
-pv_red		= 0.85	# PV reduction on low battery in % / 100
-powercurve	= [1,3,5,8,10,12,14,17,20,23,26,30,34,39,45,51,60,70,80,90,100]	# in %
+pv_red		= 0.9	# PV reduction on low battery in % / 100
+powercurve	= [0,0,1,3,6,9,12,15,18,22,26,30,34,39,45,51,60,70,80,90,100]	# in %
+
 
 timeout_repeat	= datetime.now()
 vz_in		= open(vzlogger_log_file,'r')
@@ -114,6 +117,9 @@ while True:	# infinite loop, stop the script with ctl+c
 		if 0 in bat_history: bat_cont = d['bat_volt']
 		else: bat_cont = avg(bat_history)
 		
+		pv_history = pv_history[1:]+ [d['chg_power']]
+		pv_cont = int(avg(pv_history))
+		
 		if datetime.now() < timeout_repeat:	# battery protection timeout
 			send_power = 0
 			if verbose: print('\nbattery protection timeout until', timeout_repeat.strftime('%H:%M:%S'))
@@ -126,17 +132,17 @@ while True:	# infinite loop, stop the script with ctl+c
 				timeout_repeat = datetime.now() + timedelta(minutes=1) 	# wait a minute
 			
 			elif bat_cont >= 48 and bat_cont <= 50:	# limit to pv power, by battery voltage
-				if send_power > d['chg_power']:
-					bat_p_index = int(bat_cont*10-480)
+				if send_power > pv_cont:
+					bat_p_index = int(round(bat_cont*10-480,0))
 					bat_power = int(powercurve[ bat_p_index ] * 12)	# maximum 1200 W at 50 V
 					extra_history = extra_history[1:]+[bat_power]
 					if 0 in extra_history: pass	# bat_power remains at last calculated value
 					else: bat_power = avg(extra_history)
 					
-					if verbose: status_text	= ' PV %i W (%i%%), bat %i W (%i%%), -20 W' % (int(d['chg_power']*pv_red), int(pv_red*100), bat_power, powercurve[bat_p_index])
+					if verbose: status_text	= ' PV %i W (%i%%), bat %i W (%i%%)' % (int(pv_cont*pv_red), int(pv_red*100), bat_power, powercurve[bat_p_index])
 					
-					if	send_power > int( d['chg_power']*pv_red + bat_power ):
-						send_power = int( d['chg_power']*pv_red + bat_power -20 )	# lower the input 20 W for slow fade
+					if	send_power > int( pv_cont*pv_red + bat_power):
+						send_power = int( pv_cont*pv_red + bat_power)
 						if verbose: status_text =' limited ' + status_text
 			
 			if d['chg_power'] == 0 and send_power > 200: # night limit
