@@ -58,7 +58,7 @@ last_send	= 0
 last_runtime 	= 0
 bat_cont	= 0
 pv_cont		= 0
-bat_history	= [0]*20	# history vars with *n interval steps
+bat_history	= [0]*10	# history vars with *n interval steps
 pv_history	= [0]*20
 extra_history	= [0]*8
 send_history	= [0]*4
@@ -122,8 +122,8 @@ while True:	# infinite loop, stop the script with ctl+c
 		else: 
 			sort_bat = bat_history[:]
 			sort_bat.sort()
-			bat_cont = avg(sort_bat[:10]) # average on low pass
-			if debug: print('\nsort_bat\t',sort_bat,'\nlow pass\t',sort_bat[0:10])
+			bat_cont = avg(sort_bat[:5]) # average on low pass
+			if debug: print('\nsort_bat\t',sort_bat,'\nlow pass\t',sort_bat[:5])
 		
 		if debug: print('bat_history\t',bat_history,'\nbat_cont\t',bat_cont)
 		
