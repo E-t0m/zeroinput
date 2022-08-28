@@ -9,9 +9,19 @@ number_of_gti		= 2 # units
 max_bat_discharge	= 1250 # W
 max_night_input		= 200 # W
 
+bat_temp_alarm_enabled = True # True = enable or False = disable the alarm for the battery temperature
+bat_temp_alarm_threshold = 40 # °C
+bat_temp_alarm_interval = 60 # seconds
+bat_temp_alarm_command = 'echo ALARM'
+
 from sys import argv
 
-if '-v' in argv:
+if '-test-alarm' in argv:
+	print('test alarm command:')
+	from os import system
+	system(bat_temp_alarm_command)
+	exit(0)
+elif '-v' in argv:
 	verbose = True
 	from os import system
 	print("start", argv)
@@ -55,7 +65,7 @@ def avg(inlist):	# return the average of a list variable
 debug		= False
 send_power	= 0
 last_send	= 0
-last_runtime 	= 0
+last_runtime	= 0
 bat_cont	= 0
 pv_cont		= 0
 bat_history	= [0]*10	# history vars with *n interval steps
@@ -63,10 +73,11 @@ pv_history	= [0]*20
 extra_history	= [0]*8
 send_history	= [0]*4
 
-bat_power_minus	= -25	# W static reduction on low battery
-pv_red_factor	= 0.86	# PV reduction on low battery in % / 100
+bat_power_minus	= -30	# W static reduction on low battery
+pv_red_factor	= 0.85	# PV reduction on low battery in % / 100
 powercurve	= [0,2,3,4,5,6,7,13,17,21,26,30,34,39,45,52,60,70,80,90,100] # in %
 
+bat_temp_alarm_time = datetime.now()
 timeout_repeat	= datetime.now()
 vz_in		= open(vzlogger_log_file,'r')
 esm		= esmart.esmart()
@@ -81,6 +92,14 @@ while True:	# infinite loop, stop the script with ctl+c
 			sleep(0.3)
 		esm.close()
 		d = esm.export()	# get esmart values
+		
+		if bat_temp_alarm_enabled:
+			if d['bat_temp'] > bat_temp_alarm_threshold:
+				if verbose: print('\nTEMPERATURE ALARM:',d['bat_temp'],'°C')
+				if bat_temp_alarm_time + timedelta(seconds = bat_temp_alarm_interval) < datetime.now():
+					system(bat_temp_alarm_command)
+					if verbose: print('\nTEMPERATURE ALARM: command sent')
+					bat_temp_alarm_time = datetime.now()
 		
 		main_log = False; Ls_read = 99999; Ls_ts = 99999
 		last2_send = last_send; last_send = send_power
@@ -122,8 +141,8 @@ while True:	# infinite loop, stop the script with ctl+c
 		else: 
 			sort_bat = bat_history[:]
 			sort_bat.sort()
-			bat_cont = avg(sort_bat[:5]) # average on low pass
-			if debug: print('\nsort_bat\t',sort_bat,'\nlow pass\t',sort_bat[:5])
+			bat_cont = avg(sort_bat[-3:]) # average on high pass
+			if debug: print('\nsort_bat\t',sort_bat,'\nhigh pass\t',sort_bat[-3:])
 		
 		if debug: print('bat_history\t',bat_history,'\nbat_cont\t',bat_cont)
 		
@@ -136,7 +155,7 @@ while True:	# infinite loop, stop the script with ctl+c
 		if datetime.now() < timeout_repeat:	# battery protection timeout
 			send_power = 0
 			if verbose: print('\nbattery protection timeout until', timeout_repeat.strftime('%H:%M:%S'))
-
+		
 		else:
 			if bat_cont < 48:	# set a new timeout
 				send_power 	= 0
@@ -216,4 +235,3 @@ while True:	# infinite loop, stop the script with ctl+c
 			sleep(0.15)
 		
 		ser.close()
-
