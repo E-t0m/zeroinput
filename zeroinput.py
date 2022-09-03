@@ -69,7 +69,7 @@ last_runtime	= 0
 bat_cont	= 0
 pv_cont		= 0
 bat_history	= [0]*10	# history vars with *n interval steps
-pv_history	= [0]*20
+pv_history	= [0]*24
 extra_history	= [0]*8
 send_history	= [0]*4
 
@@ -149,7 +149,7 @@ while True:	# infinite loop, stop the script with ctl+c
 		pv_history = pv_history[1:]+ [d['chg_power']]
 		sort_pv = pv_history[:]
 		sort_pv.sort()
-		pv_cont = int(avg(sort_pv[-10:])) # average on high pass, remove gap on mppt tracker restart
+		pv_cont = int(avg(sort_pv[-6:])) # average on high pass, remove gap on mppt tracker restart
 		if debug: print('pv_history\t', pv_history,'\nsort_pv\t\t',sort_pv,'\npv_cont\t\t',pv_cont)
 		
 		if datetime.now() < timeout_repeat:	# battery protection timeout
@@ -182,7 +182,7 @@ while True:	# infinite loop, stop the script with ctl+c
 				if verbose: status_text = 'night limit'
 			
 			if bat_cont > 55.5:	# give some free power to the world if bat > 55.5 V
-				free_power = int((bat_cont - 55.5)*10 *50)	# 50 W / 0.1 V, max total 750 W
+				free_power = int((bat_cont - 55.5)*10 *80)	# 80 W / 0.1 V, max total 1200 W
 				send_power += free_power
 				if verbose: status_text = 'over export '+str(free_power)+' W'
 			else: free_power = 0
@@ -235,3 +235,4 @@ while True:	# infinite loop, stop the script with ctl+c
 			sleep(0.15)
 		
 		ser.close()
+
