@@ -9,17 +9,18 @@ number_of_gti		= 2 # units
 max_bat_discharge	= 1250 # W
 max_night_input		= 200 # W
 
-bat_temp_alarm_enabled = True # True = enable or False = disable the alarm for the battery temperature
+temp_alarm_enabled = True # True = enable or False = disable the alarm for the battery temperature
+int_temp_alarm_threshold = 50 # °C
 bat_temp_alarm_threshold = 40 # °C
-bat_temp_alarm_interval = 60 # seconds
-bat_temp_alarm_command = 'echo ALARM'
+temp_alarm_interval = 60 # seconds
+temp_alarm_command = 'echo ALARM'
 
 from sys import argv
 
 if '-test-alarm' in argv:
 	print('test alarm command:')
 	from os import system
-	system(bat_temp_alarm_command)
+	system(temp_alarm_command)
 	exit(0)
 elif '-v' in argv:
 	verbose = True
@@ -77,7 +78,7 @@ bat_power_minus	= -30	# W static reduction on low battery
 pv_red_factor	= 0.85	# PV reduction on low battery in % / 100
 powercurve	= [0,2,3,4,5,6,7,13,17,21,26,30,34,39,45,52,60,70,80,90,100] # in %
 
-bat_temp_alarm_time = datetime.now()
+temp_alarm_time = datetime.now()
 timeout_repeat	= datetime.now()
 vz_in		= open(vzlogger_log_file,'r')
 esm		= esmart.esmart()
@@ -93,13 +94,13 @@ while True:	# infinite loop, stop the script with ctl+c
 		esm.close()
 		d = esm.export()	# get esmart values
 		
-		if bat_temp_alarm_enabled:
-			if d['bat_temp'] > bat_temp_alarm_threshold:
-				if verbose: print('\nTEMPERATURE ALARM:',d['bat_temp'],'°C')
-				if bat_temp_alarm_time + timedelta(seconds = bat_temp_alarm_interval) < datetime.now():
-					system(bat_temp_alarm_command)
+		if temp_alarm_enabled:
+			if d['bat_temp'] > bat_temp_alarm_threshold or d['int_temp'] > int_temp_alarm_threshold:
+				if verbose: print('\nTEMPERATURE ALARM int:',d['int_temp'],'°C bat:',d['bat_temp'],'°C')
+				if temp_alarm_time + timedelta(seconds = temp_alarm_interval) < datetime.now():
+					system(temp_alarm_command)
 					if verbose: print('\nTEMPERATURE ALARM: command sent')
-					bat_temp_alarm_time = datetime.now()
+					temp_alarm_time = datetime.now()
 		
 		main_log = False; Ls_read = 99999; Ls_ts = 99999
 		last2_send = last_send; last_send = send_power
@@ -181,8 +182,8 @@ while True:	# infinite loop, stop the script with ctl+c
 				send_power = max_night_input
 				if verbose: status_text = 'night limit'
 			
-			if bat_cont > 55.5:	# give some free power to the world if bat > 55.5 V
-				free_power = int((bat_cont - 55.5)*10 *80)	# 80 W / 0.1 V, max total 1200 W
+			if bat_cont > 55.5:	# give some free power to the world if bat > 55.0 V
+				free_power = int((bat_cont - 55.0)*10 *100)	# 100 W / 0.1 V, max depends on esmart "saturation charging voltage"
 				send_power += free_power
 				if verbose: status_text = 'over export '+str(free_power)+' W'
 			else: free_power = 0
