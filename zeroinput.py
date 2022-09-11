@@ -182,7 +182,7 @@ while True:	# infinite loop, stop the script with ctl+c
 				send_power = max_night_input
 				if verbose: status_text = 'night limit'
 			
-			if bat_cont > 55.5:	# give some free power to the world if bat > 55.0 V
+			if bat_cont > 55.0:	# give some free power to the world if bat > 55.0 V
 				free_power = int((bat_cont - 55.0)*10 *100)	# 100 W / 0.1 V, max depends on esmart "saturation charging voltage"
 				send_power += free_power
 				if verbose: status_text = 'over export '+str(free_power)+' W'
