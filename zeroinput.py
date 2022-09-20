@@ -5,7 +5,8 @@ serial_port		= '/dev/rs485'
 # data pipe from vzlogger, set as log in /etc/vzlogger.conf, "verbosity": 15 required, use mkfifo to create it before vz starts!
 vzlogger_log_file	= '/tmp/vz/vzlogger.fifo'
 persistent_vz_file	= '/var/log/vzlogger.log'
-number_of_gti		= 2 # units
+number_of_gti		= 2 # number of gti units
+max_gti_power		= 900 # W, the maximum power of one gti
 max_bat_discharge	= 1250 # W
 max_night_input		= 200 # W
 
@@ -69,13 +70,13 @@ last_send	= 0
 last_runtime	= 0
 bat_cont	= 0
 pv_cont		= 0
-bat_history	= [0]*10	# history vars with *n interval steps
+bat_history	= [0]*12	# history vars with *n interval steps
 pv_history	= [0]*24
 extra_history	= [0]*8
 send_history	= [0]*4
 
 bat_power_minus	= -30	# W static reduction on low battery
-pv_red_factor	= 0.85	# PV reduction on low battery in % / 100
+pv_red_factor	= 0.84	# PV reduction on low battery in % / 100
 powercurve	= [0,2,3,4,5,6,7,13,17,21,26,30,34,39,45,52,60,70,80,90,100] # in %
 
 temp_alarm_time = datetime.now()
@@ -136,13 +137,13 @@ while True:	# infinite loop, stop the script with ctl+c
 		send_power = int( Ls_read + last2_send )	# underpower by conversion efficiency is measured with the readings
 		
 		status_text = ''
-		bat_history = bat_history[1:] + [ d['bat_volt']]
+		bat_history = bat_history[1:] + [d['bat_volt']]
 		
 		if 0 in bat_history: bat_cont = d['bat_volt']
 		else: 
 			sort_bat = bat_history[:]
 			sort_bat.sort()
-			bat_cont = avg(sort_bat[-3:]) # average on high pass
+			bat_cont = avg(sort_bat[-4:]) # average on high pass
 			if debug: print('\nsort_bat\t',sort_bat,'\nhigh pass\t',sort_bat[-3:])
 		
 		if debug: print('bat_history\t',bat_history,'\nbat_cont\t',bat_cont)
@@ -150,7 +151,7 @@ while True:	# infinite loop, stop the script with ctl+c
 		pv_history = pv_history[1:]+ [d['chg_power']]
 		sort_pv = pv_history[:]
 		sort_pv.sort()
-		pv_cont = int(avg(sort_pv[-6:])) # average on high pass, remove gap on mppt tracker restart
+		pv_cont = int(avg(sort_pv[-6:])) # average on high pass, to remove gap on mppt tracker restart
 		if debug: print('pv_history\t', pv_history,'\nsort_pv\t\t',sort_pv,'\npv_cont\t\t',pv_cont)
 		
 		if datetime.now() < timeout_repeat:	# battery protection timeout
@@ -166,13 +167,20 @@ while True:	# infinite loop, stop the script with ctl+c
 			
 			elif bat_cont >= 48 and bat_cont <= 50:	# limit to pv power, by battery voltage
 				if send_power > pv_cont:
-					bat_p_index = int(bat_cont*10-480)
-					bat_power = int(powercurve[ bat_p_index ] * max_bat_discharge/100)	# maximum at 50 V
+					# variant A
+					bat_p_percent = (bat_cont - 47.2) **4 *1.41	# curve without steps
+					bat_power = int(0.01 * max_bat_discharge * bat_p_percent)	# 100% above 50 V
+					
+					# variant B
+					#bat_p_percent = powercurve[bat_cont*10-480]
+					#bat_power = int(0.01 * max_bat_discharge * bat_p_percent)	# 100% above 50 V
+					# you can use your own curve by changing the powercurve variable on top of this file
+					
 					extra_history = extra_history[1:]+[bat_power]
 					if 0 in extra_history: pass	# bat_power remains at last calculated value
 					else: bat_power = avg(extra_history)
 					
-					if verbose: status_text	= ' PV %i W (%i%%), bat %i W (%i%%), static %i W' % (int(pv_cont*pv_red_factor), int(pv_red_factor*100), bat_power, powercurve[bat_p_index],bat_power_minus)
+					if verbose:	status_text	= ' PV %i W (%i%%), bat %i W (%.1f%%), static %i W' % (int(pv_cont*pv_red_factor), int(pv_red_factor*100), bat_power, bat_p_percent, bat_power_minus)
 					
 					if	send_power > int( pv_cont*pv_red_factor + bat_power + bat_power_minus):
 						send_power = int( pv_cont*pv_red_factor + bat_power + bat_power_minus)
@@ -182,8 +190,8 @@ while True:	# infinite loop, stop the script with ctl+c
 				send_power = max_night_input
 				if verbose: status_text = 'night limit'
 			
-			if bat_cont > 54.5:	# give some free power to the world if bat > 55.0 V
-				free_power = int((bat_cont - 54.5)*10 *5)	# 5 W / 0.1 V, max depends on esmart "saturation charging voltage"
+			if bat_cont > 51.5:	# give some free power to the world, pull down the zero line
+				free_power = int((bat_cont - 51.5)*10 *1)	# 1 W / 0.1 V, max depends on esmart "saturation charging voltage"
 				send_power += free_power
 				if verbose: status_text = 'over export '+str(free_power)+' W'
 			else: free_power = 0
@@ -209,8 +217,8 @@ while True:	# infinite loop, stop the script with ctl+c
 				send_power = 0	# disable input
 				status_text = 'MIN power limit'
 				
-			if send_power	> 900 * number_of_gti:	# the limit of the gti
-				send_power	= 900 * number_of_gti
+			if send_power	> max_gti_power * number_of_gti:	# the limit of the gti
+				send_power	= max_gti_power * number_of_gti
 				status_text = 'MAX power limit'
 			
 		with open('/tmp/vz/soyo.log','w') as fo:	# send some values to vzlogger
