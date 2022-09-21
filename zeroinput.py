@@ -143,7 +143,7 @@ while True:	# infinite loop, stop the script with ctl+c
 		else: 
 			sort_bat = bat_history[:]
 			sort_bat.sort()
-			bat_cont = avg(sort_bat[-4:]) # average on high pass
+			bat_cont = avg(sort_bat[4:8]) # average on mid pass
 			if debug: print('\nsort_bat\t',sort_bat,'\nhigh pass\t',sort_bat[-3:])
 		
 		if debug: print('bat_history\t',bat_history,'\nbat_cont\t',bat_cont)
@@ -172,7 +172,7 @@ while True:	# infinite loop, stop the script with ctl+c
 					bat_power = int(0.01 * max_bat_discharge * bat_p_percent)	# 100% above 50 V
 					
 					# variant B
-					#bat_p_percent = powercurve[bat_cont*10-480]
+					#bat_p_percent = powercurve[int(bat_cont*10-480)]
 					#bat_power = int(0.01 * max_bat_discharge * bat_p_percent)	# 100% above 50 V
 					# you can use your own curve by changing the powercurve variable on top of this file
 					
