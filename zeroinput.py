@@ -70,14 +70,14 @@ last_send	= 0
 last_runtime	= 0
 bat_cont	= 0
 pv_cont		= 0
-bat_history	= [0]*12	# history vars with *n interval steps
-pv_history	= [0]*24
-extra_history	= [0]*8
-send_history	= [0]*4
+bat_history	= [0]* 5	# history vars with *n interval steps
+pv_history	= [0]* 24
+extra_history	= [0]* 8
+send_history	= [0]* 4
 
 bat_power_minus	= -30	# W static reduction on low battery
-pv_red_factor	= 0.84	# PV reduction on low battery in % / 100
-powercurve	= [0,2,3,4,5,6,7,13,17,21,26,30,34,39,45,52,60,70,80,90,100] # in %
+pv_red_factor	= 0.85	# PV reduction on low battery in % / 100
+powercurve	= [0,2,3,4,5,6,7,13,17,21,26,30,34,39,45,52,60,70,80,90,100] # in %, only active with variant B
 
 temp_alarm_time = datetime.now()
 timeout_repeat	= datetime.now()
@@ -139,12 +139,8 @@ while True:	# infinite loop, stop the script with ctl+c
 		status_text = ''
 		bat_history = bat_history[1:] + [d['bat_volt']]
 		
-		if 0 in bat_history: bat_cont = d['bat_volt']
-		else: 
-			sort_bat = bat_history[:]
-			sort_bat.sort()
-			bat_cont = avg(sort_bat[4:8]) # average on mid pass
-			if debug: print('\nsort_bat\t',sort_bat,'\nhigh pass\t',sort_bat[-3:])
+		if 0 in bat_history:	bat_cont = d['bat_volt']
+		else:	bat_cont = avg(bat_history) # average
 		
 		if debug: print('bat_history\t',bat_history,'\nbat_cont\t',bat_cont)
 		
