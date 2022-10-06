@@ -76,7 +76,7 @@ extra_history	= [0]* 8
 send_history	= [0]* 4
 
 bat_power_minus	= -30	# W static reduction on low battery
-pv_red_factor	= 0.85	# PV reduction on low battery in % / 100
+pv_red_factor	= 0.84	# PV reduction on low battery in % / 100
 powercurve	= [0,2,3,4,5,6,7,13,17,21,26,30,34,39,45,52,60,70,80,90,100] # in %, only active with variant B
 
 temp_alarm_time = datetime.now()
@@ -186,8 +186,8 @@ while True:	# infinite loop, stop the script with ctl+c
 				send_power = max_night_input
 				if verbose: status_text = 'night limit'
 			
-			if bat_cont > 51.5:	# give some free power to the world, pull down the zero line
-				free_power = int((bat_cont - 51.5)*10 *1)	# 1 W / 0.1 V, max depends on esmart "saturation charging voltage"
+			if pv_cont != 0 and bat_cont > 52.0:	# give some free power to the world, pull down the zero line
+				free_power = int((bat_cont - 52.0)*10 *1)	# 1 W / 0.1 V, max depends on esmart "saturation charging voltage"
 				send_power += free_power
 				if verbose: status_text = 'over export '+str(free_power)+' W'
 			else: free_power = 0
@@ -202,7 +202,7 @@ while True:	# infinite loop, stop the script with ctl+c
 						'\n\t1/2 ', round((1-(send_history[-1] / (0.01+send_history[-2])))*100,1),'%',
 						'\n\t3/4 ', round((1-(send_history[-3] / (0.01+send_history[-4])))*100,1),'%')
 			
-			if not close_values(send_history[-1],send_history[-2],4) and not close_values(send_history[-3],send_history[-4],4):
+			if not close_values(send_history[-1],send_history[-2],3) and not close_values(send_history[-3],send_history[-4],3):
 				send_power = int(avg(send_history))
 				if verbose: print('\tsaw stop',send_power)
 				send_history[-1] = send_power
