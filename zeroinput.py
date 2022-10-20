@@ -89,7 +89,7 @@ while True:	# infinite loop, stop the script with ctl+c
 	esm.open(serial_port)	# prepare to read from esmart
 	if verbose: print('esmart tick')
 	for i in range(1,3):	# poll 2 times
-		if datetime.now() > timeout_repeat: # after battery protection timeout
+		if datetime.now() > timeout_repeat or pv_cont != 0: # after battery protection timeout or at day time
 			esm.tick()	# request data from esmart3
 			if verbose:	print(i)
 		elif verbose: 	print('.')	# don't send but sleep
