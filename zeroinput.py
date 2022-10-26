@@ -75,8 +75,8 @@ pv_history	= [0]* 24
 extra_history	= [0]* 8
 send_history	= [0]* 4
 
-bat_power_minus	= -30	# W static reduction on low battery
-pv_red_factor	= 0.83	# PV reduction on low battery in % / 100
+bat_power_static	= -30	# W static reduction on low battery
+pv_red_factor	= 0.85	# PV reduction on low battery in % / 100
 powercurve	= [0,2,3,4,5,6,7,13,17,21,26,30,34,39,45,52,60,70,80,90,100] # in %, only active with variant B
 
 temp_alarm_time = datetime.now()
@@ -166,8 +166,7 @@ while True:	# infinite loop, stop the script with ctl+c
 		elif bat_cont >= 48 and bat_cont <= 50:	# limit to pv power, by battery voltage
 			if send_power > pv_cont:
 				# variant A
-				#bat_p_percent = (bat_cont - 47.0) **4 *1.41	# curve without steps
-				bat_p_percent = ( bat_cont - 46.8 ) **3.96
+				bat_p_percent = (bat_cont - 47.1 ) **4.33	# curve without steps
 				bat_power = int(0.01 * max_bat_discharge * bat_p_percent)	# 100% above 50 V
 				
 				# variant B
@@ -179,10 +178,10 @@ while True:	# infinite loop, stop the script with ctl+c
 				if 0 in extra_history: pass	# bat_power remains at last calculated value
 				else: bat_power = avg(extra_history)
 				
-				if verbose:	status_text	= ' PV %i W (%i%%), bat %i W (%.1f%%), static %i W' % (int(pv_cont*pv_red_factor), int(pv_red_factor*100), bat_power, bat_p_percent, bat_power_minus)
+				if verbose:	status_text	= ' PV %i W (%i%%), bat %i W (%.1f%%), static %i W' % (int(pv_cont*pv_red_factor), int(pv_red_factor*100), bat_power, bat_p_percent, bat_power_static)
 				
-				if	send_power > int( pv_cont*pv_red_factor + bat_power + bat_power_minus):
-					send_power = int( pv_cont*pv_red_factor + bat_power + bat_power_minus)
+				if	send_power > int( pv_cont*pv_red_factor + bat_power + bat_power_static):
+					send_power = int( pv_cont*pv_red_factor + bat_power + bat_power_static)
 					if verbose: status_text =' limited ' + status_text
 		
 		if pv_cont == 0 and send_power > max_night_input: # night limit
