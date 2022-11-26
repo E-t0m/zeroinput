@@ -81,7 +81,7 @@ Die Daten für PV, Soyo P und Akku U (rot, Akkuspannung) liefert das Script, wob
 PV und Akku U werden vom esmart3 Regler gelesen und an den Volkszähler zur Darstellung weitergereicht.
 Dadurch entsteht eine Sekunde Zeitversatz zu den Kurven des Haus-Stromzählers.
 
-So sieht dann ein recht **guter Tag mit hohem Verbrauch** aus:
+## So sieht dann ein recht **guter Tag mit hohem Verbrauch** aus:
 ![viel Verbrauch](https://user-images.githubusercontent.com/110770475/204105529-4d6d03e1-ca13-4224-8272-4995115232d0.png)
 
 Die Tageswerte waren: PV Erzeugung 7,7 kWh, Einspeisung 7,3 kWh, bewusst verschenkt 0 kWh
@@ -89,7 +89,7 @@ An diesem Tag liefen Backofen, Microwelle, Brunnenpumpe, Split-Klima, etc. Der A
 Man sieht das Ein und Ausregeln am Morgen und Abend entlang der PV-Kurve. Gegen 11 die maximale Einspeisung.
 Danach und sehr schön um ca. 17:30 Uhr die Leistungsanpassung für den Batteriestrom.
 
-Ein sonniger Tag mit **wenig Verbrauch**:
+## Ein sonniger Tag mit **wenig Verbrauch**:
 ![wenig Verbrauch](https://user-images.githubusercontent.com/110770475/204105552-fbbc1f4d-ab04-483d-a6ea-ae0f934cab16.png)
 
 Die Tageswerte waren: PV Erzeugung 6,1 kWh, Einspeisung 5,7 kWh, bewusst verschenkt 0,9 kWh
@@ -98,10 +98,10 @@ Hier sieht man das Einregeln am Morgen und die Nachtlimitierung am Abend.
 Der dunkelgrüne Bereich ist überschüssiger Strom, da die Batterie - siehe Spannungskurve - voll ist.
 (inzwischen ist die Übereinspeisung in der Standard Einstellung wesentlich geringer!)
 
-**Ein trüber Tag:**
+## **Ein trüber Tag:**
 ![sehr trüber Tag](https://user-images.githubusercontent.com/110770475/204105585-13a50eb1-87cf-4dbc-8e62-469527aed402.jpg)
 
-**Waschmaschine in Heizphase:**
+## **Waschmaschine in Heizphase:**
 ![60 Grad Wäsche](https://user-images.githubusercontent.com/110770475/204105605-2a70356a-90d3-4a8a-a7a1-fddb570a9e3c.png)
 
 Die Daten in der Tabelle beziehen sich auf den ganzen sichtbaren Ausschnitt.
@@ -118,15 +118,15 @@ Der Leistungseinbruch um ca. 10:33 kommt durch den Neustart des MPP-Trackers im 
 Erkennbar ist auch noch das Ansteigen der PV Leistung in dem Moment, wo die Heizphase beginnt.
 Umgekehrt sinkt die PV Leistung mit langsam ansteigender Akku Spannung nach der Heizphase.
 
-**Milchkaffee mit Microwelle und Induktionsplatte** - für Fortgeschrittene:
+## **Milchkaffee mit Microwelle und Induktionsplatte** - für Fortgeschrittene:
 ![milchkaffee](https://user-images.githubusercontent.com/110770475/204105626-c05746c4-1a6c-4252-910e-d2083dae432b.jpg)
 Die roten Flächen sind der eingekaufte Bezug. Die grünen Flächen die eigene Einspeisung.
 Die grauen Flächen sind die trägheitsbedingte Übereinspeisung, kostenlos eingespeiste Energie.
 
-Noch eine Verlaufsgrafik mit nur **einem Soyosource**:
+## Noch eine Verlaufsgrafik mit nur **einem Soyosource**:
 ![einphasig](https://user-images.githubusercontent.com/110770475/204106401-e274ba31-8ad7-48a7-9975-7f3d39a58db0.jpg)
 
-**Schwankungen** der Regelung in einer eher ruhigen Phase:
+## **Schwankungen** der Regelung in einer eher ruhigen Phase:
 ![Schwankungen](https://user-images.githubusercontent.com/110770475/204105644-0ce5aaba-ebd4-4854-8335-e142a41a482f.jpg)
 Die schwarzen Werte zeigt der Haus-Zähler ohne Minuszeichen an.
 Rot muss bezahlt werden. Die Einspeisung betrug 400 bis 450 W in diesem Abschnitt.
