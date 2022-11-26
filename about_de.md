@@ -19,15 +19,16 @@ Wenn **dann** noch Leistung übrig ist, dann wird auch der **Akku** geladen.
 5. Trennschalter für PV -
 6. Sicherungsautomat und RCD für L1
 7. kombinierte Sicherung und RCD für L2
-8. Step-Up MPPT Regler für das 390 W Modul, elejoy EL-MU400SP, [Anleitung und Spezifikation](url=https://enerprof.de/media/pdf/c8/1b/b9/User-Manual_MPPT_LED_DISPLAY_STEP-UP_SOLAR_CHARGE_CONTROLLER_DE.pdf)
+8. Step-Up MPPT Regler für das 390 W Modul, elejoy EL-MU400SP, [Anleitung und Spezifikation](https://enerprof.de/media/pdf/c8/1b/b9/User-Manual_MPPT_LED_DISPLAY_STEP-UP_SOLAR_CHARGE_CONTROLLER_DE.pdf)
 9. Thermoschalter für die Lüftung
-Das passt gerade so in einen 60x60 cm Schaltschrank.
 
+Das passt gerade so in einen 60x60 cm Schaltschrank.
 Nicht zu sehen auf dem Bild:
 * PV Module mit 1690 Wp (5x 260 W Poly, 1x 390 W Mono), nicht optimal ausgerichtet, die Poly sind 20 Jahre alt (185€/kWp)!
 * Raspberry Pi (oder anderer (Kleinst)rechner)
 * Lesekopf für den Stromzähler (moderne Messeinrichtung)
-*16s LiFePO4 Akku mit 25 Ah, also 1,28 kWh
+* 16s LiFePO4 Akku mit 25 Ah, also 1,28 kWh
+
 Der Preis für die gesamte Anlage war knapp 2 k€.
 
 # Funktionsweise
@@ -51,7 +52,7 @@ In der Praxis **schwankt der Wert am Zähler minimal um die 0**, übrigens zeigt
 (es gibt A- und A+ mit Pfeilen, diese zeigen Bezug / Lieferung an)
 
 # Funktionen
-Das [url=https://github.com/E-t0m/zeroinput][u]Script[/u][/url] hat diese Funktionen:[list]
+Das [Script](https://github.com/E-t0m/zeroinput) hat diese Funktionen:
 - Unterspannungschutz Akku unter 48 V
 - Leistungsanpassung Akku von 48 V bis 50 V, mittels Regelkurve, mögliche Gesamtleistung immer zuzüglich PV
 - "Über"einspeisung ab 53 V bis "Saturation charging voltage" ("Sättigungsladespannung“, am esmart3), 0,5 W / 0,1 V, "zieht die Nulllinie nach unten", bei Überschuss
@@ -62,7 +63,7 @@ Das [url=https://github.com/E-t0m/zeroinput][u]Script[/u][/url] hat diese Funkti
 - Maximalleistung 1800 W
 - Alarmierung bei erhöhter Batterietemperatur oder interner Temperatur des esmart3
 
-Diese Werte **können und sollten* an die jeweilige Anlage und Akkugröße **angepasst werden**!
+Diese Werte **können und sollten** an die jeweilige Anlage und Akkugröße **angepasst werden**!
 Natürlich könnte man auch andere Laderegler, wie z.B. Epever oder Victron einbinden. Die Akku-Spannung und PV-Leistung sind sehr wichtige Werte für die Regelung!
 Auch jeder andere Netzwechselrichter kann verwendet werden, wenn er regelbar ist.
 Denkbar ist auch ein regelbarer DC-DC-Wandler an einem Microwechselrichter.
@@ -122,6 +123,9 @@ Umgekehrt sinkt die PV Leistung mit langsam ansteigender Akku Spannung nach der 
 Die roten Flächen sind der eingekaufte Bezug. Die grünen Flächen die eigene Einspeisung.
 Die grauen Flächen sind die trägheitsbedingte Übereinspeisung, kostenlos eingespeiste Energie.
 
+Noch eine Verlaufsgrafik mit nur **einem Soyosource**:
+![einphasig](https://user-images.githubusercontent.com/110770475/204106401-e274ba31-8ad7-48a7-9975-7f3d39a58db0.jpg)
+
 **Schwankungen** der Regelung in einer eher ruhigen Phase:
 ![Schwankungen](https://user-images.githubusercontent.com/110770475/204105644-0ce5aaba-ebd4-4854-8335-e142a41a482f.jpg)
 Die schwarzen Werte zeigt der Haus-Zähler ohne Minuszeichen an.
@@ -144,20 +148,18 @@ meter -2 W
 input 643 W 
 ```
 
-
-[size=150]Messgenauigkeit[/size]
-Zur Genauigkeit der Daten vom esmart3 hat der Autor der [url=https://github.com/skagmo/esmart_mppt][u]esmart Bibliothek[/u][/url] (die ich [url=https://github.com/E-t0m/esmart_mppt][u]modifiziert[/u][/url] verwende) [url=https://skagmo.com/page.php?p=documents%2F04_esmart3_review][u]einen Bericht veröffentlicht[/u][/url].
-Ein paar Beiträge weiter unten thematisiert [url=https://forum.drbacke.de/viewtopic.php?p=45362#p45362][u]@Schorsch68 die Mängel[/u][/url] der digitalen Stromzähler (moderne Messeinrichtung).
+# Messgenauigkeit
+Zur Genauigkeit der Daten vom esmart3 hat der Autor der [Esmart3 Bibliothek](https://github.com/skagmo/esmart_mppt), [die ich modifiziert verwende](https://github.com/E-t0m/esmart_mppt), [einen Bericht veröffentlicht](https://skagmo.com/page.php?p=documents%2F04_esmart3_review).
 Meiner Beobachtung nach, stimmt die eingespeiste Leistung vom Soyosource Inverter recht genau mit dem angeforderten Wert überein.
 Zu beachten gibt es noch die verzögerte Ansprechzeit (ramp speed) von meines Wissens 400 W/s. Der Soyo braucht also 2+ Sekunden von 0 auf 100% Leistung. (das ist Absicht, kein Fehler)
 Darum habe ich die beiden Soyo einfach nur parallel angesteuert, um eine möglichst kurze Ansprechzeit zu haben, mit mehr Soyos würde das entsprechend noch besser, aber auch einer würde funktionieren!
 (Der 2-phasige Anschluss meiner Anlage wäre nicht nötig und stammt von Experimenten mit Phasen-basierter Nulleinspeisung, die ich inzwischen verworfen habe! Trotzdem schön zu haben.)
-Ab wann macht [b]ein weiterer Wechselrichter[/b] Sinn? 
+Ab wann macht **ein weiterer Wechselrichter** Sinn? 
 Der Grundverbrauch liegt laut Hersteller bei < 2 W. Mit 3 W gerechnet, ergeben sich 72 Wh / Tag.
 Also kommt man auf 72 Wh / 900 Wh * 60 Minuten = 4,8 Minuten Volllast Einspeisung.
 Läuft der "weitere" Inverter also mehr als 5 Minuten mit Volllast pro Tag, lohnt er sich, ganz grob gerechnet.
 
-[size=150]Wirkungsgrad[/size]
+# Wirkungsgrad
 Die Ausgabe des Scripts oben zeigt: eingespeiste Leistung 643 W, wogegen der esmart 692 W Last anzeigt. Das ergibt ~ 93 % Wirkungsgrad in diesem Moment.
 Das Laden und Entladen des Akkus kostet natürlich auch Energie.
 Mit den Beispieldaten der Tage (weiter oben) lässt sich ein Gesamtwirkungsgrad berechnen:
@@ -165,22 +167,21 @@ PV Erzeugung 7,7 kWh, Einspeisung 7,3 kWh, ergibt ~ 95 %
 PV Erzeugung 6,1 kWh, Einspeisung 5,7 kWh, ergibt ~ 93 %
 Je mehr Energie durch den Akku geht, desto schlechter ist der Wirkungsgrad der gesamten Anlage.
 
-[size=150]Bauanleitung:[/size][list]
-[*]Den Stromzähler wenn nötig mit PIN zur (erweiterten) Datenausgabe bringen. Die PIN gibt es beim Messstellenbetreiber bzw. Netzbetreiber (nicht Stromanbieter).
-Es gibt eine [url=https://play.google.com/store/apps/details?id=de.bloggingwelt.blinkeingabestromzaehler][u]praktische App[/u][/url] zur PIN Eingabe für Ungeduldige.
-[*]Den Volkszähler zum Laufen bringen. [url=https://wiki.volkszaehler.org/howto/getstarted][u]zur Anleitung[/u][/url] ([url=https://www.photovoltaikforum.com/board/131-volkszaehler-org/][u]das Forum dazu[/u][/url]) [highlight=yellow]Ohne Volkszähler läuft das Script nicht![/highlight] Also zuerst damit anfangen.
-[*]Es ist sehr sinnvoll dem IR-Lesekopf und RS485-Adapter per udev-Regel einen [url=https://wiki.volkszaehler.org/hardware/controllers/ir-schreib-lesekopf-usb-ausgang][u]eigenen, festen Gerätenamen[/u][/url] zu geben.
-[*]Die ganzen Geräte wie oben schon beschrieben montieren.
-[*]Den RS485-Anschluss des Raspi (i.d.R. ein USB-Stick mit Klemmen) mit den RS485 Anschlüssen von Soyo und esmart3 verbinden: A+ an A+, B- an B-.
-[*]Den Volkszähler für die Nulleinspeisung ein wenig modifizieren.
-[/list]
+# Bauanleitung:
+- Den Stromzähler wenn nötig mit PIN zur (erweiterten) Datenausgabe bringen. Die PIN gibt es beim Messstellenbetreiber bzw. Netzbetreiber (nicht Stromanbieter).
+Es gibt eine [praktische App](https://play.google.com/store/apps/details?id=de.bloggingwelt.blinkeingabestromzaehler) zur PIN-Eingabe für Ungeduldige.
+- Den Volkszähler zum Laufen bringen. [Zur Anleitung](https://wiki.volkszaehler.org/howto/getstarted), [das Forum dazu](https://www.photovoltaikforum.com/board/131-volkszaehler-org/) ***Ohne Volkszähler läuft das Script nicht!*** Also zuerst damit anfangen.
+- Es ist sehr sinnvoll dem IR-Lesekopf und RS485-Adapter per udev-Regel einen [eigenen, festen Gerätenamen](https://wiki.volkszaehler.org/hardware/controllers/ir-schreib-lesekopf-usb-ausgang) zu geben.
+- Die ganzen Geräte wie oben schon beschrieben montieren.
+- Den RS485-Anschluss des Raspi (i.d.R. ein USB-Stick mit Klemmen) mit den RS485 Anschlüssen von Soyo und esmart3 verbinden: A+ an A+, B- an B-.
+- Den Volkszähler für die Nulleinspeisung ein wenig modifizieren.
 
-Wenn der eigene Volkszähler erfolgreich läuft, dann können noch Kanäle entsprechend dieser [url=https://github.com/E-t0m/zeroinput/blob/main/vzlogger.conf][u]vzlogger.conf[/u][/url] angelegt werden.
-Auf jeden Fall muss [b]"identifier": "1-0:16.7.0*255"[/b] und "verbosity": 15 enthalten sein, damit das Script damit rechnen kann.
+Wenn der eigene Volkszähler erfolgreich läuft, dann können noch Kanäle entsprechend dieser [vzlogger.conf](https://github.com/E-t0m/zeroinput/blob/main/vzlogger.conf) angelegt werden.
+Auf jeden Fall muss ***"identifier": "1-0:16.7.0*255" und "verbosity": 15*** enthalten sein, damit das Script damit rechnen kann.
 Auch der Pfad für das "log" in der vzlogger.conf muss angepasst werden: "/tmp/vz/vzlogger.fifo"
-Obwohl es nicht zum Betrieb nötig ist, sollte der [url=https://wiki.volkszaehler.org/howto/datenmengen][u]Umgang mit Datenmengen[/u][/url] beachtet werden, sonst "läuft die Datenbank irgendwann über"!
+Obwohl es nicht zum Betrieb nötig ist, sollte der [Umgang mit Datenmengen](https://wiki.volkszaehler.org/howto/datenmengen) beachtet werden, sonst "läuft die Datenbank irgendwann über"!
 
-[code]
+```
 als root:
 apt install python3-serial
 cd /home/vzlogger
@@ -195,20 +196,19 @@ mkfifo /tmp/vz/vzlogger.fifo
 python3 /home/vzlogger/zeroinput.py -v (mit strg+c beenden)
 oder wer screen kennt (man screen):
 screen -dmS zeroinput nice -1 python3 /home/vzlogger/zeroinput.py -v (mit screen -r "öffnen", mit strg-a, dann strg-d "schließen")
-[/code]
+```
 
 Dann nochmal in einem anderen Terminal - als root - den vzlogger neu starten:
-[code]systemctl restart vzlogger[/code]
+```systemctl restart vzlogger```
 
-
-Um das Script [b]automatisch beim Hochfahren des Raspi [/b]zu starten, mittels
-[code]su vzlogger
+Um das Script **automatisch beim Hochfahren des Raspi** zu starten, mittels
+```su vzlogger
 crontab -e
-[/code]
+```
 diese Zeile:
-[code]
+```
 @reboot mkdir /tmp/vz; touch /tmp/vz/soyo.log; mkfifo /tmp/vz/vzlogger.fifo; screen -dmS zeroinput nice -1 python3 /home/vzlogger/zeroinput.py -v
-[/code]
+```
 in die crontab eintragen.
 Um später auf die Ausgabe zu kommen, als Benutzer "vzlogger" (su vzlogger), "screen -r" eingeben. Danach strg-a, dann strg-d zum "schießen" benutzen.
 
@@ -217,29 +217,23 @@ Mit ein wenig Verzögerung durch die Wechselrichter selbst und den Startvorgang 
 Wird der Lesekopf abgezogen, hört die Einspeisung einfach auf und der Zähler steigt auf den Wert des Verbrauchs.
 Sobald der Lesekopf wieder angebracht wird, beginnt die Einspeisung von selbst.
 
-So sieht die [url=https://www.solarcontroller-inverter.com/download/20113011263165.html][u]Konfigurationssoftware des esmart3 für Windows[/u][/url] aus.
-[attachment=1]esmart.jpg[/attachment]
+So sieht die [Konfigurationssoftware des Esmart3 für Windows](https://www.solarcontroller-inverter.com/download/20113011263165.html) aus.
+![Esmart3 Software](https://user-images.githubusercontent.com/110770475/204106343-8ca03bb5-ca3d-4174-9075-25db632ec087.jpg)
+
 Da gibt es etwas, was man am Gerät selbst nicht einstellen kann: Li-Ion
 Die anderen Werte sind natürlich abhängig vom verwendeten Akku. Ich habe recht hohe und tiefe Werte einstellt, da die Leitung zum Akku nicht ganz optimal ist.
 Bisher kamen sie allerdings auch noch nicht zum Einsatz, da das Script weit weg davon operiert! (Update: Werte reduziert!)
 
 Die Konfiguration des Soyosource Inverters ist sehr übersichtlich:
-[attachment=2]soyo.jpg[/attachment]
 
-
-Noch eine Verlaufsgrafik mit nur [url=https://forum.drbacke.de/viewtopic.php?p=49697#p49697][u]einem Soyosource[/u][/url].
-Zum Thema [url=https://forum.drbacke.de/viewtopic.php?p=50444#p50444][u]Ausfallsicherheit[/u][/url] habe ich hier den Ausfall eines der beiden Soyo beschrieben.
-Über den besonderen [url=https://forum.drbacke.de/viewtopic.php?p=64877#p64877][u]Vorteil der Regelung[/u][/url].
-Über die [url=https://forum.drbacke.de/viewtopic.php?p=51098#p51098][u]Vorteile der Lösung[/u][/url] allgemein.
-Ein [url=https://forum.drbacke.de/viewtopic.php?p=51854#p51854][u]trüber Vormittag[/u][/url] zeigt die Leistungsanpassung an die PV- und Akkudaten.
-Sollte man nicht [url=https://forum.drbacke.de/viewtopic.php?p=61170#p61170][u]zuerst den Akku laden[/u][/url] und die Einspeisung zeitweise begrenzen?
+![Soyosource GTN setup](https://user-images.githubusercontent.com/110770475/204106365-97dc809d-fba2-4633-aa77-69b2061f7289.jpg)
 
 Geplant:
 Akku-Puffer für Notstromversorgung. (Erfordert einen zusätzlichen Inselwechselrichter!)
-[url=https://forum.drbacke.de/viewtopic.php?p=53724#p53724][u]vorauseilende Regelung[/u][/url] z.B. für Waschmaschine
-[url=https://forum.drbacke.de/viewtopic.php?p=56091#p56091][u]andere Laderegler einbinden[/u][/url], es muss nicht immer der esmart3 sein
-Ein fertiges Volkszähler-Image, bei dem man nur noch den Lesekopf einstellen muss.
+- vorauseilende Regelung, z.B. für Waschmaschine
+- andere Laderegler einbinden, es muss nicht immer der esmart3 sein
+- Ein fertiges Volkszähler-Image, bei dem man nur noch den Lesekopf einstellen muss.
 
-[b]Was fehlt noch?
+## Was fehlt noch?
 
-Viel Spaß beim Nachbauen![/b]
+## Viel Spaß beim Nachbauen!
