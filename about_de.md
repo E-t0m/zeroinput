@@ -199,10 +199,13 @@ screen -dmS zeroinput nice -1 python3 /home/vzlogger/zeroinput.py -v (mit screen
 ```
 
 Dann nochmal in einem anderen Terminal - als root - den vzlogger neu starten:
-```systemctl restart vzlogger```
+```
+systemctl restart vzlogger
+```
 
 Um das Script **automatisch beim Hochfahren des Raspi** zu starten, mittels
-```su vzlogger
+```
+su vzlogger
 crontab -e
 ```
 diese Zeile:
