@@ -1,3 +1,5 @@
+# Saldierte Nulleinspeisung mit dem Haus-Stromzähler
+
 Hallo Allerseits,
 ich möchte hier meine eigene private Anlage und Regelung zur Null-Einspeisung vorstellen.
 
@@ -5,10 +7,10 @@ Absolute Priorität hat die Einspeisung ins Netz.
 Es wird **zuerst** soviel Strom **eingespeist** wie die PV liefern kann oder zur Nullung des Verbrauchs nötig ist.
 Wenn **dann** noch Leistung übrig ist, dann wird auch der **Akku** geladen.
 
-# Aufbau
+## Aufbau
 ![Schema](https://user-images.githubusercontent.com/110770475/204104728-d1dabefa-5ac4-446d-bf72-9fb58aaae4e6.jpg)
 
-# Die Komponenten
+## Die Komponenten
 ![Schaltkasten](https://user-images.githubusercontent.com/110770475/204104803-e4959f68-4e98-4980-82a2-20e1e6b33e83.jpg)
 0. Rohrlüfter in KG Rohr als aktive Kühlung, Thermosensor von 9
 1. esmart3 MPPT Laderegler (das Billigteil wird unter verschiedensten Namen angeboten)
@@ -31,7 +33,7 @@ Nicht zu sehen auf dem Bild:
 
 Der Preis für die gesamte Anlage war knapp 2 k€.
 
-# Funktionsweise
+## Funktionsweise
 Die Anlage funktioniert grundlegend wie eine Insel:
 PV, Akku und die Netzwechselrichter (als Last) hängen am Laderegler.
 Die Soyosource Inverter lassen sich per RS485 (Modbus) in der Einspeiseleistung regeln.
@@ -51,7 +53,7 @@ Selbst bei einem Datenbankabsturz der Volkszähler-Software arbeitet das Script 
 In der Praxis **schwankt der Wert am Zähler minimal um die 0**, übrigens zeigt mein "smart Meter" an seinem Display auch Einspeisung ohne Minuszeichen als positiven Wert an.
 (es gibt A- und A+ mit Pfeilen, diese zeigen Bezug / Lieferung an)
 
-# Funktionen
+## Funktionen
 Das [Script](https://github.com/E-t0m/zeroinput) hat diese Funktionen:
 - Unterspannungschutz Akku unter 48 V
 - Leistungsanpassung Akku von 48 V bis 50 V, mittels Regelkurve, mögliche Gesamtleistung immer zuzüglich PV
@@ -70,18 +72,18 @@ Denkbar ist auch ein regelbarer DC-DC-Wandler an einem Microwechselrichter.
 Meine Anlage kann z.B. nur die volle Inverterleistung abgeben, wenn die PV in dem Moment genug Leistung bringt - um den Akku nicht zu überlasten.
 Die "harten" Grenzwerte für Unter- und Überspannung etc. sind sowohl im Laderegler als auch in den Netzwechselrichtern eingestellt.
 
-# Rechtsrahmen
+## Rechtsrahmen
 Soweit ich das beurteilen kann, muss man die hier beschriebene Anlage in Deutschland sowohl beim Netzbetreiber als auch im Marktstammdatenregister anmelden,
 wenn man alle gesetzlichen Regularien befolgen will. Kann man aber nicht! Denn im Klartext:
 Der genannte Soyosource Wechselrichter darf wegen der **fehlenden Zertifizierung** in Deutschland nicht ans Stromnetz angeschlossen werden.
 
-# Beispiele für die Regelung
+## Beispiele für die Regelung
 Die Werte für PV (gelb, Leistung der PV-Module) und Soyo P (grün, eingespeister Strom) werden **negiert** dargestellt!
 Die Daten für PV, Soyo P und Akku U (rot, Akkuspannung) liefert das Script, wobei Soyo P berechnet wird.
 PV und Akku U werden vom esmart3 Regler gelesen und an den Volkszähler zur Darstellung weitergereicht.
 Dadurch entsteht eine Sekunde Zeitversatz zu den Kurven des Haus-Stromzählers.
 
-## So sieht dann ein recht **guter Tag mit hohem Verbrauch** aus:
+### So sieht dann ein recht **guter Tag mit hohem Verbrauch** aus
 ![viel Verbrauch](https://user-images.githubusercontent.com/110770475/204105529-4d6d03e1-ca13-4224-8272-4995115232d0.png)
 
 Die Tageswerte waren: PV Erzeugung 7,7 kWh, Einspeisung 7,3 kWh, bewusst verschenkt 0 kWh
@@ -89,7 +91,7 @@ An diesem Tag liefen Backofen, Microwelle, Brunnenpumpe, Split-Klima, etc. Der A
 Man sieht das Ein und Ausregeln am Morgen und Abend entlang der PV-Kurve. Gegen 11 die maximale Einspeisung.
 Danach und sehr schön um ca. 17:30 Uhr die Leistungsanpassung für den Batteriestrom.
 
-## Ein sonniger Tag mit **wenig Verbrauch**:
+### Ein sonniger Tag mit **wenig Verbrauch**
 ![wenig Verbrauch](https://user-images.githubusercontent.com/110770475/204105552-fbbc1f4d-ab04-483d-a6ea-ae0f934cab16.png)
 
 Die Tageswerte waren: PV Erzeugung 6,1 kWh, Einspeisung 5,7 kWh, bewusst verschenkt 0,9 kWh
@@ -98,10 +100,10 @@ Hier sieht man das Einregeln am Morgen und die Nachtlimitierung am Abend.
 Der dunkelgrüne Bereich ist überschüssiger Strom, da die Batterie - siehe Spannungskurve - voll ist.
 (inzwischen ist die Übereinspeisung in der Standard Einstellung wesentlich geringer!)
 
-## **Ein trüber Tag:**
+### **Ein trüber Tag**
 ![sehr trüber Tag](https://user-images.githubusercontent.com/110770475/204105585-13a50eb1-87cf-4dbc-8e62-469527aed402.jpg)
 
-## **Waschmaschine in Heizphase:**
+### **Waschmaschine in Heizphase**
 ![60 Grad Wäsche](https://user-images.githubusercontent.com/110770475/204105605-2a70356a-90d3-4a8a-a7a1-fddb570a9e3c.png)
 
 Die Daten in der Tabelle beziehen sich auf den ganzen sichtbaren Ausschnitt.
@@ -118,15 +120,15 @@ Der Leistungseinbruch um ca. 10:33 kommt durch den Neustart des MPP-Trackers im 
 Erkennbar ist auch noch das Ansteigen der PV Leistung in dem Moment, wo die Heizphase beginnt.
 Umgekehrt sinkt die PV Leistung mit langsam ansteigender Akku Spannung nach der Heizphase.
 
-## **Milchkaffee mit Microwelle und Induktionsplatte** - für Fortgeschrittene:
+### **Milchkaffee mit Microwelle und Induktionsplatte** - für Fortgeschrittene
 ![milchkaffee](https://user-images.githubusercontent.com/110770475/204105626-c05746c4-1a6c-4252-910e-d2083dae432b.jpg)
 Die roten Flächen sind der eingekaufte Bezug. Die grünen Flächen die eigene Einspeisung.
 Die grauen Flächen sind die trägheitsbedingte Übereinspeisung, kostenlos eingespeiste Energie.
 
-## Noch eine Verlaufsgrafik mit nur **einem Soyosource**:
+### Noch eine Verlaufsgrafik mit nur **einem Soyosource**
 ![einphasig](https://user-images.githubusercontent.com/110770475/204106401-e274ba31-8ad7-48a7-9975-7f3d39a58db0.jpg)
 
-## **Schwankungen** der Regelung in einer eher ruhigen Phase:
+### **Schwankungen** der Regelung in einer eher ruhigen Phase
 ![Schwankungen](https://user-images.githubusercontent.com/110770475/204105644-0ce5aaba-ebd4-4854-8335-e142a41a482f.jpg)
 Die schwarzen Werte zeigt der Haus-Zähler ohne Minuszeichen an.
 Rot muss bezahlt werden. Die Einspeisung betrug 400 bis 450 W in diesem Abschnitt.
@@ -148,7 +150,7 @@ meter -2 W
 input 643 W 
 ```
 
-# Messgenauigkeit
+## Messgenauigkeit
 Zur Genauigkeit der Daten vom esmart3 hat der Autor der [Esmart3 Bibliothek](https://github.com/skagmo/esmart_mppt), [die ich modifiziert verwende](https://github.com/E-t0m/esmart_mppt), [einen Bericht veröffentlicht](https://skagmo.com/page.php?p=documents%2F04_esmart3_review).
 Meiner Beobachtung nach, stimmt die eingespeiste Leistung vom Soyosource Inverter recht genau mit dem angeforderten Wert überein.
 Zu beachten gibt es noch die verzögerte Ansprechzeit (ramp speed) von meines Wissens 400 W/s. Der Soyo braucht also 2+ Sekunden von 0 auf 100% Leistung. (das ist Absicht, kein Fehler)
@@ -159,7 +161,7 @@ Der Grundverbrauch liegt laut Hersteller bei < 2 W. Mit 3 W gerechnet, ergeben s
 Also kommt man auf 72 Wh / 900 Wh * 60 Minuten = 4,8 Minuten Volllast Einspeisung.
 Läuft der "weitere" Inverter also mehr als 5 Minuten mit Volllast pro Tag, lohnt er sich, ganz grob gerechnet.
 
-# Wirkungsgrad
+## Wirkungsgrad
 Die Ausgabe des Scripts oben zeigt: eingespeiste Leistung 643 W, wogegen der esmart 692 W Last anzeigt. Das ergibt ~ 93 % Wirkungsgrad in diesem Moment.
 Das Laden und Entladen des Akkus kostet natürlich auch Energie.
 Mit den Beispieldaten der Tage (weiter oben) lässt sich ein Gesamtwirkungsgrad berechnen:
@@ -167,7 +169,7 @@ PV Erzeugung 7,7 kWh, Einspeisung 7,3 kWh, ergibt ~ 95 %
 PV Erzeugung 6,1 kWh, Einspeisung 5,7 kWh, ergibt ~ 93 %
 Je mehr Energie durch den Akku geht, desto schlechter ist der Wirkungsgrad der gesamten Anlage.
 
-# Bauanleitung:
+## Bauanleitung
 - Den Stromzähler wenn nötig mit PIN zur (erweiterten) Datenausgabe bringen. Die PIN gibt es beim Messstellenbetreiber bzw. Netzbetreiber (nicht Stromanbieter).
 Es gibt eine [praktische App](https://play.google.com/store/apps/details?id=de.bloggingwelt.blinkeingabestromzaehler) zur PIN-Eingabe für Ungeduldige.
 - Den Volkszähler zum Laufen bringen. [Zur Anleitung](https://wiki.volkszaehler.org/howto/getstarted), [das Forum dazu](https://www.photovoltaikforum.com/board/131-volkszaehler-org/) ***Ohne Volkszähler läuft das Script nicht!*** Also zuerst damit anfangen.
@@ -231,7 +233,7 @@ Die Konfiguration des Soyosource Inverters ist sehr übersichtlich:
 
 ![Soyosource GTN setup](https://user-images.githubusercontent.com/110770475/204106365-97dc809d-fba2-4633-aa77-69b2061f7289.jpg)
 
-Geplant:
+Geplant
 Akku-Puffer für Notstromversorgung. (Erfordert einen zusätzlichen Inselwechselrichter!)
 - vorauseilende Regelung, z.B. für Waschmaschine
 - andere Laderegler einbinden, es muss nicht immer der esmart3 sein
