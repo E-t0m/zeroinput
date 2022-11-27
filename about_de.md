@@ -167,6 +167,7 @@ Das Laden und Entladen des Akkus kostet natürlich auch Energie.
 Mit den Beispieldaten der Tage (weiter oben) lässt sich ein Gesamtwirkungsgrad berechnen:
 - PV Erzeugung 7,7 kWh, Einspeisung 7,3 kWh, ergibt ~ 95 %
 - PV Erzeugung 6,1 kWh, Einspeisung 5,7 kWh, ergibt ~ 93 %
+
 Je mehr Energie durch den Akku geht, desto schlechter ist der Wirkungsgrad der gesamten Anlage.
 
 ## Bauanleitung
@@ -201,9 +202,7 @@ screen -dmS zeroinput nice -1 python3 /home/vzlogger/zeroinput.py -v (mit screen
 ```
 
 Dann nochmal in einem anderen Terminal - als root - den vzlogger neu starten
-```
-systemctl restart vzlogger
-```
+```systemctl restart vzlogger```
 
 Um das Script **automatisch beim Hochfahren des Raspi** zu starten, mittels
 ```
@@ -215,7 +214,7 @@ diese Zeile:
 @reboot mkdir /tmp/vz; touch /tmp/vz/soyo.log; mkfifo /tmp/vz/vzlogger.fifo; screen -dmS zeroinput nice -1 python3 /home/vzlogger/zeroinput.py -v
 ```
 in die crontab eintragen.
-Um später auf die Ausgabe zu kommen, als Benutzer "vzlogger" (su vzlogger), "screen -r" eingeben. Danach strg-a, dann strg-d zum "schießen" benutzen.
+Um später auf die Ausgabe zu kommen, als Benutzer "vzlogger" (```su vzlogger```), ```screen -r``` eingeben. Danach strg-a, dann strg-d zum "schließen" benutzen.
 
 Wenn dieser Eintrag erfolgt ist, startet die Regelung nach einem Stromausfall von selbst wieder. 
 Mit ein wenig Verzögerung durch die Wechselrichter selbst und den Startvorgang des Raspi.
@@ -225,7 +224,7 @@ Sobald der Lesekopf wieder angebracht wird, beginnt die Einspeisung von selbst.
 So sieht die [Konfigurationssoftware des Esmart3 für Windows](https://www.solarcontroller-inverter.com/download/20113011263165.html) aus.
 ![Esmart3 Software](https://user-images.githubusercontent.com/110770475/204106343-8ca03bb5-ca3d-4174-9075-25db632ec087.jpg)
 
-Da gibt es etwas, was man am Gerät selbst nicht einstellen kann: Li-Ion
+Da gibt es etwas, was man am Gerät selbst nicht einstellen kann: **Li-Ion**.
 Die anderen Werte sind natürlich abhängig vom verwendeten Akku. Ich habe recht hohe und tiefe Werte einstellt, da die Leitung zum Akku nicht ganz optimal ist.
 Bisher kamen sie allerdings auch noch nicht zum Einsatz, da das Script weit weg davon operiert! (Update: Werte reduziert!)
 
@@ -233,10 +232,10 @@ Die Konfiguration des Soyosource Inverters ist sehr übersichtlich
 
 ![Soyosource GTN setup](https://user-images.githubusercontent.com/110770475/204106365-97dc809d-fba2-4633-aa77-69b2061f7289.jpg)
 
-Geplant
-Akku-Puffer für Notstromversorgung. (Erfordert einen zusätzlichen Inselwechselrichter!)
-- vorauseilende Regelung, z.B. für Waschmaschine
-- andere Laderegler einbinden, es muss nicht immer der esmart3 sein
+### Geplant
+- Akku-Puffer für Notstromversorgung. (Erfordert einen zusätzlichen Inselwechselrichter!)
+- vorauseilende Regelung bei wiederkehrenden Verbrauchsmustern, z.B. Waschmaschine, Mikrowelle, Kochfeld
+- andere Laderegler einbinden, es muss nicht immer der Esmart3 sein
 - Ein fertiges Volkszähler-Image, bei dem man nur noch den Lesekopf einstellen muss.
 
 ## Was fehlt noch?
