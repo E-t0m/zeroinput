@@ -241,3 +241,5 @@ Die Konfiguration des Soyosource Inverters ist sehr übersichtlich
 ## Was fehlt noch?
 
 ## Viel Spaß beim Nachbauen!
+
+Weitere Informationen gibt es im [akkudoktor Forum](https://www.akkudoktor.net/forum/migrated-forums-balkonsolar/anleitung-saldierte-nulleinspeisung-mit-dem-haus-stromzaehler)
