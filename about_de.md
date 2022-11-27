@@ -86,7 +86,7 @@ Dadurch entsteht eine Sekunde Zeitversatz zu den Kurven des Haus-Stromzählers.
 ### So sieht dann ein recht **guter Tag mit hohem Verbrauch** aus
 ![viel Verbrauch](https://user-images.githubusercontent.com/110770475/204105529-4d6d03e1-ca13-4224-8272-4995115232d0.png)
 
-Die Tageswerte waren: PV Erzeugung 7,7 kWh, Einspeisung 7,3 kWh, bewusst verschenkt 0 kWh
+Die Tageswerte waren: PV Erzeugung 7,7 kWh, Einspeisung 7,3 kWh, bewusst verschenkt 0 kWh.
 An diesem Tag liefen Backofen, Microwelle, Brunnenpumpe, Split-Klima, etc. Der Akku war am Ende des Tages schon leer.
 Man sieht das Ein und Ausregeln am Morgen und Abend entlang der PV-Kurve. Gegen 11 die maximale Einspeisung.
 Danach und sehr schön um ca. 17:30 Uhr die Leistungsanpassung für den Batteriestrom.
@@ -94,7 +94,7 @@ Danach und sehr schön um ca. 17:30 Uhr die Leistungsanpassung für den Batterie
 ### Ein sonniger Tag mit **wenig Verbrauch**
 ![wenig Verbrauch](https://user-images.githubusercontent.com/110770475/204105552-fbbc1f4d-ab04-483d-a6ea-ae0f934cab16.png)
 
-Die Tageswerte waren: PV Erzeugung 6,1 kWh, Einspeisung 5,7 kWh, bewusst verschenkt 0,9 kWh
+Die Tageswerte waren: PV Erzeugung 6,1 kWh, Einspeisung 5,7 kWh, bewusst verschenkt 0,9 kWh.
 Der größte Verbraucher war die Split-Klima. Die Akkuladung reichte bis weit in die Nacht.
 Hier sieht man das Einregeln am Morgen und die Nachtlimitierung am Abend.
 Der dunkelgrüne Bereich ist überschüssiger Strom, da die Batterie - siehe Spannungskurve - voll ist.
@@ -200,7 +200,7 @@ oder wer screen kennt (man screen):
 screen -dmS zeroinput nice -1 python3 /home/vzlogger/zeroinput.py -v (mit screen -r "öffnen", mit strg-a, dann strg-d "schließen")
 ```
 
-Dann nochmal in einem anderen Terminal - als root - den vzlogger neu starten:
+Dann nochmal in einem anderen Terminal - als root - den vzlogger neu starten
 ```
 systemctl restart vzlogger
 ```
@@ -229,7 +229,7 @@ Da gibt es etwas, was man am Gerät selbst nicht einstellen kann: Li-Ion
 Die anderen Werte sind natürlich abhängig vom verwendeten Akku. Ich habe recht hohe und tiefe Werte einstellt, da die Leitung zum Akku nicht ganz optimal ist.
 Bisher kamen sie allerdings auch noch nicht zum Einsatz, da das Script weit weg davon operiert! (Update: Werte reduziert!)
 
-Die Konfiguration des Soyosource Inverters ist sehr übersichtlich:
+Die Konfiguration des Soyosource Inverters ist sehr übersichtlich
 
 ![Soyosource GTN setup](https://user-images.githubusercontent.com/110770475/204106365-97dc809d-fba2-4633-aa77-69b2061f7289.jpg)
 
