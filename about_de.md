@@ -165,8 +165,8 @@ Läuft der "weitere" Inverter also mehr als 5 Minuten mit Volllast pro Tag, lohn
 Die Ausgabe des Scripts oben zeigt: eingespeiste Leistung 643 W, wogegen der esmart 692 W Last anzeigt. Das ergibt ~ 93 % Wirkungsgrad in diesem Moment.
 Das Laden und Entladen des Akkus kostet natürlich auch Energie.
 Mit den Beispieldaten der Tage (weiter oben) lässt sich ein Gesamtwirkungsgrad berechnen:
-PV Erzeugung 7,7 kWh, Einspeisung 7,3 kWh, ergibt ~ 95 %
-PV Erzeugung 6,1 kWh, Einspeisung 5,7 kWh, ergibt ~ 93 %
+- PV Erzeugung 7,7 kWh, Einspeisung 7,3 kWh, ergibt ~ 95 %
+- PV Erzeugung 6,1 kWh, Einspeisung 5,7 kWh, ergibt ~ 93 %
 Je mehr Energie durch den Akku geht, desto schlechter ist der Wirkungsgrad der gesamten Anlage.
 
 ## Bauanleitung
