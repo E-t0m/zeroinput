@@ -243,4 +243,6 @@ Die Konfiguration des Soyosource Inverters ist sehr übersichtlich
 
 ## Viel Spaß beim Nachbauen!
 
-Weitere Informationen gibt es im [akkudoktor Forum](https://www.akkudoktor.net/forum/migrated-forums-balkonsolar/anleitung-saldierte-nulleinspeisung-mit-dem-haus-stromzaehler)
+Weitere Informationen gibt es in den Foren:
+- [Akku Doktor Forum](https://www.akkudoktor.net/forum/migrated-forums-balkonsolar/anleitung-saldierte-nulleinspeisung-mit-dem-haus-stromzaehler)
+- [photovoltaikforum](https://www.photovoltaikforum.com/thread/179609-nulleinspeisung-mit-mme-volkszaehler-soyosource-gti-esmart3-laderegler-akku-sald/)
