@@ -48,6 +48,7 @@ es liest die Verbrauchsdaten vom Haus-Stromzähler über den [Volkszähler](http
 Grundsätzlich würde das Script auch ohne Volkszähler funktionieren und könnte den Lesekopf selbst auslesen.
 Dann würde es auf wesentlich "kleinerer" Hardware laufen, aber so ganz ohne Monitoring wäre mir das zu riskant.
 Der "unübliche Weg", das logfile umzuleiten, anstatt die dem Volkszähler eigenen Methoden (Datenbankzugriff über Netzwerk) zu verwenden, erhöht die Ausfallsicherheit erheblich.
+Wer kein Kabel zum Zähler legen will, könnte einen WIFI-Lesekopf benutzen und die Verbrauchsdaten per WLAN-Netzwerk übertragen.
 Selbst bei einem Datenbankabsturz der Volkszähler-Software arbeitet das Script weiter! Ich hatte das bereits...
 
 In der Praxis **schwankt der Wert am Zähler minimal um die 0**, übrigens zeigt mein "smart Meter" an seinem Display auch Einspeisung ohne Minuszeichen als positiven Wert an.
