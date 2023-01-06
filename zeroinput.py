@@ -5,10 +5,10 @@ serial_port		= '/dev/rs485'
 # data pipe from vzlogger, set as log in /etc/vzlogger.conf, "verbosity": 15 required, use mkfifo to create it before vz starts!
 vzlogger_log_file	= '/tmp/vz/vzlogger.fifo'
 persistent_vz_file	= '/var/log/vzlogger.log'
-number_of_gti		= 2 # number of gti units
+number_of_gti		= 1 # number of gti units
 max_gti_power		= 900 # W, the maximum power of one gti
-max_bat_discharge	= 1250 # W
-max_night_input		= 200 # W
+max_bat_discharge	= 300 # W
+max_night_input		= 1800 # W
 
 temp_alarm_enabled = True # True = enable or False = disable the alarm for the battery temperature
 int_temp_alarm_threshold = 50 # °C
@@ -29,6 +29,12 @@ elif '-v' in argv:
 	print("start", argv)
 else: 
 	verbose = False
+
+if '-no-input' in argv: no_input = True
+else:	no_input = False
+
+if '-debug' in argv: debug = True
+else:	debug = False
 
 import esmart	# https://github.com/E-t0m/esmart_mppt/blob/ed1e1d91912831a1ee5f26eaf59ace57098c4eac/esmart.py
 import serial
@@ -64,7 +70,6 @@ def avg(inlist):	# return the average of a list variable
 	if len(inlist) == 0: return(0)
 	return( sum(inlist) / len(inlist) )
 
-debug		= False
 send_power	= 0
 last_send	= 0
 last_runtime	= 0
@@ -157,8 +162,11 @@ while True:	# infinite loop, stop the script with ctl+c
 			print(strftime("%H:%M:%S"),'\nbattery protection timeout until', timeout_repeat.strftime('%H:%M:%S'))
 			print('latest battery data:',d['bat_volt'],'V')
 	else:
-		if bat_cont < 48:	# set a new timeout
-			send_power 	= 0
+		if no_input:		# disable power input
+			send_power = 0
+		
+		elif bat_cont < 48:	# set a new timeout
+			send_power	= 0
 			send_history	= [0]*4
 			extra_history	= [0]*8
 			timeout_repeat = datetime.now() + timedelta(minutes=1) 	# wait a minute
@@ -191,7 +199,7 @@ while True:	# infinite loop, stop the script with ctl+c
 		if pv_cont != 0 and		bat_cont > 53.0:	# give some free power to the world, pull down the zero line
 			free_power = int((	bat_cont - 53.0)*10 *0.5)	# 0.5 W / 0.1 V, max depends on esmart "saturation charging voltage"
 			send_power += free_power
-			if verbose: status_text = 'over export '+str(free_power)+' W'
+			if verbose: status_text = 'export '+str(free_power)+' W'
 		else: free_power = 0
 		
 		if send_power > max_bat_discharge + d['chg_power']:	# battery discharge limit
@@ -232,6 +240,7 @@ while True:	# infinite loop, stop the script with ctl+c
 		print('interval %.2f s'	% (time()-last_runtime))
 		print('meter %i W' 	% (Ls_read))	# show the meter readings
 		print('input %i W %s'	% (send_power, status_text))	# show the input data
+		if no_input: print('input DISABLED by command line')
 	
 	last_runtime = time()
 	ser = serial.Serial(serial_port, 4800)
