@@ -9,6 +9,7 @@ number_of_gti		= 1 # number of gti units
 max_gti_power		= 900 # W, the maximum power of one gti
 max_bat_discharge	= 300 # W
 max_night_input		= 1800 # W
+zero_shift			= -50 # W, shift the power meters zero, 0 = disable, +x = export energy, -x = import energy
 
 temp_alarm_enabled = True # True = enable or False = disable the alarm for the battery temperature
 int_temp_alarm_threshold = 50 # °C
@@ -139,7 +140,7 @@ while True:	# infinite loop, stop the script with ctl+c
 			
 			break	# stop reading the vzlogger pipe
 	
-	send_power = int( Ls_read + last2_send )	# underpower by conversion efficiency is measured with the readings
+	send_power = int( Ls_read + last2_send + zero_shift )	# underpower by conversion efficiency is measured with the readings
 	
 	status_text = ''
 	bat_history = bat_history[1:] + [d['bat_volt']]
@@ -219,7 +220,7 @@ while True:	# infinite loop, stop the script with ctl+c
 		else:
 			if verbose: print('\tno saw detected')
 						
-		if send_power < 6:	# keep it positive with a little gap on bottom
+		if send_power < 10:	# keep it positive with a little gap on bottom
 			send_power = 0	# disable input
 			status_text = 'MIN power limit'
 			
@@ -238,7 +239,7 @@ while True:	# infinite loop, stop the script with ctl+c
 	
 	if verbose: 
 		print('interval %.2f s'	% (time()-last_runtime))
-		print('meter %i W' 	% (Ls_read))	# show the meter readings
+		print('meter %i W' 	% (Ls_read), '' if zero_shift == 0 else '(%i W zero shift)' %(zero_shift))	# show the meter readings, and zero shift
 		print('input %i W %s'	% (send_power, status_text))	# show the input data
 		if no_input: print('input DISABLED by command line')
 	
