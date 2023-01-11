@@ -59,12 +59,13 @@ Das [Script](https://github.com/E-t0m/zeroinput) hat diese Funktionen:
 - Unterspannungschutz Akku unter 48 V
 - Leistungsanpassung Akku von 48 V bis 50 V, mittels Regelkurve, mögliche Gesamtleistung immer zuzüglich PV
 - "Über"einspeisung ab 53 V bis "Saturation charging voltage" ("Sättigungsladespannung“, am esmart3), 0,5 W / 0,1 V, "zieht die Nulllinie nach unten", bei Überschuss
-- Begrenzung für den Batterie Entladestrom ~ 1250 W (25 A, 1 C), mögliche Gesamtleistung immer zuzüglich PV
-- Unterdrückung der Schwingung des Regelkreises
-- Nachtlimit 200 W (der kleine Akku hält nie eine ganze Nacht durch)
-- Minimalleistung 6 W
-- Maximalleistung 1800 W
+- Begrenzung des Batterie Entladestroms, mögliche Gesamtleistung immer zuzüglich PV
+- Nachtlimit (ein kleiner Akku hält keine ganze Nacht durch)
+- Minimalleistung
+- Maximalleistung
+- Permanentes Verschieben der Nulllinie in Richtung Bezug oder Einspeisung.
 - Alarmierung bei erhöhter Batterietemperatur oder interner Temperatur des esmart3
+- Unterdrückung der Schwingung des Regelkreises
 
 Diese Werte **können und sollten** an die jeweilige Anlage und Akkugröße **angepasst werden**!
 Natürlich könnte man auch andere Laderegler, wie z.B. Epever oder Victron einbinden. Die Akku-Spannung und PV-Leistung sind sehr wichtige Werte für die Regelung!
