@@ -9,7 +9,7 @@ number_of_gti		= 1 # number of gti units
 max_gti_power		= 900 # W, the maximum power of one gti
 max_bat_discharge	= 300 # W
 max_night_input		= 1800 # W
-zero_shift			= -50 # W, shift the power meters zero, 0 = disable, +x = export energy, -x = import energy
+zero_shift			= -20 # W, shift the power meters zero, 0 = disable, +x = export energy, -x = import energy
 
 temp_alarm_enabled = True # True = enable or False = disable the alarm for the battery temperature
 int_temp_alarm_threshold = 50 # °C
@@ -83,7 +83,7 @@ send_history	= [0]* 4
 
 bat_power_static	= -30	# W static reduction on low battery
 pv_red_factor	= 0.85	# PV reduction on low battery in % / 100
-powercurve	= [0,2,3,4,5,6,7,13,17,21,26,30,34,39,45,52,60,70,80,90,100] # in %, only active with variant B
+max_input_power = max_gti_power * number_of_gti
 
 temp_alarm_time = datetime.now()
 timeout_repeat	= datetime.now()
@@ -175,13 +175,13 @@ while True:	# infinite loop, stop the script with ctl+c
 		elif bat_cont >= 48 and bat_cont <= 50:	# limit to pv power, by battery voltage
 			if send_power > pv_cont:
 				# variant A
-				bat_p_percent = (bat_cont - 47.1 ) **4.33	# curve without steps
-				bat_power = int(0.01 * max_bat_discharge * bat_p_percent)	# 100% above 50 V
+				bat_p_percent = (bat_cont - 47.1 ) **4.326	# curve without steps
+				bat_power = int(0.01 * max_input_power * bat_p_percent)	# 100% above 50 V
 				
-				# variant B
+				# variant B, with a given powercurve
+				#powercurve = [0,2,3,4,5,6,7,13,17,21,26,30,34,39,45,52,60,70,80,90,100] # in %
 				#bat_p_percent = powercurve[int(bat_cont*10-480)]
-				#bat_power = int(0.01 * max_bat_discharge * bat_p_percent)	# 100% above 50 V
-				# you can use your own curve by changing the powercurve variable on top of this file
+				#bat_power = int(0.01 * max_input_power * bat_p_percent)	# 100% above 50 V
 				
 				extra_history = extra_history[1:]+[bat_power]
 				if 0 in extra_history: pass	# bat_power remains at last calculated value
@@ -224,8 +224,8 @@ while True:	# infinite loop, stop the script with ctl+c
 			send_power = 0	# disable input
 			status_text = 'MIN power limit'
 			
-		if send_power	> max_gti_power * number_of_gti:	# the limit of the gti
-			send_power	= max_gti_power * number_of_gti
+		if send_power	> max_input_power:	# the limit of the gti
+			send_power	= max_input_power
 			status_text = 'MAX power limit'
 		
 	with open('/tmp/vz/soyo.log','w') as fo:	# send some values to vzlogger
