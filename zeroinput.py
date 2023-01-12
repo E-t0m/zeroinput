@@ -2,20 +2,20 @@
 # -*- coding: utf-8 -*-
 
 serial_port		= '/dev/rs485'
-# data pipe from vzlogger, set as log in /etc/vzlogger.conf, "verbosity": 15 required, use mkfifo to create it before vz starts!
+# data pipe from vzlogger, set as log in /etc/vzlogger.conf, "verbosity": 15 required, use mkfifo to create it before vzlogger starts!
 vzlogger_log_file	= '/tmp/vz/vzlogger.fifo'
 persistent_vz_file	= '/var/log/vzlogger.log'
-number_of_gti		= 1 # number of gti units
-max_gti_power		= 900 # W, the maximum power of one gti
-max_bat_discharge	= 300 # W
-max_night_input		= 1800 # W
-zero_shift			= -20 # W, shift the power meters zero, 0 = disable, +x = export energy, -x = import energy
+number_of_gti		= 1		# number of gti units
+max_gti_power		= 900	# W, the maximum power of one gti
+max_bat_discharge	= 300	# W
+max_night_input		= 1800	# W
+zero_shift			= -20	# W, shift the power meters zero, 0 = disable, +x = export energy, -x = import energy
 
 temp_alarm_enabled = True # True = enable or False = disable the alarm for the battery temperature
-int_temp_alarm_threshold = 50 # °C
-bat_temp_alarm_threshold = 40 # °C
-temp_alarm_interval = 60 # seconds
-temp_alarm_command = 'echo ALARM'
+int_temp_alarm_threshold 	= 50 # °C
+bat_temp_alarm_threshold 	= 40 # °C
+temp_alarm_interval			= 60 # seconds
+temp_alarm_command = 'echo ALARM'	# execute this command on temperature alarm
 
 from sys import argv
 
@@ -31,11 +31,11 @@ elif '-v' in argv:
 else: 
 	verbose = False
 
-if '-no-input' in argv: no_input = True
-else:	no_input = False
+if '-no-input' in argv:	no_input = True
+else:					no_input = False
 
-if '-debug' in argv: debug = True
-else:	debug = False
+if '-debug' in argv:	debug = True
+else:					debug = False
 
 import esmart	# https://github.com/E-t0m/esmart_mppt/blob/ed1e1d91912831a1ee5f26eaf59ace57098c4eac/esmart.py
 import serial
@@ -47,7 +47,7 @@ def handle_data(d):	# display the esmart data
 	battery_cur		= d['chg_cur'] - d['load_cur']
 	battery_power	= d['chg_power'] - d['load_power']
 	system("clear")
-	print("%s\t SOC %i\t Mode %s"			% (strftime("%H:%M:%S"),		d['soc'],	esmart.DEVICE_MODE[d['chg_mode']]))
+	print("%s\t SOC %i\t Mode %s"				% (strftime("%H:%M:%S"),	d['soc'],		esmart.DEVICE_MODE[d['chg_mode']]))
 	print("PV\t %.1f V\t %.1f A\t %i W" 		% (d['pv_volt'],			d['chg_cur'],	d['chg_power']))
 	print("Battery\t %.1f V\t %.1f A\t %i W"	% (d['bat_volt'],			battery_cur,	battery_power))
 	print("Load\t %.1f V\t %.1f A\t %i W"		% (d['load_volt'],			d['load_cur'],	d['load_power']))
@@ -71,19 +71,19 @@ def avg(inlist):	# return the average of a list variable
 	if len(inlist) == 0: return(0)
 	return( sum(inlist) / len(inlist) )
 
-send_power	= 0
-last_send	= 0
+send_power		= 0
+last_send		= 0
 last_runtime	= 0
-bat_cont	= 0
-pv_cont		= 0
-bat_history	= [0]* 5	# history vars with *n interval steps
-pv_history	= [0]* 24
+bat_cont		= 0
+pv_cont			= 0
+bat_history		= [0]* 5	# history vars with *n interval steps
+pv_history		= [0]* 24
 extra_history	= [0]* 8
 send_history	= [0]* 4
 
-bat_power_static	= -30	# W static reduction on low battery
-pv_red_factor	= 0.85	# PV reduction on low battery in % / 100
-max_input_power = max_gti_power * number_of_gti
+bat_power_static	= 0		#-10 W static reduction on low battery
+pv_red_factor		= 0.85	# PV reduction on low battery in % / 100
+max_input_power		= max_gti_power * number_of_gti
 
 temp_alarm_time = datetime.now()
 timeout_repeat	= datetime.now()
@@ -91,7 +91,7 @@ vz_in		= open(vzlogger_log_file,'r')
 esm		= esmart.esmart()
 esm.set_callback(handle_data)
 
-while True:	# infinite loop, stop the script with ctl+c
+while True:		# infinite loop, stop the script with ctl+c
 	esm.open(serial_port)	# prepare to read from esmart
 	if verbose: print('esmart tick')
 	for i in range(1,3):	# poll 2 times
@@ -114,7 +114,7 @@ while True:	# infinite loop, stop the script with ctl+c
 	main_log = False; Ls_read = 99999; Ls_ts = 99999
 	last2_send = last_send; last_send = send_power
 	
-	while True:	# loop over vzlogger.log fifo
+	while True:		# loop over vzlogger.log fifo
 		l = vz_in.readline()
 		if '[main] vzlogger' in l: 
 			main_log = True
@@ -146,36 +146,36 @@ while True:	# infinite loop, stop the script with ctl+c
 	bat_history = bat_history[1:] + [d['bat_volt']]
 	
 	if 0 in bat_history:	bat_cont = d['bat_volt']
-	else:	bat_cont = avg(bat_history) # average
+	else:					bat_cont = avg(bat_history)	# average of the previous battery voltages
 	
 	if debug: print('bat_history\t',bat_history,'\nbat_cont\t',bat_cont)
 	
 	pv_history = pv_history[1:]+ [d['chg_power']]
 	sort_pv = pv_history[:]
 	sort_pv.sort()
-	pv_cont = int(avg(sort_pv[-6:])) # average on high pass, to remove gap on mppt tracker restart
+	pv_cont = int(avg(sort_pv[-6:]))	# average on high pass of the PV power, to remove the gap on mppt tracker restart
 	if debug: print('pv_history\t', pv_history,'\nsort_pv\t\t',sort_pv,'\npv_cont\t\t',pv_cont)
 	
-	if datetime.now() < timeout_repeat:	# battery protection timeout
+	if datetime.now() < timeout_repeat:		# battery protection timeout
 		send_power = 0
 		if verbose: 
 			system('clear')
 			print(strftime("%H:%M:%S"),'\nbattery protection timeout until', timeout_repeat.strftime('%H:%M:%S'))
 			print('latest battery data:',d['bat_volt'],'V')
 	else:
-		if no_input:		# disable power input
-			send_power = 0
+		if no_input:		# disabled power input by command line option
+			send_power 		= 0
 		
 		elif bat_cont < 48:	# set a new timeout
-			send_power	= 0
+			send_power		= 0
 			send_history	= [0]*4
 			extra_history	= [0]*8
 			timeout_repeat = datetime.now() + timedelta(minutes=1) 	# wait a minute
 		
-		elif bat_cont >= 48 and bat_cont <= 50:	# limit to pv power, by battery voltage
+		elif bat_cont >= 48 and bat_cont <= 50:		# limit to pv power, by battery voltage
 			if send_power > pv_cont:
 				# variant A
-				bat_p_percent = (bat_cont - 47.1 ) **4.326	# curve without steps
+				bat_p_percent = (bat_cont - 47.1 ) **4.326				# curve without steps, uses the higher precision of the bat_cont float variable
 				bat_power = int(0.01 * max_input_power * bat_p_percent)	# 100% above 50 V
 				
 				# variant B, with a given powercurve
@@ -184,62 +184,67 @@ while True:	# infinite loop, stop the script with ctl+c
 				#bat_power = int(0.01 * max_input_power * bat_p_percent)	# 100% above 50 V
 				
 				extra_history = extra_history[1:]+[bat_power]
-				if 0 in extra_history: pass	# bat_power remains at last calculated value
-				else: bat_power = avg(extra_history)
+				if 0 in extra_history:	pass		# bat_power remains at the latest calculated value
+				else: 					bat_power = avg(extra_history)
 				
-				if verbose:	status_text	= ' PV %i W (%i%%), bat %i W (%.1f%%), static %i W' % (int(pv_cont*pv_red_factor), int(pv_red_factor*100), bat_power, bat_p_percent, bat_power_static)
+				if verbose:
+					status_text = ''
+					if pv_cont != 0:			status_text	+=	', PV %i W (%i%%)' % (int(pv_cont*pv_red_factor), int(pv_red_factor*100))
+					if bat_power != 0:			status_text	+=	', bat %i W (%.1f%%)' % (bat_power, bat_p_percent)
+					if bat_power_static != 0:	status_text	+=	', static %i W' % bat_power_static
 				
 				if	send_power > int( pv_cont*pv_red_factor + bat_power + bat_power_static):
 					send_power = int( pv_cont*pv_red_factor + bat_power + bat_power_static)
-					if verbose: status_text =' limited ' + status_text
+					if verbose: 				status_text	=	' limited' + status_text
 		
 		if pv_cont == 0 and send_power > max_night_input: # night limit
 			send_power = max_night_input
 			if verbose: status_text = 'night limit'
 		
-		if pv_cont != 0 and		bat_cont > 53.0:	# give some free power to the world, pull down the zero line
-			free_power = int((	bat_cont - 53.0)*10 *0.5)	# 0.5 W / 0.1 V, max depends on esmart "saturation charging voltage"
-			send_power += free_power
-			if verbose: status_text = 'export '+str(free_power)+' W'
-		else: free_power = 0
+		if pv_cont != 0 and 		bat_cont > 53.0:			# give some free power to the world = pull down the zero line
+				free_power = int((	bat_cont - 53.0)*10 *0.5)	# 0.5 W / 0.1 V, max depends on esmart "saturation charging voltage"
+				send_power += free_power
+				if verbose: status_text = 'export '+str(free_power)+' W'
+		else:	free_power = 0
 		
-		if send_power > max_bat_discharge + d['chg_power']:	# battery discharge limit
-			send_power = int(max_bat_discharge + d['chg_power'])
+		if send_power > 		max_bat_discharge + d['chg_power']:		# battery discharge limit
+			send_power = int(	max_bat_discharge + d['chg_power'])
 			if verbose: status_text	= 'battery current limit'
 		
-		send_history = send_history[1:]+[send_power]	# build a send_power history
+		send_history = send_history[1:]+[send_power]			# build a send_power history
 		
-		if verbose: print(	'\ninput history', send_history,	# show saw tooth values
+		if verbose: 
+			print(	'\ninput history', send_history,			# show saw tooth values
 					'\n\t1/2 ', round((1-(send_history[-1] / (0.01+send_history[-2])))*100,1),'%',
 					'\n\t3/4 ', round((1-(send_history[-3] / (0.01+send_history[-4])))*100,1),'%')
 		
 		if not close_values(send_history[-1],send_history[-2],3) and not close_values(send_history[-3],send_history[-4],3):
-			send_power = int(avg(send_history))
+			send_power = int(avg(send_history))					# break the swing up by using the average
 			if verbose: print('\tsaw stop',send_power)
 			send_history[-1] = send_power
 		else:
 			if verbose: print('\tno saw detected')
 						
-		if send_power < 10:	# keep it positive with a little gap on bottom
-			send_power = 0	# disable input
-			status_text = 'MIN power limit'
+		if send_power	< 10:	# keep it positive with a little gap on bottom
+			send_power	= 0		# disable input
+			status_text	= 'MIN power limit'
 			
 		if send_power	> max_input_power:	# the limit of the gti
 			send_power	= max_input_power
-			status_text = 'MAX power limit'
+			status_text	= 'MAX power limit'
 		
 	with open('/tmp/vz/soyo.log','w') as fo:	# send some values to vzlogger
-		fo.write('%i: soyosend = %i\n'	% ( time(), -1*send_power ) )	# the keywords have to be created 
-		fo.write('%i: pv_w = %i\n'	% ( time(), -1*d['chg_power'] ) )	# as channels in vzlogger to make it work there!
-		fo.write('%i: pv_u = %f\n'	% ( time(), d['pv_volt']  ) )
-		fo.write('%i: bat_v = %f\n'	% ( time(), d['bat_volt'] ) )
+		fo.write('%i: soyosend = %i\n'	% ( time(), -1*send_power ) )		# the keywords have to be created 
+		fo.write('%i: pv_w = %i\n'		% ( time(), -1*d['chg_power'] ) )	# as channels in vzlogger to make it work there!
+		fo.write('%i: pv_u = %f\n'		% ( time(), d['pv_volt']  ) )
+		fo.write('%i: bat_v = %f\n'		% ( time(), d['bat_volt'] ) )
 		fo.write('%i: int_temp = %i\n'	% ( time(), d['int_temp'] ) )
 		fo.write('%i: bat_temp = %i\n'	% ( time(), d['bat_temp'] ) )
 		fo.write('%i: panel_w = %i\n'	% ( time(), -1*free_power ) )
 	
 	if verbose: 
 		print('interval %.2f s'	% (time()-last_runtime))
-		print('meter %i W' 	% (Ls_read), '' if zero_shift == 0 else '(%i W zero shift)' %(zero_shift))	# show the meter readings, and zero shift
+		print('meter %i W'		% (Ls_read), '' if zero_shift == 0 else '(%i W zero shift)' %(zero_shift))	# show the meter readings, and zero shift
 		print('input %i W %s'	% (send_power, status_text))	# show the input data
 		if no_input: print('input DISABLED by command line')
 	
