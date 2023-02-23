@@ -10,13 +10,14 @@ number_of_gti		= 1		# number of gti units
 max_gti_power		= 900	# W, the maximum power of one gti
 max_bat_discharge	= 300	# W
 max_night_input		= 1800	# W
-zero_shift			= -20	# W, shift the power meters zero, 0 = disable, +x = export energy, -x = import energy
+zero_shift			= -10   # shift the power meters zero, 0 = disable, +x = export energy, -x = import energy
 
 temp_alarm_enabled = True # True = enable or False = disable the alarm for the battery temperature
-int_temp_alarm_threshold 	= 50 # °C
-bat_temp_alarm_threshold 	= 40 # °C
-temp_alarm_interval			= 60 # seconds
-temp_alarm_command = 'echo ALARM'	# execute this command on temperature alarm
+temp_int_alarm_threshold 	= 45 # °C
+temp_bat_alarm_threshold 	= 40 # °C
+temp_alarm_interval			= 30 # seconds
+temp_int_alarm_command = 'echo internal_temp_alarm'		# execute this command on interal temperature alarm
+temp_bat_alarm_command = 'echo battery_temp_alarm'		# execute this command on battery temperature alarm
 
 from sys import argv
 
@@ -82,11 +83,12 @@ pv_history		= [0]* 24
 extra_history	= [0]* 8
 send_history	= [0]* 4
 
-bat_power_static	= 0		#-10 W static reduction on low battery
-pv_red_factor		= 0.85	# PV reduction on low battery in % / 100
+bat_power_static	= -20	# W static reduction on low battery
+pv_red_factor		= 0.86	# PV reduction on low battery in % / 100
 max_input_power		= max_gti_power * number_of_gti
 
-temp_alarm_time = datetime.now()
+temp_bat_alarm_time = datetime.now()
+temp_int_alarm_time = datetime.now()
 timeout_repeat	= datetime.now()
 vz_in		= open(vzlogger_log_file,'r')
 esm		= esmart.esmart()
@@ -95,7 +97,7 @@ esm.set_callback(handle_data)
 while True:		# infinite loop, stop the script with ctl+c
 	esm.open(serial_port)	# prepare to read from esmart
 	if verbose: print('esmart tick')
-	for i in range(1,3):	# poll 2 times
+	for i in [1,2]:	# poll 2 times
 		if datetime.now() > timeout_repeat or pv_cont != 0: # after battery protection timeout or at day time
 			esm.tick()	# request data from esmart3
 			if verbose:	print(i)
@@ -105,12 +107,19 @@ while True:		# infinite loop, stop the script with ctl+c
 	d = esm.export()	# get esmart values
 	
 	if temp_alarm_enabled:
-		if d['bat_temp'] > bat_temp_alarm_threshold or d['int_temp'] > int_temp_alarm_threshold:
-			if verbose: print('\nTEMPERATURE ALARM int:',d['int_temp'],'°C bat:',d['bat_temp'],'°C')
-			if temp_alarm_time + timedelta(seconds = temp_alarm_interval) < datetime.now():
-				system(temp_alarm_command)
+		if d['bat_temp'] > temp_bat_alarm_threshold:
+			if verbose: print('\nTEMPERATURE ALARM battery:',d['bat_temp'],'°C')
+			if temp_bat_alarm_time + timedelta(seconds = temp_alarm_interval) < datetime.now():
+				system(temp_bat_alarm_command)
 				if verbose: print('\nTEMPERATURE ALARM: command sent')
-				temp_alarm_time = datetime.now()
+				temp_bat_alarm_time = datetime.now()
+	
+		if d['int_temp'] > temp_int_alarm_threshold:
+			if verbose: print('\nTEMPERATURE ALARM internal:',d['int_temp'],'°C')
+			if temp_int_alarm_time + timedelta(seconds = temp_alarm_interval) < datetime.now():
+				system(temp_int_alarm_command)
+				if verbose: print('\nTEMPERATURE ALARM: command sent')
+				temp_int_alarm_time = datetime.now()
 	
 	main_log = False; Ls_read = 99999; Ls_ts = 99999
 	last2_send = last_send; last_send = send_power
@@ -252,7 +261,7 @@ while True:		# infinite loop, stop the script with ctl+c
 	last_runtime = time()
 	ser = serial.Serial(serial_port, 4800)
 	
-	for i in range(1,3):	# poll 2 times
+	for i in [1,2]:	# poll 2 times
 		if send_power != 0:
 			set_soyo_demand(ser,int(1.0 * send_power / number_of_gti))
 			if verbose: print(i)
