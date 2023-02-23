@@ -107,7 +107,7 @@ Der dunkelgrüne Bereich ist überschüssiger Strom, da die Batterie - siehe Spa
 ![sehr trüber Tag](https://user-images.githubusercontent.com/110770475/204105585-13a50eb1-87cf-4dbc-8e62-469527aed402.jpg)
 
 Solange die Leistung der PV den Verbrauch nicht übersteigt, geht die gesamte Leistung direkt in den Netzwechselrichter.
-Der Akku wird nicht geladen. Im wesentlich entspricht das der Arbeitsweise eines Modul/Micro-Wechselrichters.
+Der Akku wird nicht geladen. Im Wesentlichen entspricht das der Arbeitsweise eines Modul/Micro-Wechselrichters.
 
 ### **Waschmaschine in Heizphase**
 ![60 Grad Wäsche](https://user-images.githubusercontent.com/110770475/204105605-2a70356a-90d3-4a8a-a7a1-fddb570a9e3c.png)
