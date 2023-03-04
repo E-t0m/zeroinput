@@ -201,7 +201,7 @@ su vzlogger
 mkdir /tmp/vz
 touch /tmp/vz/soyo.log
 mkfifo /tmp/vz/vzlogger.fifo
-python3 /home/vzlogger/zeroinput.py -v (mit strg+c beenden)
+python3 /home/vzlogger/zeroinput.py -v (cancel with ctrl+c)
 or if you know screen (man screen):
 screen -dmS zeroinput nice -1 python3 /home/vzlogger/zeroinput.py -v (screen -r "to open", ctrl-a and ctrl-d "close")
 ```
