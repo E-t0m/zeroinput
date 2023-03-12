@@ -66,6 +66,7 @@ Das [Script](https://github.com/E-t0m/zeroinput) hat diese Funktionen:
 - Maximalleistung
 - Permanentes Verschieben der Nulllinie in Richtung Bezug oder Export.
 - Alarmierung bei erhöhter Batterietemperatur oder interner Temperatur des esmart3
+- "Ramp mode" für starke Sprünge im Verbrauch
 - Unterdrückung der Schwingung des Regelkreises
 
 Diese Werte **können und sollten** an die jeweilige Anlage und Akkugröße **angepasst werden**!
