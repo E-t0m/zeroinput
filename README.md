@@ -2,9 +2,8 @@
 set power demand to zero
 for soyosource gti inverter(s) and esmart3 MPPT charge controller on a single RS485 line.
 
-### [Introduction in english language](about_en.md) - A introduction in english language.
-### [Vorstellung in deutscher Sprache](about_de.md) - A introduction in German language.
-
+### [Introduction in english language](about_en.md) 
+### [Vorstellung in deutscher Sprache](about_de.md)
 
 This script uses a https://volkszaehler.org/ installation for energy meter input and data display.
 
