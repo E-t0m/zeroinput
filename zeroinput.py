@@ -8,11 +8,11 @@ vzlogger_log_file	= '/tmp/vz/vzlogger.fifo'
 persistent_vz_file	= '/var/log/vzlogger.log'
 number_of_gti		= 1		# number of gti units
 max_gti_power		= 900	# W, the maximum power of one gti
-max_bat_discharge	= 300	# W
-max_night_input		= 1800	# W
-zero_shift			= -10	# shift the power meters zero, 0 = disable, +x = export energy, -x = import energy
+max_bat_discharge	= 600	# W, maximum power taken from the battery
+max_night_input		= 300	# W, maximum input power at night
+zero_shift			= -2	# shift the power meters zero, 0 = disable, +x = export energy, -x = import energy
 
-temp_alarm_enabled = True # True = enable or False = disable the alarm for the battery temperature
+temp_alarm_enabled = True	# True = enable or False = disable the alarm for the battery temperature
 temp_int_alarm_threshold	= 45 # °C
 temp_bat_alarm_threshold	= 40 # °C
 temp_alarm_interval			= 30 # seconds
@@ -159,7 +159,8 @@ while True:		# infinite loop, stop the script with ctl+c
 	
 	send_power = int( Ls_read + last2_send + zero_shift )	# underpower by conversion efficiency is measured with the readings
 	
-	if abs(Ls_read) > 400 and not adjusted_power:				# high change of power consumption and no active power limitation
+	# high change of power consumption, on rise: no active power limitation, sufficient bat_voltage
+	if (Ls_read < -400) or (Ls_read > 400 and not adjusted_power and bat_cont > 51.0):
 		if	ramp_cnt == 0:
 			ramp_cnt = 5										# in script cycles
 			ramp_power = send_power
@@ -294,7 +295,7 @@ while True:		# infinite loop, stop the script with ctl+c
 			if verbose: print('%i '%i,end='')
 		elif verbose: print('. ',end='')	# dont send, but sleep
 		
-		sleep(0.15)
+		sleep(0.14)
 	
 	ser.close()
 
