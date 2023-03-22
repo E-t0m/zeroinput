@@ -295,7 +295,7 @@ while True:		# infinite loop, stop the script with ctl+c
 			if verbose: print('%i '%i,end='')
 		elif verbose: print('. ',end='')	# dont send, but sleep
 		
-		sleep(0.14)
+		sleep(0.15)
 	
 	ser.close()
 
