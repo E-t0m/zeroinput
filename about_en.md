@@ -143,19 +143,25 @@ Red must be paid. The feed was 400 to 450 W in this section.
 
 **The output of the script** in verbose mode, updated every second:
 ```
-16:36:17         SOC 27  Mode CC
-PV       55.1 V  16.8 A  873 W
-Battery  52.0 V  3.5 A   181 W
-Load     52.1 V  13.3 A  692 W
-Temp     int 41 °C      Bat 30 °C
+11:25:42                 SOC  65         Mode CC
+PV        56.8 V          23.8 A         1275 W
+Battery   53.6 V          19.4 A         1039 W
+Load      53.7 V           4.4 A         236 W
+Temp     int 40 °C      Bat 19 °C
+2 eSmart3
 
-input history [644, 645, 644, 643] 
-        1/2  0.2 % 
-        3/4  -0.2 %
+voltage correction 52.8 dif 0.8 V
+input history [156, 185, 183, 178] 
+        1/2  2.7 % 
+        3/4  -18.6 %
         no saw detected
+
 interval 1.03 s
-meter -2 W
-input 643 W 
+meter 93 W (-100 W zero shift)
+input 178 W 
+1 soyo
+2 soyo
+1 eSmart3
 ```
 
 ## Measurement accuracy
