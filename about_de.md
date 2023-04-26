@@ -65,6 +65,7 @@ Das [Script](https://github.com/E-t0m/zeroinput) hat diese Funktionen:
 - Minimalleistung
 - Maximalleistung
 - Permanentes Verschieben der Nulllinie in Richtung Bezug oder Export.
+- Korrektur der Kabelverluste zum Akku
 - Alarmierung bei erhöhter Batterietemperatur oder interner Temperatur des esmart3
 - "Ramp mode" für starke Sprünge im Verbrauch
 - Unterdrückung der Schwingung des Regelkreises
