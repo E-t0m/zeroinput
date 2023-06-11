@@ -7,11 +7,19 @@ serial_port			= '/dev/rs485'
 # data pipe from vzlogger, set as log in /etc/vzlogger.conf, "verbosity": 15 required, use mkfifo to create it before vzlogger starts!
 vzlogger_log_file	= '/tmp/vz/vzlogger.fifo'
 persistent_vz_file	= '/var/log/vzlogger.log'
+shelly_ip = '192.168.178.58' # IP Adresse von Shelly 3EM
+
+useEm3 = True
+useEsm = False
+useVz = False
+useSoyo = False
+useShellySwitchedCharger = True
 
 number_of_gti		= 1		# number of soyo gti units
 max_gti_power		= 900	# W, the maximum power of one gti
 max_bat_discharge	= 600	# W, maximum power taken from the battery
 max_night_input		= 300	# W, maximum input power at night
+max_chargerPower		= 600   # W, maxium power that can be put into the battery
 
 zero_shift			= -2 	# shift the power meters zero, 0 = disable, +x = export energy, -x = import energy
 bat_voltage_const	= 0.77	# V/kW battery load/charge current, 0 = disable voltage correction
@@ -45,10 +53,14 @@ else:					no_input = False
 if '-debug' in argv:	debug = True
 else:					debug = False
 
-import esmart	# https://github.com/E-t0m/esmart_mppt/blob/ed1e1d91912831a1ee5f26eaf59ace57098c4eac/esmart.py
+
+if useEsm:
+	import esmart	# https://github.com/E-t0m/esmart_mppt/blob/ed1e1d91912831a1ee5f26eaf59ace57098c4eac/esmart.py
 import serial
+import requests
 from time import sleep, strftime, time
 from datetime import timedelta, datetime
+from requests.auth import HTTPBasicAuth
 
 def handle_data(d):	# display the esmart data
 	if not verbose: return
@@ -79,6 +91,67 @@ def avg(inlist):	# return the average of a list variable
 	if len(inlist) == 0: return(0)
 	return( sum(inlist) / len(inlist) )
 
+def getVzMeter(gm_vz_in):
+	Ls_read = 99999; Ls_ts = 99999
+	while True:		# loop over vzlogger.log fifo
+		l = gm_vz_in.readline()
+		if '[main] vzlogger' in l: 
+			main_log = True
+			vzout = open(persistent_vz_file,'a')
+			vzout.write('REDIRECTED by zeroinput.py from'+ vzlogger_log_file +'\n')
+			if verbose: print('\nvzlogger restart')
+		elif 'Startup done.' in l:
+			main_log = False
+			vzout.close()
+		if main_log: vzout.write(l)
+		
+		if "1-0:16.7.0" in l:	# read the sum L1+L2+L3, can be negative
+			try: gm_Ls_read = int( round( float( l[l.index('value=')+6:-1+l.index('ts=')]) ,4) )
+			except: pass
+			else:
+				try: Ls_ts = int( l[l.index('ts=')+3:-1] )
+				except: pass
+		
+		if gm_Ls_read != 99999 and Ls_ts !=99999:	# check if Ls has input and timestamp
+		
+			# if the reading is older than 1 second, continue reading the vzlogger data
+			if abs( int(str(time())[:10]) - int(str(Ls_ts)[:10]) ) > 1:	continue
+			
+			break	# stop reading the vzlogger pipe
+	return gm_Ls_read
+
+def getEm3Meter(gm_shellyIp):
+	#http://user:password@192.168.xxx.xxx ...
+	grid_sum = 0 #Make shure not to take any energy without knowing the current consumption, could also be kept in a loop like with vz
+	try:
+		# Take Shelly 3EM Rest-API data
+		phase_a	 = requests.get(f'http://{gm_shellyIp}/emeter/0', headers={'Content-Type': 'application/json'}).json()['power']
+		phase_b	 = requests.get(f'http://{gm_shellyIp}/emeter/1', headers={'Content-Type': 'application/json'}).json()['power']
+		phase_c	 = requests.get(f'http://{gm_shellyIp}/emeter/2', headers={'Content-Type': 'application/json'}).json()['power']
+		grid_sum	= phase_a + phase_b + phase_c # Aktueller Bezug - rechnet alle Phasen zusammen
+	except:
+		if verbose:print('Error Reading Shelly 3EM')
+	return grid_sum
+
+def getDummyBMSInfo():
+	d = {}
+	d['chg_mode']		= 0
+	d['pv_volt']		= 48
+	d['bat_volt']		= 48
+	d['chg_cur']		= 0
+	d['load_volt']	= 0
+	d['load_cur']		= 0
+	d['chg_power']	= max_chargerPower
+	d['load_power']	= 0
+	d['bat_temp']		= 20
+	d['int_temp']		= 20
+	d['soc']		= 80
+	d['co2_gram']		= 0
+	return d
+
+def getModbusBMS():
+	return getDummyBMSInfo()
+
 send_power		= 0
 last_send		= 0
 last2_send		= 0
@@ -87,6 +160,7 @@ ramp_power		= 0
 last_runtime	= 0
 bat_cont		= 0
 pv_cont			= 0
+isShellyCharging = False
 adjusted_power	= False
 bat_history		= [0]* 5	# history vars with *n interval steps
 pv_history		= [0]* 24
@@ -100,22 +174,28 @@ max_input_power		= max_gti_power * number_of_gti
 temp_bat_alarm_time	= datetime.now()
 temp_int_alarm_time	= datetime.now()
 timeout_repeat		= datetime.now()
-vz_in				= open(vzlogger_log_file,'r')
-esm					= esmart.esmart()
-esm.set_callback(handle_data)
+if useVz:
+	vz_in				= open(vzlogger_log_file,'r') 
+
+if useEsm:
+	esm					= esmart.esmart()
+	esm.set_callback(handle_data)
 
 while True:		# infinite loop, stop the script with ctl+c
-	esm.open(serial_port)	# prepare to read from esmart
-	for i in [1,2]:	# poll 2 times
-		if datetime.now() > timeout_repeat or pv_cont != 0: # after battery protection timeout or at day time
-			esm.tick()	# request data from esmart3
-			if verbose:	print('%i eSmart3'%i)
-		elif verbose: 	print('. eSmart3')	# don't send but sleep
-		sleep(0.3)
-	
-	esm.close()
-	d = esm.export()	# get esmart values
-	
+	if useEsm:
+		esm.open(serial_port)	# prepare to read from esmart
+		for i in [1,2]:	# poll 2 times
+			if datetime.now() > timeout_repeat or pv_cont != 0: # after battery protection timeout or at day time
+				esm.tick()	# request data from esmart3
+				if verbose:	print('%i eSmart3'%i)
+			elif verbose: 	print('. eSmart3')	# don't send but sleep
+			sleep(0.3)
+		
+		esm.close()
+		d = esm.export()	# get esmart values
+	if useShellySwitchedCharger:
+		d= getDummyBMSInfo()
+		
 	if temp_alarm_enabled:
 		if d['bat_temp'] > temp_bat_alarm_threshold:
 			if verbose: print('\nTEMPERATURE ALARM battery:',d['bat_temp'],'°C')
@@ -131,37 +211,15 @@ while True:		# infinite loop, stop the script with ctl+c
 				if verbose: print('\nTEMPERATURE ALARM: command sent')
 				temp_int_alarm_time = datetime.now()
 	
-	main_log = False; Ls_read = 99999; Ls_ts = 99999
+	main_log = False; 
 	last2_send	= last_send		# dedicated history
 	last_send	= send_power	# variables
 	block_saw_detection = False	# enable saw detection
 	
-	while True:		# loop over vzlogger.log fifo
-		l = vz_in.readline()
-		if '[main] vzlogger' in l: 
-			main_log = True
-			vzout = open(persistent_vz_file,'a')
-			vzout.write('REDIRECTED by zeroinput.py from'+ vzlogger_log_file +'\n')
-			if verbose: print('\nvzlogger restart')
-		elif 'Startup done.' in l:
-			main_log = False
-			vzout.close()
-		if main_log: vzout.write(l)
-		
-		if "1-0:16.7.0" in l:	# read the sum L1+L2+L3, can be negative
-			try: Ls_read = int( round( float( l[l.index('value=')+6:-1+l.index('ts=')]) ,4) )
-			except: pass
-			else:
-				try: Ls_ts = int( l[l.index('ts=')+3:-1] )
-				except: pass
-		
-		if Ls_read != 99999 and Ls_ts !=99999:	# check if Ls has input and timestamp
-		
-			# if the reading is older than 1 second, continue reading the vzlogger data
-			if abs( int(str(time())[:10]) - int(str(Ls_ts)[:10]) ) > 1:	continue
-			
-			break	# stop reading the vzlogger pipe
-	
+	if useVz:
+		Ls_read = getVzMeter(vz_in)
+	if useEm3:
+		Ls_read = getEm3Meter(shelly_ip)
 	send_power = int( Ls_read + last2_send + zero_shift )	# underpower by conversion efficiency is measured with the readings
 	
 	# high change of power consumption, on rise: no active power limitation, sufficient bat_voltage
@@ -273,7 +331,16 @@ while True:		# infinite loop, stop the script with ctl+c
 				send_history[-1] = send_power
 			else:
 				if verbose: print('\tno saw detected')
-		
+		if send_power < -(max_chargerPower*1.1) and useShellySwitchedCharger:
+			#https://www.shelly-support.eu/forum/thread/775-collection-of-http-commands/
+			#To the shelly Relay a 600W charger is attached and charges the Battery if the fixed PV produces more Power.
+			requests.get(f'http://{gm_shellyIp}/relay/0?turn=on&timer=1800', headers={'Content-Type': 'application/json'})
+			isShellyCharging = True
+		if send_power > -max_chargerPower and useShellySwitchedCharger and isShellyCharging:
+			#https://www.shelly-support.eu/forum/thread/775-collection-of-http-commands/
+			#To the shelly Relay a 600W charger is attached and charges the Battery if the fixed PV produces more Power.
+			requests.get(f'http://{gm_shellyIp}/relay/0?turn=off', headers={'Content-Type': 'application/json'})
+			isShellyCharging = False
 		if send_power	< 10:	# keep it positive with a little gap on bottom
 			send_power	= 0		# disable input
 			adjusted_power = True
@@ -283,15 +350,15 @@ while True:		# infinite loop, stop the script with ctl+c
 			send_power	= max_input_power
 			adjusted_power = True
 			status_text	= 'MAX power limit'
-		
-	with open('/tmp/vz/soyo.log','w') as fo:	# send some values to vzlogger
-		fo.write('%i: soyosend = %i\n'	% ( time(), -1*send_power ) )		# the keywords have to be created 
-		fo.write('%i: pv_w = %i\n'		% ( time(), -1*d['chg_power'] ) )	# as channels in vzlogger to make it work there!
-		fo.write('%i: pv_u = %f\n'		% ( time(), d['pv_volt']  ) )
-		fo.write('%i: bat_v = %f\n'		% ( time(), bat_cont ) ) # d['bat_volt'] ) )
-		fo.write('%i: int_temp = %i\n'	% ( time(), d['int_temp'] ) )
-		fo.write('%i: bat_temp = %i\n'	% ( time(), d['bat_temp'] ) )
-		fo.write('%i: panel_w = %i\n'	% ( time(), -1*free_power ) )
+	if useVz:	
+		with open('/tmp/vz/soyo.log','w') as fo:	# send some values to vzlogger
+			fo.write('%i: soyosend = %i\n'	% ( time(), -1*send_power ) )		# the keywords have to be created 
+			fo.write('%i: pv_w = %i\n'		% ( time(), -1*d['chg_power'] ) )	# as channels in vzlogger to make it work there!
+			fo.write('%i: pv_u = %f\n'		% ( time(), d['pv_volt']  ) )
+			fo.write('%i: bat_v = %f\n'		% ( time(), bat_cont ) ) # d['bat_volt'] ) )
+			fo.write('%i: int_temp = %i\n'	% ( time(), d['int_temp'] ) )
+			fo.write('%i: bat_temp = %i\n'	% ( time(), d['bat_temp'] ) )
+			fo.write('%i: panel_w = %i\n'	% ( time(), -1*free_power ) )
 	
 	if verbose: 
 		print('\ninterval %.2f s'	% (time()-last_runtime))
@@ -300,15 +367,18 @@ while True:		# infinite loop, stop the script with ctl+c
 		if no_input: print('input DISABLED by command line')
 	
 	last_runtime = time()
-	ser = serial.Serial(serial_port, 4800)
 	
-	for i in [1,2]:	# poll 2 times
-		if send_power != 0:
-			set_soyo_demand(ser,int(1.0 * send_power / number_of_gti))
-			if verbose: print('%i soyo'%i)
-		elif verbose: print('. soyo')		# dont send, but sleep
+	if useSoyo:
+		ser = serial.Serial(serial_port, 4800)
 		
+		for i in [1,2]:	# poll 2 times
+			if send_power != 0:
+				set_soyo_demand(ser,int(1.0 * send_power / number_of_gti))
+				if verbose: print('%i soyo'%i)
+			elif verbose: print('. soyo')		# dont send, but sleep
+			
+			sleep(0.15)
+		
+		ser.close()
+	else:
 		sleep(0.15)
-	
-	ser.close()
-
