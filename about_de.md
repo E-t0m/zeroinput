@@ -36,7 +36,7 @@ Der Preis für die gesamte Anlage war knapp 2 k€.
 ## Funktionsweise
 Die Anlage funktioniert grundlegend wie eine Insel:
 PV, Akku und der Soyosource Netzwechselrichter (als Last) hängen am Laderegler.
-(Mehrere Netzwechselrichter müssen wegen des 40A-Limit des Esmart3 direkt an den Akku angeschlossen werden.)
+(Weitere Netzwechselrichter müssen wegen des 40A-Limit des Esmart3 direkt an den Akku angeschlossen werden.)
 Die Soyosource Inverter lassen sich per RS485 (Modbus) in der Einspeiseleistung regeln.
 Dafür werden auch Messklemmen angeboten, aber damit könnte man keine Phasen saldieren.
 Für die Regelung ist der Raspberry Pi zuständig, auf dem die [Volkszähler](http://volkszaehler.org) Software läuft.
