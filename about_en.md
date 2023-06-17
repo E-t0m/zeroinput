@@ -36,7 +36,7 @@ The price for the entire system was just under €2k.
 ## functionality
 The system basically works like an island:
 PV, battery and the Soyosource grid inverter (as a load) are connected to the charge controller.
-(Multiple grid inverters must be connected directly to the battery because of the 40A limit of the Esmart3.)
+(Further grid inverters must be connected directly to the battery because of the 40A limit of the Esmart3.)
 The feed-in power of the Soyosource inverters can be regulated via RS485 (Modbus).
 Measuring clamps are also offered for this, but you cannot balance phases with them.
 The Raspberry Pi, which runs the [Volkszaehler](http://volkszaehler.org) software, is responsible for the regulation.
