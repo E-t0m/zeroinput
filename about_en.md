@@ -189,6 +189,11 @@ The more energy goes through the battery, the worse the efficiency of the entire
 There is a [practical app](https://play.google.com/store/apps/details?id=de.bloggingwelt.blinkeingangstromzaehler) for PIN entry for the impatient.
 - Get the Volkszähler working. [Instructions](https://wiki.volkszaehler.org/howto/getstarted), [the forum](https://www.photovoltaikforum.com/board/131-volkszaehler-org/) ***Without Volkszähler the script doesn't run!*** So start with that first.
 - It makes a lot of sense to assign a [own, fixed device name](https://wiki.volkszaehler.org/hardware/controllers/ir-write-reading-head-usb-output) to the IR read head and RS485 adapter using the udev rule give.
+For my devices are .rules files in /dev/udev/rules.d/ with these rules:
+```
+SUBSYSTEMS=="usb-serial", DRIVERS=="cp210x", SYMLINK+="lesekopf"
+SUBSYSTEMS=="usb-serial", DRIVERS=="ch341-uart", SYMLINK+="rs485"
+```
 - Assemble all the devices as described above.
 - Connect the RS485 port of the Raspi (usually a USB stick with clamps) to the RS485 ports of Soyo and esmart3: A+ to A+, B- to B-.
 - Modify the Volkszähler for zero feed-in a bit.
