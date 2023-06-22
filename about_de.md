@@ -189,6 +189,11 @@ Je mehr Energie durch den Akku geht, desto schlechter ist der Wirkungsgrad der g
 Es gibt eine [praktische App](https://play.google.com/store/apps/details?id=de.bloggingwelt.blinkeingabestromzaehler) zur PIN-Eingabe für Ungeduldige.
 - Den Volkszähler zum Laufen bringen. [Zur Anleitung](https://wiki.volkszaehler.org/howto/getstarted), [das Forum dazu](https://www.photovoltaikforum.com/board/131-volkszaehler-org/) ***Ohne Volkszähler läuft das Script nicht!*** Also zuerst damit anfangen.
 - Es ist sehr sinnvoll dem IR-Lesekopf und RS485-Adapter per udev-Regel einen [eigenen, festen Gerätenamen](https://wiki.volkszaehler.org/hardware/controllers/ir-schreib-lesekopf-usb-ausgang) zu geben.
+Für meine Geräte liegen .rules Dateien in /dev/udev/rules.d/ mit diesen Regeln:
+```
+SUBSYSTEMS=="usb-serial", DRIVERS=="cp210x", SYMLINK+="lesekopf"
+SUBSYSTEMS=="usb-serial", DRIVERS=="ch341-uart", SYMLINK+="rs485"
+```
 - Die ganzen Geräte wie oben schon beschrieben montieren.
 - Den RS485-Anschluss des Raspi (i.d.R. ein USB-Stick mit Klemmen) mit den RS485 Anschlüssen von Soyo und esmart3 verbinden: A+ an A+, B- an B-.
 - Den Volkszähler für die Nulleinspeisung ein wenig modifizieren.
