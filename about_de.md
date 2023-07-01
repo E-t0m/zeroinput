@@ -90,7 +90,7 @@ Dadurch entsteht eine Sekunde Zeitversatz zu den Kurven des Haus-Stromzählers.
 
 ### So sieht dann ein recht **guter Tag mit hohem Verbrauch** aus
 ![viel Verbrauch](https://user-images.githubusercontent.com/110770475/204105529-4d6d03e1-ca13-4224-8272-4995115232d0.png)
-
+(2 soyo gti)
 Die Tageswerte waren: PV Erzeugung 7,7 kWh, Einspeisung 7,3 kWh, bewusst verschenkt 0 kWh.
 An diesem Tag liefen Backofen, Microwelle, Brunnenpumpe, Split-Klima, etc. Der Akku war am Ende des Tages schon leer.
 Man sieht das Ein und Ausregeln am Morgen und Abend entlang der PV-Kurve. Gegen 11 die maximale Einspeisung.
@@ -98,8 +98,7 @@ Danach und sehr schön um ca. 17:30 Uhr die Leistungsanpassung für den Batterie
 
 ### Ein sonniger Tag mit **wenig Verbrauch**
 ![wenig Verbrauch](https://user-images.githubusercontent.com/110770475/204105552-fbbc1f4d-ab04-483d-a6ea-ae0f934cab16.png)
-
-Die Tageswerte waren: PV Erzeugung 6,1 kWh, Einspeisung 5,7 kWh, bewusst verschenkt 0,9 kWh.
+(2 soyo gti) Die Tageswerte waren: PV Erzeugung 6,1 kWh, Einspeisung 5,7 kWh, bewusst verschenkt 0,9 kWh.
 Der größte Verbraucher war die Split-Klima. Die Akkuladung reichte bis weit in die Nacht.
 Hier sieht man das Einregeln am Morgen und die Nachtlimitierung am Abend.
 Der dunkelgrüne Bereich ist überschüssiger Strom, da die Batterie - siehe Spannungskurve - voll ist.
@@ -113,7 +112,7 @@ Der Akku wird nicht geladen. Im Wesentlichen entspricht das der Arbeitsweise ein
 
 ### **Waschmaschine in Heizphase**
 ![60 Grad Wäsche](https://user-images.githubusercontent.com/110770475/204105605-2a70356a-90d3-4a8a-a7a1-fddb570a9e3c.png)
-
+(2 soyo gti)
 Die Daten in der Tabelle beziehen sich auf den ganzen sichtbaren Ausschnitt.
 Hier wird noch die "Summe L1+L2+L3" (OBIS "1-0:16.7.0") in Schwarz angezeigt.
 Sie entspricht oberhalb der Nulllinie ziemlich genau der roten Linie für den Netzbezug ("1-0:1.8.0").
@@ -130,11 +129,23 @@ Umgekehrt sinkt die PV Leistung mit langsam ansteigender Akku Spannung nach der 
 
 ### **Milchkaffee mit Microwelle und Induktionsplatte** - für Fortgeschrittene
 ![milchkaffee](https://user-images.githubusercontent.com/110770475/204105626-c05746c4-1a6c-4252-910e-d2083dae432b.jpg)
+(2 soyo gti)
 Die roten Flächen sind der eingekaufte Bezug. Die grünen Flächen die eigene Einspeisung.
 Die grauen Flächen sind die trägheitsbedingte Übereinspeisung, kostenlos eingespeiste Energie.
 
 ### Noch eine Verlaufsgrafik mit nur **einem Soyosource**
 ![einphasig](https://user-images.githubusercontent.com/110770475/204106401-e274ba31-8ad7-48a7-9975-7f3d39a58db0.jpg)
+(1 soyo gti)
+
+### Leertakten des Akkus
+![leertakten](https://github.com/E-t0m/zeroinput/assets/110770475/59e0d728-b6f5-4dae-9b3c-78c18e5cba8e)
+(3 soyo gti)
+Hier sieht man, wie der Backofen den Akku leer taktet.
+Dabei spielen folgende Komponenten der Regelung zusammen:
+- Begrenzung des Entladestroms der Batterie, hier 2kW vom Akku + PV-Leistung
+- Rampenmodus, bei großen Sprüngen im Verbrauch
+- Korrektur der Batteriespannung
+- Leistungsanpassung an die Batteriespannung, die Entladekurve von LFP fällt rasant ab
 
 ### **Schwankungen** der Regelung in einer eher ruhigen Phase
 ![Schwankungen](https://user-images.githubusercontent.com/110770475/204105644-0ce5aaba-ebd4-4854-8335-e142a41a482f.jpg)
