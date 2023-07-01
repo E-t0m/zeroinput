@@ -90,7 +90,7 @@ This creates a one-second time offset to the curves of the house electricity met
 
 ### This is what a fairly **good day with high consumption** looks like
 ![much consumption](https://user-images.githubusercontent.com/110770475/204105529-4d6d03e1-ca13-4224-8272-4995115232d0.png)
-
+(2 soyo gti)
 The daily values were: PV generation 7.7 kWh, feed-in 7.3 kWh, deliberately given away 0 kWh.
 On this day, the oven, microwave, well pump, split air conditioning, and so on were running. At the end of the day, the battery was already empty.
 You can see the on and off regulation in the morning and evening along the PV curve. Around 11 the maximum feed.
@@ -98,7 +98,7 @@ After that and very nice at about 5:30 p.m. the power adjustment for the battery
 
 ### A sunny day with **low consumption**
 ![little consumption](https://user-images.githubusercontent.com/110770475/204105552-fbbc1f4d-ab04-483d-a6ea-ae0f934cab16.png)
-
+(2 soyo gti)
 The daily values were: PV generation 6.1 kWh, feed-in 5.7 kWh, deliberately given away 0.9 kWh.
 The largest consumer was the split climate. The battery charge lasted far into the night.
 Here you can see the adjustment in the morning and the night limit in the evening.
@@ -113,7 +113,7 @@ The battery is not charging. Essentially, this corresponds to the mode of operat
 
 ### **Washing machine in heating phase**
 ![60 degrees wash](https://user-images.githubusercontent.com/110770475/204105605-2a70356a-90d3-4a8a-a7a1-fddb570a9e3c.png)
-
+(2 soyo gti)
 The data in the table refer to the entire visible section.
 Here the "Sum L1+L2+L3" (OBIS "1-0:16.7.0") is displayed in black.
 Above the zero line, it corresponds almost exactly to the red line for the network reference ("1-0:1.8.0").
@@ -130,11 +130,23 @@ Conversely, the PV power decreases with slowly increasing battery voltage after 
 
 ### **Milk coffee with microwave and induction plate** - for advanced users
 ![milk coffee](https://user-images.githubusercontent.com/110770475/204105626-c05746c4-1a6c-4252-910e-d2083dae432b.jpg)
+(2 soyo gti)
 The red areas are the purchased reference. The green areas the own feed.
 The gray areas are the inertial overfeed, energy fed in for free.
 
 ### Another history graph with just **one Soyosource**
 ![single phase](https://user-images.githubusercontent.com/110770475/204106401-e274ba31-8ad7-48a7-9975-7f3d39a58db0.jpg)
+(1 soyo gti)
+
+### clocking the battery empty
+![leertakten](https://github.com/E-t0m/zeroinput/assets/110770475/59e0d728-b6f5-4dae-9b3c-78c18e5cba8e)
+(3 soyo gti)
+Here you can see how the oven clocks the battery empty.
+The following components of the regulation interact:
+- Limitation of the discharge current of the battery, here 2kW from the battery + PV power
+- Ramp mode, for large jumps in consumption
+- Battery voltage correction
+- Power adjustment to the battery voltage, the discharge curve of LFP falls rapidly
 
 ### **Regulatory fluctuations** in a rather quiet phase
 ![fluctuations](https://user-images.githubusercontent.com/110770475/204105644-0ce5aaba-ebd4-4854-8335-e142a41a482f.jpg)
