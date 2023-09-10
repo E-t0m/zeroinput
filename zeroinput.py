@@ -65,7 +65,9 @@ def set_soyo_demand(ser,power):	# create the packet for soyosource gti
 	pu = power >> 8
 	pl = power & 0xFF
 	cs = 264 - pu - pl
-	if cs >= 256: cs = 8
+	if cs > 255: 
+		if power > 250:	cs -= 256
+		else:		cs -= 255
 	
 	ser.write( bytearray([0x24,0x56,0x00,0x21,pu,pl,0x80,cs]) )
 	ser.flush()
