@@ -154,25 +154,28 @@ Rot muss bezahlt werden. Die Einspeisung betrug 400 bis 450 W in diesem Abschnit
 
 **Die Ausgabe des Scripts** im verbose mode, jede Sekunde neu:
 ```
-11:25:42                 SOC  65         Mode CC
-PV        56.8 V          23.8 A         1275 W
-Battery   53.6 V          19.4 A         1039 W
-Load      53.7 V           4.4 A         236 W
-Temp     int 40 °C      Bat 19 °C
-2 eSmart3
+11:22:05, voltage 48.5 V, PV power 373 W, load power 144 W
 
-voltage correction 52.8 dif 0.8 V
-input history [156, 185, 183, 178] 
-        1/2  2.7 % 
-        3/4  -18.6 %
-        no saw detected
+input history [299, 266, 285, 271]       1:2 4.9 %      3:4 11.0 %
+saw stop 280
 
-interval 1.03 s
-meter 93 W (-100 W zero shift)
-input 178 W 
+interval 1.00 s, meter 7 W (2 W import)
+input 280 W 
 1 soyo
 2 soyo
 1 eSmart3
+primary          SOC   9         Mode CC
+PV        54.9 V           4.2 A         203 W
+Battery   48.4 V           3.2 A         155 W
+Load      48.5 V           1.0 A         48 W
+Temp     int 36 °C      bat 21 °C
+
+secondary        SOC   9         Mode CC
+PV        55.3 V           3.5 A         170 W
+Battery   48.6 V           3.5 A         170 W
+Temp     int 28 °C      out 14 °C
+
+2 eSmart3
 ```
 
 ## Messgenauigkeit
