@@ -14,7 +14,7 @@ If **then** there is still power left, the **battery** will also be charged.
 ![control cabinet](https://user-images.githubusercontent.com/110770475/204104803-e4959f68-4e98-4980-82a2-20e1e6b33e83.jpg)
 0. Tube fan in tube as active cooling, thermal sensor from 9
 1. Esmart3 MPPT charge controller (this cheap part is offered under various names)
-[guidance and specification](https://www.solarcontroller-inverter.com/download/18122110445698.html), [manufacturer page](https://www.solarcontroller-inverter.com/products/MPPT-eSmart3-Series-Solar-Controller.htm), [Configuration software Windows](https://www.solarcontroller-inverter.com/download/20113011263165.html)
+[guidance and specification](https://www.solarcontroller-inverter.com/download/18122110445698.html), [manufacturer page](https://www.solarcontroller-inverter.com/products/MPPT-eSmart3-Series-Solar-Controller.htm), [Configuration software Windows](https://www.solarcontroller-inverter.com/download/20113011263165.html), [alternative link](http://www.mediafire.com/file/mt77gai7xxzig1g/install_SolarMate_CS_Windows.exe)
 2. Soyosource GTN 1200W (900 W in battery mode), Please make sure that this device can be connected to the grid in your country. [guidance and specification](https://www.mediafire.com/file/kvn0jvyuubd3364/soyosource1.200W%252BGrid%252BTie%252BInverter.pdf/file)
 3. AC emergency stop switch
 4. Collecting screw for PV+ with nice angles as heatsink for the blocking diodes, precaution because of 8
@@ -254,7 +254,7 @@ With a little delay due to the inverters themselves and the Raspi's startup proc
 If the reading head is removed, the feed-in simply stops and the counter increases to the consumption value.
 As soon as the reading head is attached again, the feeding starts automatically.
 
-This is what the [Esmart3 for Windows configuration software](https://www.solarcontroller-inverter.com/download/20113011263165.html) looks like.
+This is what the [Esmart3 for Windows configuration software](https://www.solarcontroller-inverter.com/download/20113011263165.html), [alternative link](http://www.mediafire.com/file/mt77gai7xxzig1g/install_SolarMate_CS_Windows.exe) looks like.
 ![Esmart3 Software](https://user-images.githubusercontent.com/110770475/204106343-8ca03bb5-ca3d-4174-9075-25db632ec087.jpg)
 
 There is something that cannot be set on the device itself: **Li-Ion**.
