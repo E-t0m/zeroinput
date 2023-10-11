@@ -14,7 +14,7 @@ Wenn **dann** noch Leistung übrig ist, dann wird auch der **Akku** geladen.
 ![Schaltkasten](https://user-images.githubusercontent.com/110770475/204104803-e4959f68-4e98-4980-82a2-20e1e6b33e83.jpg)
 0. Rohrlüfter in KG Rohr als aktive Kühlung, Thermosensor von 9
 1. esmart3 MPPT Laderegler (das Billigteil wird unter verschiedensten Namen angeboten)
-[Anleitung und Spezifikation](https://www.solarcontroller-inverter.com/download/18122110445698.html), [Herstellerseite](https://www.solarcontroller-inverter.com/products/MPPT-eSmart3-Series-Solar-Controller.htm), [Konfigurationssoftware Windows](https://www.solarcontroller-inverter.com/download/20113011263165.html)
+[Anleitung und Spezifikation](https://www.solarcontroller-inverter.com/download/18122110445698.html), [Herstellerseite](https://www.solarcontroller-inverter.com/products/MPPT-eSmart3-Series-Solar-Controller.htm), [Konfigurationssoftware Windows](https://www.solarcontroller-inverter.com/download/20113011263165.html), [alternativer Link](http://www.mediafire.com/file/mt77gai7xxzig1g/install_SolarMate_CS_Windows.exe)
 2. Soyosource GTN 1200W (900 W im Batteriemodus), ACHTUNG! meines Wissens liegt kein Zertifikat für VDE-AR-N 4105 vor, in Deutschland ist das Gerät damit nicht zulässig. [Anleitung und Spezifikation](https://www.mediafire.com/file/kvn0jvyuubd3364/soyosource1.200W%252BGrid%252BTie%252BInverter.pdf/file)
 3. AC Not-Aus Schalter
 4. Sammelschraube für PV + mit hübschen Winkeln als Kühlkörper für die Sperrdioden, Vorsichtsmaßnahme wegen 8
@@ -254,7 +254,7 @@ Mit ein wenig Verzögerung durch die Wechselrichter selbst und den Startvorgang 
 Wird der Lesekopf abgezogen, hört die Einspeisung einfach auf und der Zähler steigt auf den Wert des Verbrauchs.
 Sobald der Lesekopf wieder angebracht wird, beginnt die Einspeisung von selbst.
 
-So sieht die [Konfigurationssoftware des Esmart3 für Windows](https://www.solarcontroller-inverter.com/download/20113011263165.html) aus.
+So sieht die [Konfigurationssoftware des Esmart3 für Windows](https://www.solarcontroller-inverter.com/download/20113011263165.html), [alternativer Link](http://www.mediafire.com/file/mt77gai7xxzig1g/install_SolarMate_CS_Windows.exe) aus.
 ![Esmart3 Software](https://user-images.githubusercontent.com/110770475/204106343-8ca03bb5-ca3d-4174-9075-25db632ec087.jpg)
 
 Da gibt es etwas, was man am Gerät selbst nicht einstellen kann: **Li-Ion**.
