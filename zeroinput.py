@@ -23,10 +23,10 @@ bat_voltage_const	= 0.2	# [V/kW] battery load/charge power, 0 = disable voltage 
 							# the battery voltage constant depends on the battery connection cable size and length
 							# compare the displayed voltage with the BMS voltage for fine tuning of your equipment
 
-bat_power_static	= -25 * number_of_gti	# W constant reduction on low battery
-pv_red_factor		= 0.82	# [%/100] PV reduction on low battery 
+bat_power_static	= 0		# W constant reduction on low battery
+pv_red_factor		= 75	# [%] PV reduction on low battery 
 
-temp_alarm_enabled	= True	# True = enable or False = disable the alarm for the battery temperature
+temp_alarm_enabled	= False	# True = enable or False = disable the alarm for the battery temperature
 temp_alarm_interval	= 90	# seconds
 
 # threshold and commands for temperature alarms
@@ -39,7 +39,7 @@ from sys import argv
 if '-test-alarm' in argv:
 	print('test alarm command:')
 	from os import system
-	system(temp_alarm_command)
+	system(alarms[0]['int_cmd'])	# change to your needs
 	exit(0)
 elif '-v' in argv:
 	verbose = True
@@ -233,7 +233,7 @@ while True:		# infinite loop, stop the script with ctl+c
 		if no_input:		# disabled power input by command line option
 			send_power 		= 0
 		
-		elif bat_cont < 48:	# set a new timeout
+		elif bat_cont < 48 or (bat_cont < 48.4 and pv_cont == 0):	# set a new timeout
 			adjusted_power = True
 			send_power		= 0
 			send_history	= [0]*4
@@ -243,7 +243,7 @@ while True:		# infinite loop, stop the script with ctl+c
 		elif bat_cont >= 48 and bat_cont <= 50:		# limit to pv power, by battery voltage
 			if send_power > pv_cont:
 				# variant A
-				bat_p_percent = (bat_cont - 46.96 ) **4.237				# curve without steps, uses the higher precision of the bat_cont float variable
+				bat_p_percent = (bat_cont - 46.86 ) **4.025
 				bat_power = int(0.01 * max_input_power * bat_p_percent)	# 100% above 50 V
 				
 				# variant B, with a given powercurve
@@ -257,12 +257,12 @@ while True:		# infinite loop, stop the script with ctl+c
 				
 				if verbose:
 					status_text = ''
-					if pv_cont != 0:			status_text	+=	', PV %i W (%i%%)' % (pv_cont*pv_red_factor, pv_red_factor*100)
+					if pv_cont != 0:			status_text	+=	', PV %i W (%i%%)' % (pv_cont*pv_red_factor*0.01, pv_red_factor)
 					if bat_power != 0:			status_text	+=	', Bat %i W (%.1f%%)' % (bat_power, bat_p_percent)
 					if bat_power_static != 0:	status_text	+=	', static %i W' % bat_power_static
 				
-				if	send_power > int( pv_cont*pv_red_factor + bat_power + bat_power_static):
-					send_power = int( pv_cont*pv_red_factor + bat_power + bat_power_static)
+				if	send_power > int( pv_cont*pv_red_factor*0.01 + bat_power + bat_power_static):
+					send_power = int( pv_cont*pv_red_factor*0.01 + bat_power + bat_power_static)
 					adjusted_power = True
 					if verbose: 				status_text	=	' limited' + status_text
 		
