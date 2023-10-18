@@ -3,9 +3,7 @@
 Hello everybody,
 I would like to present my own private system and regulation for zero feed-in.
 
-Feeding into the grid has absolute priority.
-**First** as much electricity is **fed in** as the PV can deliver or is necessary to zero consumption.
-If **then** there is still power left, the **battery** will also be charged.
+The own consumption in the house is covered first. If there is still power left, the battery will also be charged.
 
 ## Structure
 ![scheme](https://user-images.githubusercontent.com/110770475/204104728-d1dabefa-5ac4-446d-bf72-9fb58aaae4e6.jpg)
