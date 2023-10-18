@@ -3,8 +3,7 @@
 Hallo Allerseits,
 ich möchte hier meine eigene private Anlage und Regelung zur Null-Einspeisung vorstellen.
 
-Absolute Priorität hat die Einspeisung ins Netz.
-Es wird **zuerst** soviel Strom **eingespeist** wie die PV liefern kann oder zur Nullung des Verbrauchs nötig ist.
+Es wird **zuerst** der Eigenverbrauch im Haus abgedeckt.
 Wenn **dann** noch Leistung übrig ist, dann wird auch der **Akku** geladen.
 
 ## Aufbau
