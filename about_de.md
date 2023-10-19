@@ -16,7 +16,7 @@ Wenn **dann** noch Leistung übrig ist, dann wird auch der **Akku** geladen.
 [Anleitung und Spezifikation](https://www.solarcontroller-inverter.com/download/18122110445698.html), [Herstellerseite](https://www.solarcontroller-inverter.com/products/MPPT-eSmart3-Series-Solar-Controller.htm), [Konfigurationssoftware Windows](https://www.solarcontroller-inverter.com/download/20113011263165.html), [alternativer Link](http://www.mediafire.com/file/mt77gai7xxzig1g/install_SolarMate_CS_Windows.exe)
 2. Soyosource GTN 1200W (900 W im Batteriemodus), ACHTUNG! meines Wissens liegt kein Zertifikat für VDE-AR-N 4105 vor, in Deutschland ist das Gerät damit nicht zulässig. [Anleitung und Spezifikation](https://www.mediafire.com/file/kvn0jvyuubd3364/soyosource1.200W%252BGrid%252BTie%252BInverter.pdf/file)
 3. AC Not-Aus Schalter
-4. Sammelschraube für PV + mit hübschen Winkeln als Kühlkörper für die Sperrdioden, Vorsichtsmaßnahme wegen 8
+4. Sammelschraube für PV +
 5. Trennschalter für PV -
 6. Sicherungsautomat und RCD für L1
 7. kombinierte Sicherung und RCD für L2
