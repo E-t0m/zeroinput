@@ -15,8 +15,8 @@ The own consumption in the house is covered first. If there is still power left,
 [guidance and specification](https://www.solarcontroller-inverter.com/download/18122110445698.html), [manufacturer page](https://www.solarcontroller-inverter.com/products/MPPT-eSmart3-Series-Solar-Controller.htm), [Configuration software Windows](https://www.solarcontroller-inverter.com/download/20113011263165.html), [alternative link](http://www.mediafire.com/file/mt77gai7xxzig1g/install_SolarMate_CS_Windows.exe)
 2. Soyosource GTN 1200W (900 W in battery mode), Please make sure that this device can be connected to the grid in your country. [guidance and specification](https://www.mediafire.com/file/kvn0jvyuubd3364/soyosource1.200W%252BGrid%252BTie%252BInverter.pdf/file)
 3. AC emergency stop switch
-4. Collecting screw for PV+ with nice angles as heatsink for the blocking diodes, precaution because of 8
-5. Disconnect switch for PV
+4. Collecting screw for PV+
+5. Disconnect switch for PV-
 6. Circuit breaker and RCD for L1
 7. Combined fuse and RCD for L2
 8. Step-Up MPPT controller for the 390 W module, elejoy EL-MU400SP, [guidance and specification](https://enerprof.de/media/pdf/c8/1b/b9/User-Manual_MPPT_LED_DISPLAY_STEP-UP_SOLAR_CHARGE_CONTROLLER_DE.pdf)
