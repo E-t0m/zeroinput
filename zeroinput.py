@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 # indent size 4, mode Tabs
-# Version: 1.12
+# Version: 1.13
 
 import esmart	# https://raw.githubusercontent.com/E-t0m/esmart_mppt/master/esmart.py
 import serial
@@ -270,10 +270,12 @@ while True:		# infinite loop, stop the script with ctl+c
 			timeout_repeat = datetime.now() + timedelta(minutes = 1)	# wait a while
 		
 		elif discharge_timer and not timer.discharge:	# disable battery discharge
-			if send_power > pv_cont:
-				send_power = pv_cont
+			if send_power > int(pv_cont*pv_red_factor*0.01):
+				send_power = int(pv_cont*pv_red_factor*0.01)
 				adjusted_power = True
-				if verbose and pv_cont: status_text += 'limited, no battery discharge '
+				if verbose and pv_cont: 
+					if pv_cont != 0:		status_text	+=	'limited, PV %i%%,' % pv_red_factor+' no battery discharge '
+					
 				
 		elif bat_cont >= 48 and bat_cont <= 50:		# limit to pv power, by battery voltage
 			if send_power > d['chg_power']:
