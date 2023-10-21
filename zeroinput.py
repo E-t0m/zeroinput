@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 # indent size 4, mode Tabs
-# Version: 1.13
+# Version: 1.14
 
 import esmart	# https://raw.githubusercontent.com/E-t0m/esmart_mppt/master/esmart.py
 import serial
@@ -11,8 +11,8 @@ from copy import deepcopy
 from sys import argv
 
 # esmart charger devices, one by line. first port handles soyosource gti too.
-esmarts	=	[	{'port':'/dev/ttyUSB1',	'name':'primary',	'temp_sensor_display':'bat'}, 
-#				{'port':'/dev/ttyUSB2',	'name':'secondary',	'temp_sensor_display':'out'},
+esmarts	=	[	{'port':'/dev/esm0',	'name':'primary',	'temp_sensor_display':'bat'}, 
+				{'port':'/dev/esm1',	'name':'secondary',	'temp_sensor_display':'out'},
 #				{'port':'/dev/ttyUSB3',	'name':'third',		'temp_sensor_display':'place'},
 			]
 
@@ -262,7 +262,7 @@ while True:		# infinite loop, stop the script with ctl+c
 		if no_input:		# disabled power input by command line option
 			send_power 		= 0
 		
-		elif bat_cont < 48:	# set a new timeout
+		elif bat_cont < 48 or (pv_cont == 0 and not timer.discharge):	# set a new timeout
 			adjusted_power = True
 			send_power		= 0
 			send_history	= [0]*4
@@ -274,7 +274,7 @@ while True:		# infinite loop, stop the script with ctl+c
 				send_power = int(pv_cont*pv_red_factor*0.01)
 				adjusted_power = True
 				if verbose and pv_cont: 
-					if pv_cont != 0:		status_text	+=	'limited, PV %i%%,' % pv_red_factor+' no battery discharge '
+					if pv_cont != 0:	status_text	+=	'limited, PV %i%%,' % pv_red_factor+' no battery discharge '
 					
 				
 		elif bat_cont >= 48 and bat_cont <= 50:		# limit to pv power, by battery voltage
