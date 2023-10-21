@@ -207,6 +207,11 @@ Für meine Geräte liegen .rules Dateien in /dev/udev/rules.d/ mit diesen Regeln
 SUBSYSTEMS=="usb-serial", DRIVERS=="cp210x", SYMLINK+="lesekopf"
 SUBSYSTEMS=="usb-serial", DRIVERS=="ch341-uart", SYMLINK+="rs485"
 ```
+Oder bei mehreren gleichen Geräten unterschieden durch den Anschluss am Raspi:
+```
+SUBSYSTEMS=="usb" ATTRS{devpath}=="1.1" SYMLINK+="esm0"
+SUBSYSTEMS=="usb" ATTRS{devpath}=="1.3" SYMLINK+="esm1"
+```
 - Die ganzen Geräte wie oben schon beschrieben montieren.
 - Den RS485-Anschluss des Raspi (i.d.R. ein USB-Stick mit Klemmen) mit den RS485 Anschlüssen von Soyo und esmart3 verbinden: A+ an A+, B- an B-.
 - Den Volkszähler für die Nulleinspeisung ein wenig modifizieren.
