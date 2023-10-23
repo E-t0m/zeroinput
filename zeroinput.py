@@ -26,11 +26,11 @@ max_bat_discharge	= 9999	# W, maximum power taken from the battery
 max_night_input		= 9999	# W, maximum input power at night
 
 zero_shift			= -2	# shift the power meters zero, 0 = disable, +x = export energy, -x = import energy
-bat_voltage_const	= 0.18	# [V/kW] battery load/charge power, 0 = disable voltage correction
+bat_voltage_const	= 0.17	# [V/kW] battery load/charge power, 0 = disable voltage correction
 							# the battery voltage constant depends on the battery connection cable size and length
 							# compare the displayed voltage with the BMS voltage for fine tuning of your equipment
-pv_red_factor		= 79	# [%] PV reduction on low battery 
-bat_power_static	= 15 * number_of_gti 	# W constant reduction on low battery
+pv_red_factor		= 78	# [%] PV reduction on low battery 
+bat_power_static	= 20 * number_of_gti 	# W constant reduction on low battery
 
 discharge_timer		= False	# True = enable or False = disable, stop and start discharging the battery controlled by timestamps in
 discharge_t_file	= '/tmp/vz/timer.txt'
@@ -210,7 +210,7 @@ while True:		# infinite loop, stop the script with ctl+c
 			if abs( int(str(time())[:10]) - int(str(Ls_ts)[:10]) ) > 1: continue
 			
 			break	# stop reading the vzlogger pipe
-		sleep(0.001)
+		sleep(0.0001)
 		
 	if verbose:
 		system('clear')
@@ -270,23 +270,22 @@ while True:		# infinite loop, stop the script with ctl+c
 			timeout_repeat = datetime.now() + timedelta(minutes = 1)	# wait a while
 		
 		elif discharge_timer and not timer.discharge:	# disable battery discharge
-			if send_power > int(pv_cont*pv_red_factor*0.01):
+			if bat_cont > 51:
+				if send_power > pv_cont: 
+					send_power = int(pv_cont)
+					if verbose and pv_cont:	status_text	+= ' no battery discharge '
+				
+			elif send_power > int(pv_cont*pv_red_factor*0.01):
 				send_power = int(pv_cont*pv_red_factor*0.01)
 				adjusted_power = True
-				if verbose and pv_cont: 
-					if pv_cont != 0:	status_text	+=	'limited, PV %i%%,' % pv_red_factor+' no battery discharge '
-					
+				if verbose and pv_cont:	status_text	+= 'limited, PV %i%%,' % pv_red_factor+' no battery discharge '
 				
-		elif bat_cont >= 48 and bat_cont <= 50:		# limit to pv power, by battery voltage
+		elif bat_cont >= 48 and bat_cont <= 51:		# limit to pv power, by battery voltage
 			if send_power > d['chg_power']:
 				# variant A
-				bat_p_percent = (bat_cont - 46.86 ) **4.025
-				bat_power = int(0.01 * max_input_power * bat_p_percent)	# 100% above 50 V
 				
-				# variant B, with a given powercurve
-				#powercurve = [0,2,3,4,5,6,7,13,17,21,26,30,34,39,45,52,60,70,80,90,100] # in %
-				#bat_p_percent = powercurve[int(bat_cont*10-480)]
-				#bat_power = int(0.01 * max_input_power * bat_p_percent)	# 100% above 50 V
+				bat_p_percent = (bat_cont - 46.93 ) **3.281
+				bat_power = int(0.01 * max_input_power * bat_p_percent)	# 100% above 51 V
 				
 				extra_history = extra_history[1:]+[bat_power]
 				if 0 in extra_history:	pass		# bat_power remains at the latest calculated value
