@@ -27,6 +27,7 @@ max_night_input		= 9999	# W, maximum input power at night
 
 zero_shift			= -2	# shift the power meters zero, 0 = disable, +x = export energy, -x = import energy
 
+PV_to_AC_efficiency	= 92	# %
 bat_voltage_const	= 0.17	# [V/kW] battery load/charge power, 0 = disable voltage correction
 							# the battery voltage constant depends on the battery connection cable size and length
 							# compare the displayed voltage with the BMS voltage for fine tuning of your equipment
@@ -256,9 +257,9 @@ while True:		# infinite loop, stop the script with ctl+c
 		if verbose: print('battery protection timeout until', timeout_repeat.strftime('%H:%M:%S'))
 	else:
 		adjusted_power = False
-		if bat_cont <= 51:	pv_p_minus = (51-bat_cont)*25		# reduce PV pass through 2.5W / 0.1V lower than 51V
+		if bat_cont <= 49:	pv_p_minus = (49-bat_cont)*50 * number_of_gti	# reduce PV pass through
 		else:				pv_p_minus = 0
-		pv_power = int(pv_cont - pv_p_minus)
+		pv_power = int(avg(pv_history[-3:]) * PV_to_AC_efficiency * 0.01 - pv_p_minus)	# use a shorter span than pv_cont
 		if pv_power < 0: pv_power = 0
 		
 		if no_input: send_power = 0								# disabled power input by command line option
@@ -267,11 +268,11 @@ while True:		# infinite loop, stop the script with ctl+c
 			adjusted_power = True
 			send_power		= 0
 			send_history	= [0]*4
-			timeout_repeat = datetime.now() + timedelta(minutes = 1)	# wait a while
+			timeout_repeat = datetime.now() + timedelta(minutes = 1)	# wait a minute
 		
 		elif discharge_timer and not timer.discharge:			# disable battery discharge, pass through pv power
-			if send_power > pv_power:
-				send_power =pv_power
+			if	send_power > pv_power:
+				send_power = pv_power
 				adjusted_power = True
 				if verbose and pv_cont:	status_text	+= ((' limited, PV -%i W' % round(pv_p_minus)) if pv_p_minus else ' ') + ', no battery discharge'
 				
@@ -343,11 +344,10 @@ while True:		# infinite loop, stop the script with ctl+c
 		fo.write('%i: int_temp = %i\n'	% ( time(),	esmarts[0]['dev'].fields['int_temp'] ) )
 
 	if verbose: 
-		if 	send_power == 0 or	zero_shift == 0:	print('\nmeter %i W'				% (Ls_read),end='' )	# show the meter readings, and zero shift
-		elif					zero_shift  > 0:	print('\nmeter %i W (%i W export)'% (Ls_read,abs(zero_shift)),end='' )
-		else:										print('\nmeter %i W (%i W import)'% (Ls_read,abs(zero_shift)),end='' )
+		if send_power == 0 or zero_shift == 0: print('\nmeter {:4d} W'.format(Ls_read),end='')	# show the meter readings, and zero shift
+		else: print('\nmeter {:4d} W ({} W {})'.format(Ls_read,abs(zero_shift),'export' if zero_shift > 0 else 'import'),end='' )
 		print(', interval %.2f s'	% (time()-last_runtime))
-		print('input %i W%s'	% (send_power, status_text))	# show the input data
+		print('input {:4d} W{}'.format(send_power, status_text))	# show the input data
 		
 		if no_input: print('input DISABLED by command line')
 	
