@@ -25,9 +25,9 @@ max_gti_power		= 900	# W, the maximum power of one gti
 max_bat_discharge	= 9999	# W, maximum power taken from the battery
 max_night_input		= 9999	# W, maximum input power at night
 
-zero_shift			= -2	# shift the power meters zero, 0 = disable, +x = export energy, -x = import energy
+zero_shift			= -5	# shift the power meters zero, 0 = disable, +x = export energy, -x = import energy
 
-PV_to_AC_efficiency	= 92	# %
+PV_to_AC_efficiency	= 90	# %
 bat_voltage_const	= 0.17	# [V/kW] battery load/charge power, 0 = disable voltage correction
 							# the battery voltage constant depends on the battery connection cable size and length
 							# compare the displayed voltage with the BMS voltage for fine tuning of your equipment
@@ -221,7 +221,7 @@ while True:		# infinite loop, stop the script with ctl+c
 	# high change of power consumption, on rise: no active power limitation, sufficient bat_voltage
 	if (Ls_read < -400) or (Ls_read > 400 and not adjusted_power and bat_cont > 51.0):
 		if	ramp_cnt == 0:
-			ramp_cnt = 6										# in script cycles
+			ramp_cnt = 3 + number_of_gti						# in script cycles
 			ramp_power = send_power
 	
 	if ramp_cnt > 0:											# within ramp countdown
@@ -257,9 +257,12 @@ while True:		# infinite loop, stop the script with ctl+c
 		if verbose: print('battery protection timeout until', timeout_repeat.strftime('%H:%M:%S'))
 	else:
 		adjusted_power = False
-		if bat_cont <= 49:	pv_p_minus = (49-bat_cont)*50 * number_of_gti	# reduce PV pass through
-		else:				pv_p_minus = 0
-		pv_power = int(avg(pv_history[-3:]) * PV_to_AC_efficiency * 0.01 - pv_p_minus)	# use a shorter span than pv_cont
+		if bat_cont <= 49:	pv_bat_minus = (49-bat_cont)*50 * number_of_gti	# reduction by battery voltage
+		else:				pv_bat_minus = 0
+		avg_pv		= avg(pv_history[-2:])							# use a shorter span than pv_cont
+		pv_eff		= avg_pv-(avg_pv * PV_to_AC_efficiency * 0.01)	# efficiency gap
+		pv_p_minus	= pv_bat_minus + pv_eff							# total reduction
+		pv_power	= int(avg_pv - pv_p_minus)						# remaining PV power
 		if pv_power < 0: pv_power = 0
 		
 		if no_input: send_power = 0								# disabled power input by command line option
@@ -312,7 +315,7 @@ while True:		# infinite loop, stop the script with ctl+c
 					 (round((1-(send_history[-1] / (0.01+send_history[-2])))*100,1), round((1-(send_history[-3] / (0.01+send_history[-4])))*100,1) ) )
 		
 		if block_saw_detection:
-			if verbose: print('\tdisabled saw detection')
+			if verbose: print('disabled saw detection')
 		else:
 			if not close_values(send_history[-1],send_history[-2],3) and not close_values(send_history[-3],send_history[-4],3):
 				send_power = int(avg(send_history))				# break the swing up by using the average
