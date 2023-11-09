@@ -57,8 +57,8 @@ In der Praxis **schwankt der Wert am Zähler minimal um die 0**, übrigens zeigt
 ## Funktionen
 Das [Script](https://github.com/E-t0m/zeroinput) hat diese Funktionen:
 - Unterspannungschutz Akku unter 48 V
-- Leistungsanpassung Akku von 48 V bis 50 V, mittels Regelkurve, mögliche Gesamtleistung immer zuzüglich PV
-- "Über"einspeisung ab 53 V bis "Saturation charging voltage" ("Sättigungsladespannung“, am esmart3), 0,5 W / 0,1 V, "zieht die Nulllinie nach unten", bei Überschuss
+- Leistungsanpassung Akku von 48 V bis 51 V, mittels Regelkurve, mögliche Gesamtleistung immer zuzüglich PV
+- "Über"einspeisung ab 53 V bis "Saturation charging voltage" ("Sättigungsladespannung“, am esmart3), 0,2 W / 0,1 V, "zieht die Nulllinie nach unten", bei Überschuss
 - Begrenzung des Batterie Entladestroms, mögliche Gesamtleistung immer zuzüglich PV
 - Nachtlimit (ein kleiner Akku hält keine ganze Nacht durch)
 - Minimalleistung
