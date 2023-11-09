@@ -56,8 +56,8 @@ In practice, **the value on the meter fluctuates minimally around 0**, by the wa
 ## functions
 The [script](https://github.com/E-t0m/zeroinput) has these functions:
 - Battery undervoltage protection below 48V
-- Power adjustment battery from 48 V to 50 V, using control curve, possible total power always plus PV
-- "Over"feed from 53 V to "Saturation charging voltage" (on the esmart3), 0.5 W / 0.1 V, "pulls the zero line down", if there is an excess
+- Power adjustment battery from 48 V to 51 V, using control curve, possible total power always plus PV
+- "Over"feed from 53 V to "Saturation charging voltage" (on the esmart3), 0.2 W / 0.1 V, "pulls the zero line down", if there is an excess
 - Battery discharge current limitation, possible total power always plus PV
 - Night limit (a small battery doesn't last all night)
 - Minimum power
