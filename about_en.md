@@ -67,6 +67,7 @@ The [script](https://github.com/E-t0m/zeroinput) has these functions:
 - Alarm for increased battery temperature or internal temperature of the esmart3
 - Ramp mode for high changes in consumption
 - Suppression of the oscillation of the control loop
+- Time-controlled battery discharge
 
 These values **can and should** be **adjusted** to the respective system and battery size!
 Of course you could also integrate other charge controllers, such as Epever or Victron. The battery voltage and PV power are very important values for the control!
