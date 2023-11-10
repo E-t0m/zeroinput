@@ -218,7 +218,7 @@ SUBSYSTEMS=="usb" ATTRS{devpath}=="1.3" SYMLINK+="esm1"
 - Modify the Volkszähler for zero feed-in a bit.
 
 If your own Volkszähler runs successfully, then channels can be created according to this [vzlogger.conf](https://github.com/E-t0m/zeroinput/blob/main/vzlogger.conf).
-In any case, ***"identifier": "1-0:16.7.0*255" and "verbosity": 15*** must be included so that the script can calculate with them.
+In any case, ***"identifier": "1-0:16.7.0\*255" and "verbosity": 15*** must be included so that the script can calculate with them.
 The path for the "log" in vzlogger.conf must also be adjusted: "/tmp/vz/vzlogger.fifo"
 Although it is not necessary for operation, the [handling of data quantities](https://wiki.volkszaehler.org/howto/datenmenge) should be observed, otherwise "the database will overflow at some point"!
 ```
