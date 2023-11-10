@@ -218,7 +218,7 @@ SUBSYSTEMS=="usb" ATTRS{devpath}=="1.3" SYMLINK+="esm1"
 - Den Volkszähler für die Nulleinspeisung ein wenig modifizieren.
 
 Wenn der eigene Volkszähler erfolgreich läuft, dann können noch Kanäle entsprechend dieser [vzlogger.conf](https://github.com/E-t0m/zeroinput/blob/main/vzlogger.conf) angelegt werden.
-Auf jeden Fall muss ***"identifier": "1-0:16.7.0*255" und "verbosity": 15*** enthalten sein, damit das Script damit rechnen kann.
+Auf jeden Fall muss ***"identifier": "1-0:16.7.0\*255" und "verbosity": 15*** enthalten sein, damit das Script damit rechnen kann.
 Auch der Pfad für das "log" in der vzlogger.conf muss angepasst werden: "/tmp/vz/vzlogger.fifo"
 Obwohl es nicht zum Betrieb nötig ist, sollte der [Umgang mit Datenmengen](https://wiki.volkszaehler.org/howto/datenmengen) beachtet werden, sonst "läuft die Datenbank irgendwann über"!
 
