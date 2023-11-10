@@ -68,6 +68,7 @@ Das [Script](https://github.com/E-t0m/zeroinput) hat diese Funktionen:
 - Alarmierung bei erhöhter Batterietemperatur oder interner Temperatur des esmart3
 - "Ramp mode" für starke Sprünge im Verbrauch
 - Unterdrückung der Schwingung des Regelkreises
+- Zeitgesteuerte Entladung des Akkus
 
 Diese Werte **können und sollten** an die jeweilige Anlage und Akkugröße **angepasst werden**!
 Natürlich könnte man auch andere Laderegler, wie z.B. Epever oder Victron einbinden. Die Akku-Spannung und PV-Leistung sind sehr wichtige Werte für die Regelung!
