@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 # indent size 4, mode Tabs
-# Version: 1.15
+# Version: 1.16
 
 import esmart	# https://raw.githubusercontent.com/E-t0m/esmart_mppt/master/esmart.py
 import serial
@@ -259,7 +259,7 @@ while True:		# infinite loop, stop the script with ctl+c
 		adjusted_power = False
 		if bat_cont <= 49:	pv_bat_minus = (49-bat_cont)*50 * number_of_gti	# reduction by battery voltage
 		else:				pv_bat_minus = 0
-		avg_pv		= avg(pv_history[-2:])							# use a shorter span than pv_cont
+		avg_pv		= avg(pv_history[-3:])							# use a shorter span than pv_cont
 		pv_eff		= avg_pv-(avg_pv * PV_to_AC_efficiency * 0.01)	# efficiency gap
 		pv_p_minus	= pv_bat_minus + pv_eff							# total reduction
 		pv_power	= int(avg_pv - pv_p_minus)						# remaining PV power
@@ -295,7 +295,7 @@ while True:		# infinite loop, stop the script with ctl+c
 		if pv_cont == 0 and send_power > max_night_input: 		# night limit
 			send_power = max_night_input
 			adjusted_power = True
-			if verbose: status_text += ', night limit'
+			if verbose: status_text += ', battery night limit'
 		
 		if pv_cont != 0 and 		bat_cont > 53.0:			# give some free power to the world = pull down the zero line
 				free_power = int((	bat_cont - 53.0)*10 *0.2)	# 0.2 W / 0.1 V, max depends on esmart "saturation charging voltage"
@@ -306,7 +306,7 @@ while True:		# infinite loop, stop the script with ctl+c
 		if send_power > 		max_bat_discharge + pv_cont:	# battery discharge limit
 			send_power = int(	max_bat_discharge + pv_cont)
 			adjusted_power = True
-			if verbose: status_text += ', battery current limit'
+			if verbose: status_text += ', battery power limit'
 		
 		send_history = send_history[1:]+[send_power]			# build a send_power history
 		
