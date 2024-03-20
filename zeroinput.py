@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 # indent size 4, mode Tabs
-# Version: 1.16
+# Version: 1.17
 
 import esmart	# https://raw.githubusercontent.com/E-t0m/esmart_mppt/master/esmart.py
 import serial
@@ -33,7 +33,7 @@ bat_voltage_const	= 0.17	# [V/kW] battery load/charge power, 0 = disable voltage
 							# compare the displayed voltage with the BMS voltage for fine tuning of your equipment
 
 discharge_timer		= False	# True = enable or False = disable, stop and start discharging the battery controlled by timestamps in
-discharge_t_file	= '/tmp/vz/timer.txt'
+discharge_t_file	= '/home/vzlogger/timer.txt'
 temp_alarm_enabled	= False	# True = enable or False = disable the alarm for the battery temperature
 temp_alarm_interval	= 90	# seconds
 
