@@ -114,19 +114,21 @@ def avg(inlist):	# return the average of a list variable
 
 class discharge_times():
 	def __init__(self):
-		self.interval = 60	# seconds
-		self.stamp	= datetime.now() - timedelta(seconds = self.interval)
+		self.interval	= 60	# seconds
+		self.stamp		= datetime.now() - timedelta(seconds = self.interval)
 		self.active		= False
 		self.discharge	= True
 		self.update()
 	
 	def update(self):
 		if self.stamp + timedelta(seconds = self.interval) < datetime.now():
-			self.stamp	= datetime.now()
+			self.stamp = datetime.now()
 			times = []; states = []
 			try:
 				with open(discharge_t_file,'r') as fi:
 					for i in fi:
+						if i == '\n': continue	# ignore empty lines
+						if i[:10] == '0000-00-00': i = datetime.now().strftime('%Y-%m-%d') + i[10:] # set to today
 						times.append(datetime.strptime(i[:19], '%Y-%m-%d %H:%M:%S'))
 						states.append(str(i[19:]))
 				
