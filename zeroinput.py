@@ -346,6 +346,7 @@ while True:		# infinite loop, stop the script with ctl+c
 		if send_power	< 10:	# keep it positive with a little gap on bottom
 			send_power	= 0		# disable input
 			adjusted_power = True
+			send_history[-1] = send_power
 			status_text	+= ', inverter MIN power limit'
 		
 		if discharge_timer and timer.input:	max_input = int( max_input_power *0.01 *timer.input)	# percentage set in timer.txt
@@ -354,6 +355,7 @@ while True:		# infinite loop, stop the script with ctl+c
 		if send_power	> max_input:
 			send_power	= max_input
 			adjusted_power = True
+			send_history[-1] = send_power
 			status_text	+= ', inverter MAX power limit %i W'%max_input
 	
 	with open('/tmp/vz/soyo.log','w') as fo:	# send some values to vzlogger
