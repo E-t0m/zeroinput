@@ -140,12 +140,9 @@ class discharge_times():
 						if states[i][0] == '0':	self.battery = 0
 						else:
 												self.battery = int(states[i][0])
-												if self.battery > 100: self.battery = 100
-						
 						if states[i][1] == '0':	self.input = 0
 						else:
 												self.input = int(states[i][1])
-												if self.input > 100: self.input = 100
 						if debug: print(times[i].strftime('%Y-%m-%d %H:%M'),'\tbattery perc:',self.battery, '\tinput perc:',self.input)
 					else: break
 			except:
@@ -229,7 +226,7 @@ while True:		# infinite loop, stop the script with ctl+c
 		system('clear')
 		print('%s, voltage' % (strftime('%H:%M:%S')),d['bat_volt'],'V, PV power',d['chg_power'],'W, load power',d['load_power'],'W')
 		if discharge_timer:
-			if timer.active:	print('timer active: bat discharge %i %%, AC input %i %%\n'%(timer.battery,timer.input))
+			if timer.active:	print('timer active: bat discharge %i'%timer.battery,'W,' if timer.battery > 100 else '%,','AC input %i'%timer.input,'W' if timer.input > 100 else '%','\n')
 			else:				print('timer.txt enabled but not active! no valid timestamp file set?\n')
 	send_power = int( Ls_read + last2_send + zero_shift )
 	
@@ -319,7 +316,9 @@ while True:		# infinite loop, stop the script with ctl+c
 				if verbose and free_power > 0: status_text += ', export by voltage %i W' % free_power
 		else:	free_power = 0
 		
-		if discharge_timer and timer.battery:	bat_discharge = int(pv_cont + (max_bat_discharge *0.01 *timer.battery))	# percentage set in timer.txt
+		if discharge_timer and timer.battery > 0:																# active timer:
+			if timer.battery <= 100:	bat_discharge = int(pv_cont + (max_bat_discharge *0.01 *timer.battery))	# <= 100 as percentage
+			else:						bat_discharge = timer.battery											# > 100 as W
 		else:									bat_discharge = int(pv_cont + max_bat_discharge)
 			
 		if send_power >		bat_discharge:	# battery discharge limit
@@ -329,19 +328,20 @@ while True:		# infinite loop, stop the script with ctl+c
 		
 		send_history = send_history[1:]+[send_power]			# build a send_power history
 		
-		if verbose:	# show saw tooth values
-			print(	'input history', send_history, '\t 1:2 %.1f %%\t3:4 %.1f %%' % 
-					 (round((1-(send_history[-1] / (0.01+send_history[-2])))*100,1), round((1-(send_history[-3] / (0.01+send_history[-4])))*100,1) ) )
-		
 		if block_saw_detection:
 			if verbose: print('disabled saw detection')
 		else:
-			if not close_values(send_history[-1],send_history[-2],2) and not close_values(send_history[-3],send_history[-4],2):
+			if not close_values(send_history[-1],send_history[-2],3) and not close_values(send_history[-3],send_history[-4],3):
 				send_power = int(avg(send_history))				# break the swing up by using the average
 				if verbose: print('saw stop',send_power)
 				send_history[-1] = send_power
 			else:
 				if verbose: print('no saw detected')
+		
+		if discharge_timer and timer.input > 0:												# active timer:
+			if timer.input <= 100:	max_input = int( max_input_power *0.01 *timer.input)	# <= 100 as percentage 
+			else:					max_input = timer.input									# > 100 as W
+		else:						max_input = max_input_power 							# the limit of the gti(s)
 		
 		if send_power	< 10:	# keep it positive with a little gap on bottom
 			send_power	= 0		# disable input
@@ -349,14 +349,15 @@ while True:		# infinite loop, stop the script with ctl+c
 			send_history[-1] = send_power
 			status_text	+= ', inverter MIN power limit'
 		
-		if discharge_timer and timer.input:	max_input = int( max_input_power *0.01 *timer.input)	# percentage set in timer.txt
-		else:								max_input = max_input_power 							# the limit of the gti(s)
-		
 		if send_power	> max_input:
 			send_power	= max_input
 			adjusted_power = True
 			send_history[-1] = send_power
 			status_text	+= ', inverter MAX power limit %i W'%max_input
+	
+		if verbose:	# show saw tooth values
+			print(	'input history', send_history, '\t 1:2 %.1f %%\t3:4 %.1f %%' % 
+					 (round((1-(send_history[-1] / (0.01+send_history[-2])))*100,1), round((1-(send_history[-3] / (0.01+send_history[-4])))*100,1) ) )
 	
 	with open('/tmp/vz/soyo.log','w') as fo:	# send some values to vzlogger
 		fo.write('%i: soyosend = %i\n'	% ( time(),	-send_power ) )		# the keywords have to be created 
