@@ -341,6 +341,12 @@ while True:		# infinite loop, stop the script with ctl+c
 		if discharge_timer and timer.input > 0:												# active timer:
 			if timer.input <= 100:	max_input = int( max_input_power *0.01 *timer.input)	# <= 100 as percentage 
 			else:					max_input = timer.input									# > 100 as W
+			
+									# increase inverter power linearly from timer value at 53 V to max_input_power at 56 V
+			if bat_cont > 53:		max_input += int((bat_cont - 53 ) / 3 * (max_input_power - max_input))
+			
+			if max_input > max_input_power: 
+									max_input = max_input_power
 		else:						max_input = max_input_power 							# the limit of the gti(s)
 		
 		if send_power	< 10:	# keep it positive with a little gap on bottom
