@@ -316,10 +316,11 @@ while True:		# infinite loop, stop the script with ctl+c
 				if verbose and free_power > 0: status_text += ', export by voltage %i W' % free_power
 		else:	free_power = 0
 		
-		if discharge_timer and timer.battery > 0:																# active timer:
-			if timer.battery <= 100:	bat_discharge = int(pv_cont + (max_bat_discharge *0.01 *timer.battery))	# <= 100 as percentage
+		if discharge_timer:										# active timer
+			if timer.battery == 0:		bat_discharge = 0 
+			elif timer.battery <= 100:	bat_discharge = int(pv_cont + (max_bat_discharge *0.01 *timer.battery))	# <= 100 as percentage
 			else:						bat_discharge = timer.battery											# > 100 as W
-		else:									bat_discharge = int(pv_cont + max_bat_discharge)
+		else:							bat_discharge = int(pv_cont + max_bat_discharge)						# pv power + bat discharge by configuration
 			
 		if send_power >		bat_discharge:	# battery discharge limit
 			send_power =	bat_discharge
@@ -338,16 +339,18 @@ while True:		# infinite loop, stop the script with ctl+c
 			else:
 				if verbose: print('no saw detected')
 		
-		if discharge_timer and timer.input > 0:												# active timer:
-			if timer.input <= 100:	max_input = int( max_input_power *0.01 *timer.input)	# <= 100 as percentage 
-			else:					max_input = timer.input									# > 100 as W
-			
-									# increase inverter power linearly from timer value at 53 V to max_input_power at 56 V
-			if bat_cont > 53:		max_input += int((bat_cont - 53 ) / 3 * (max_input_power - max_input))
-			
-			if max_input > max_input_power: 
-									max_input = max_input_power
-		else:						max_input = max_input_power 							# the limit of the gti(s)
+		if discharge_timer:										# active timer
+			if timer.input == 0:		max_input = 0
+			else:
+				if timer.input <= 100:	max_input = int( max_input_power *0.01 *timer.input)	# <= 100 as percentage 
+				else:					max_input = timer.input									# > 100 as W
+				
+										# increase inverter power linearly from timer value at 53 V to max_input_power at 56 V
+				if bat_cont > 53:		max_input += int((bat_cont - 53 ) / 3 * (max_input_power - max_input))
+				
+				if max_input > max_input_power: 
+										max_input = max_input_power
+		else:							max_input = max_input_power 							# the limit of the gti(s) by configuration
 		
 		if send_power	< 10:	# keep it positive with a little gap on bottom
 			send_power	= 0		# disable input
