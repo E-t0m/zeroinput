@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 # indent size 4, mode Tabs
-# Version: 1.20
+# Version: 1.21
 
 import esmart	# https://raw.githubusercontent.com/E-t0m/esmart_mppt/master/esmart.py
 import serial
@@ -318,14 +318,14 @@ while True:		# infinite loop, stop the script with ctl+c
 		
 		if discharge_timer:										# active timer
 			if timer.battery == 0:		bat_discharge = 0 
-			elif timer.battery <= 100:	bat_discharge = int(pv_cont + (max_bat_discharge *0.01 *timer.battery))	# <= 100 as percentage
-			else:						bat_discharge = timer.battery											# > 100 as W
-		else:							bat_discharge = int(pv_cont + max_bat_discharge)						# pv power + bat discharge by configuration
+			elif timer.battery <= 100:	bat_discharge = int(max_bat_discharge *0.01 *timer.battery)	# <= 100 as percentage
+			else:						bat_discharge = timer.battery								# > 100 as W
+		else:							bat_discharge = max_bat_discharge							# pv power + bat discharge by configuration
 			
-		if send_power >		bat_discharge:	# battery discharge limit
-			send_power =	bat_discharge
+		if send_power  >	pv_cont +	bat_discharge:			# battery discharge limit
+			send_power =	pv_cont +	bat_discharge
 			adjusted_power = True
-			if verbose: status_text += ', battery power limit %i W'%(bat_discharge-pv_cont)
+			if verbose: status_text += ', battery power limit %i W'%bat_discharge
 		
 		send_history = send_history[1:]+[send_power]			# build a send_power history
 		
@@ -346,7 +346,7 @@ while True:		# infinite loop, stop the script with ctl+c
 				else:					max_input = timer.input									# > 100 as W
 				
 										# increase inverter power linearly from timer value at 53 V to max_input_power at 56 V
-				if bat_cont > 53:		max_input += int((bat_cont - 53 ) / 3 * (max_input_power - max_input))
+				if bat_cont > 53:		max_input += int((bat_cont - 53 ) / 3 *(max_input_power - max_input))
 				
 				if max_input > max_input_power: 
 										max_input = max_input_power
