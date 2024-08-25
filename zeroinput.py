@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 # indent size 4, mode Tabs
-# Version: 1.21
+# Version: 1.22
 
 import esmart	# https://raw.githubusercontent.com/E-t0m/esmart_mppt/master/esmart.py
 import serial
@@ -345,8 +345,8 @@ while True:		# infinite loop, stop the script with ctl+c
 				if timer.input <= 100:	max_input = int( max_input_power *0.01 *timer.input)	# <= 100 as percentage 
 				else:					max_input = timer.input									# > 100 as W
 				
-										# increase inverter power linearly from timer value at 53 V to max_input_power at 56 V
-				if bat_cont > 53:		max_input += int((bat_cont - 53 ) / 3 *(max_input_power - max_input))
+										# increase inverter power linearly from timer value at 53 V to max_input_power at 55 V and above
+				if bat_cont > 53:		max_input += int((bat_cont - 53 ) / 2 *(max_input_power - max_input))
 				
 				if max_input > max_input_power: 
 										max_input = max_input_power
