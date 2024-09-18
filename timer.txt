@@ -1,4 +1,4 @@
-# 0000-00-00 for daily repeating, space separated
+# 0000-00-00 for daily repeating, space or tab separated
 #                battery discharge W if > 100, percentage if <= 100
 # date     time  |   ac inverter power W if > 100, percentage if <= 100
 0000-00-00 00:00 50 100
