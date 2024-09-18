@@ -131,7 +131,7 @@ class discharge_times():
 						if i[0] == '#' or i == '\n': continue	# ignore empty lines
 						if i[:10] == '0000-00-00': i = datetime.now().strftime('%Y-%m-%d') + i[10:] # set to today
 						times.append(datetime.strptime(i[:16], '%Y-%m-%d %H:%M'))
-						states.append(str(i[16:]).replace('\n','').split(' ')[1:])
+						states.append(str(i[16:]).replace('\n','').replace('\t',' ').split(' ')[1:])
 				
 				for i in range(0,len(times)):
 					self.active = True	# successful file read
