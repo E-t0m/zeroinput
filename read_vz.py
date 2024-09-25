@@ -20,7 +20,7 @@ chans = dict(	pv_p	='your-id',
 				bezug_p	='your-id',
 				klima_p	='your-id')
 
-url = 'http://127.0.0.0:8080/data.json?from='+beginstamp+'&to='+endstamp
+url = 'http://127.0.0.0:8080/data.json?from='+beginstamp+'&to='+endstamp+'&group=day'
 for key in chans.values(): url += '&uuid[]='+key
 
 fdata = []
