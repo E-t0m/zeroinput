@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 # indent size 4, mode Tabs
-# Version: 1.22
+# Version: 1.24
 
 import esmart	# https://raw.githubusercontent.com/E-t0m/esmart_mppt/master/esmart.py
 import serial
@@ -228,7 +228,8 @@ while True:		# infinite loop, stop the script with ctl+c
 		if discharge_timer:
 			if timer.active:	print('timer active: bat discharge %i'%timer.battery,'W,' if timer.battery > 100 else '%,','AC input %i'%timer.input,'W' if timer.input > 100 else '%','\n')
 			else:				print('timer.txt enabled but not active! no valid timestamp file set?\n')
-	send_power = int( Ls_read + last2_send + zero_shift )
+	
+	send_power = int( Ls_read + last2_send + zero_shift )		# calculate the power demand
 	
 	# high change of power consumption, on rise: no active power limitation, sufficient bat_voltage
 	if (Ls_read < -400) or (Ls_read > 400 and not adjusted_power and bat_cont > 51.0):
@@ -310,8 +311,8 @@ while True:		# infinite loop, stop the script with ctl+c
 			adjusted_power = True
 			if verbose: status_text += ', battery night limit'
 		
-		if pv_cont != 0 and 		bat_cont > 53.0:			# give some free power to the world = pull down the zero line
-				free_power = int((	bat_cont - 53.0)*10 *0.2)	# 0.2 W / 0.1 V, max depends on esmart "saturation charging voltage"
+		if pv_cont != 0 and 		bat_cont > 55.0:			# give some free power to the world = pull down the zero line
+				free_power = int((	bat_cont - 55.0)*10 *0.5)	# 0.5 W / 0.1 V, max depends on esmart "saturation charging voltage"
 				send_power += free_power
 				if verbose and free_power > 0: status_text += ', export by voltage %i W' % free_power
 		else:	free_power = 0
@@ -340,16 +341,14 @@ while True:		# infinite loop, stop the script with ctl+c
 				if verbose: print('no saw detected')
 		
 		if discharge_timer:										# active timer
-			if timer.input == 0:		max_input = 0
-			else:
-				if timer.input <= 100:	max_input = int( max_input_power *0.01 *timer.input)	# <= 100 as percentage 
-				else:					max_input = timer.input									# > 100 as W
-				
-										# increase inverter power linearly from timer value at 53 V to max_input_power at 55 V and above
-				if bat_cont > 53:		max_input += int((bat_cont - 53 ) / 2 *(max_input_power - max_input))
-				
-				if max_input > max_input_power: 
-										max_input = max_input_power
+			if timer.input <= 100:	max_input = int( max_input_power *0.01 *timer.input)	# <= 100 as percentage 
+			else:					max_input = timer.input									# > 100 as W
+			
+									# increase inverter power linearly from timer value at 53 V to max_input_power at 54.5 V and above
+			if bat_cont > 53:		max_input += int((bat_cont - 53 ) / 1.5 *(max_input_power - max_input))
+			
+			if max_input > max_input_power:	max_input = max_input_power
+		
 		else:							max_input = max_input_power 							# the limit of the gti(s) by configuration
 		
 		if send_power	< 10:	# keep it positive with a little gap on bottom
