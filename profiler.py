@@ -4,9 +4,12 @@
 from requests import get
 from datetime import timedelta, datetime
 
-chans = {		'soyo_p':'your-volkszaehler-uuid',
-				'bezug_p':'your-volkszaehler-uuid',
-		#		'tibber':'your-volkszaehler-uuid',
+chans = {		'erzeug':'your-channel-id',
+				'bezug':'your-channel-id',
+				'tibber':'your-channel-id',
+				#'pv':'your-channel-id',
+				'auto':'your-channel-id',
+				
 		}
 n_days = 3
 
@@ -19,7 +22,7 @@ def get_average(n_days):
 		end		= (datetime.today() - timedelta(days=day,hours=1 )).replace(minute=50)
 		beginstamp	= str(int(begin.timestamp())).ljust(13,'0')
 		endstamp	= str(int(end.timestamp())).ljust(13,'0')
-		url = 'http://127.0.0.0:8080/data.json?from='+beginstamp+'&to='+endstamp+'&group=hour'	# asumes volkszaehler on localhost:8080
+		url = 'http://127.0.0.0:8080/data.json?from='+beginstamp+'&to='+endstamp+'&group=hour'	# asumes volkszähler at localhost:8080
 		for uuid in chans.values(): url += '&uuid[]='+uuid
 	
 		if True: 
@@ -46,20 +49,29 @@ def get_average(n_days):
 				for key in chans: hourline += '% 8.2f\t'%hours[key][i]
 				print('%i\t%i\t%s'%(day,i,hourline))
 	
-	if True: 
+	for i in range(0,24):								# calculate hourly averages
+		for key in chans: 
+			hours[key][i] /= n_days
+	
+	if True:											# calculate new "channels"
+		hours['bezug+erzeug'] = [0.0]*24
+		hours['b+e-auto'] = [0.0]*24
+		for i in range(0,24):
+			hours['bezug+erzeug'][i] = hours['bezug'][i]+abs(hours['erzeug'][i])
+			hours['b+e-auto'][i] = hours['bezug+erzeug'][i] - hours['auto'][i]
+	
+	if True:											# show average values
 		headerline = ''
-		#headerline = ',combined'															# header for combined
-		for chan in chans: headerline += ','+chan
-		print("\n%i day AVERAGE\nhour%s"%(n_days,headerline))		# show average
+		for chan in hours.keys(): headerline += ','+chan
+		print("\n%i day AVERAGE\nhour%s"%(n_days,headerline))
+		
 		for i in range(0,24): 
 			hourline = ''
-			#hourline += '%.0f\t'%((abs(hours['soyo_p'][i])+hours['bezug_p'][i])/n_days)	# combine 2 values
 			
-			for key in chans: 
-				hours[key][i] /= n_days
+			for key in hours.keys(): 
 				hourline += '%.0f\t'%hours[key][i]
 			print('%i\t%s'%(i,hourline))
-
+	
 	return(hours)
 
 
@@ -67,3 +79,4 @@ print(n_days,'days to go')
 avg_day = get_average(n_days)
 
 exit(0)
+
