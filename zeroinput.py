@@ -344,8 +344,9 @@ while True:		# infinite loop, stop the script with ctl+c
 			if timer.input <= 100:	max_input = int( max_input_power *0.01 *timer.input)	# <= 100 as percentage 
 			else:					max_input = timer.input									# > 100 as W
 			
-									# increase inverter power linearly from timer value at 53 V to max_input_power at 54.5 V and above
-			if bat_cont > 53:		max_input += int((bat_cont - 53 ) / 1.5 *(max_input_power - max_input))
+									# increase inverter power linearly from timer value at 53.5 V to max_input_power at 54.5 V and above
+			if bat_cont > 53.5:		max_input += int((bat_cont - 53.5 ) / (54.5 - 53.5) *(max_input_power - max_input))
+
 			
 			if max_input > max_input_power:	max_input = max_input_power
 		
