@@ -3,15 +3,21 @@
 
 from requests import get
 from datetime import timedelta, datetime
+from sys import argv
 
-chans = {		'erzeug':'your-channel-id',
-				'bezug':'your-channel-id',
-				'tibber':'your-channel-id',
-				#'pv':'your-channel-id',
-				'auto':'your-channel-id',
+chans = {		'Erzeug':'your-UUID-here',
+				'Bezug':'your-UUID-here',
+				'tibber':'your-UUID-here',
+				'Auto':'your-UUID-here',
+				'Klima':'your-UUID-here',
+				'PV':'your-UUID-here',
 				
 		}
-n_days = 3
+
+try:
+	n_days = int(argv[-1])	# get the number of days from command line, last argument
+except:
+	n_days = 7
 
 def get_average(n_days):
 	hours = {}
@@ -53,13 +59,16 @@ def get_average(n_days):
 		for key in chans: 
 			hours[key][i] /= n_days
 	
-	if True:											# calculate new "channels"
-		hours['bezug+erzeug'] = [0.0]*24
-		hours['b+e-auto'] = [0.0]*24
+	if False:											# calculate new "channels"
+		hours['Bezug+Erzeug'] = [0.0]*24
+		hours['Auto+Klima'] = [0.0]*24
+		hours['Bezug+Erzeug-Auto-Klima'] = [0.0]*24
+		
 		for i in range(0,24):
-			hours['bezug+erzeug'][i] = hours['bezug'][i]+abs(hours['erzeug'][i])
-			hours['b+e-auto'][i] = hours['bezug+erzeug'][i] - hours['auto'][i]
-	
+			hours['Bezug+Erzeug'][i] = hours['Bezug'][i] + abs(hours['Erzeug'][i])			# total consumption
+			hours['Auto+Klima'][i] = hours['Auto'][i] + hours['Klima'][i]
+			hours['Bezug+Erzeug-Auto-Klima'][i] = hours['Bezug'][i] + abs(hours['Erzeug'][i]) - hours['Auto'][i] - hours['Klima'][i]
+		
 	if True:											# show average values
 		headerline = ''
 		for chan in hours.keys(): headerline += ','+chan
@@ -79,4 +88,3 @@ print(n_days,'days to go')
 avg_day = get_average(n_days)
 
 exit(0)
-
