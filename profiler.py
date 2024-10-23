@@ -60,11 +60,13 @@ def get_average(n_days):
 			hours[key][i] /= n_days
 	
 	if False:											# calculate new "channels"
+		hours['Kosten'] = [0.0]*24
 		hours['Bezug+Erzeug'] = [0.0]*24
 		hours['Auto+Klima'] = [0.0]*24
 		hours['Bezug+Erzeug-Auto-Klima'] = [0.0]*24
 		
 		for i in range(0,24):
+			hours['Kosten'][i] = (hours['Bezug'][i] * hours['tibber'][i]) / 1000			# Wh * ¢/kWh / 1000 = ¢
 			hours['Bezug+Erzeug'][i] = hours['Bezug'][i] + abs(hours['Erzeug'][i])			# total consumption
 			hours['Auto+Klima'][i] = hours['Auto'][i] + hours['Klima'][i]
 			hours['Bezug+Erzeug-Auto-Klima'][i] = hours['Bezug'][i] + abs(hours['Erzeug'][i]) - hours['Auto'][i] - hours['Klima'][i]
