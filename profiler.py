@@ -15,17 +15,23 @@ chans = {		'Erzeug':'your-UUID-here',
 		}
 
 try:
-	n_days = int(argv[-1])	# get the number of days from command line, last argument
+	day_shift = int(argv[-1])	# get the number of days and days for backshift from command line
 except:
-	n_days = 7
+	day_shift = 7
 
-def get_average(n_days):
+try:
+	n_days = int(argv[-2])
+except:
+	n_days = day_shift
+	day_shift = 0
+
+def get_average(n_days,day_shift):
 	hours = {}
 	for key in chans.keys(): hours[key] = [0.0]*24
 	
 	for day in range(0,n_days):
-		begin	= (datetime.today() - timedelta(days=day,hours=24)).replace(minute=0,second=0,microsecond=0)
-		end		= (datetime.today() - timedelta(days=day,hours=1 )).replace(minute=50)
+		begin	= (datetime.today() - timedelta(days=day+day_shift,hours=24)).replace(minute=0,second=0,microsecond=0)
+		end		= (datetime.today() - timedelta(days=day+day_shift,hours=1 )).replace(minute=50)
 		beginstamp	= str(int(begin.timestamp())).ljust(13,'0')
 		endstamp	= str(int(end.timestamp())).ljust(13,'0')
 		url = 'http://127.0.0.0:8080/data.json?from='+beginstamp+'&to='+endstamp+'&group=hour'	# asumes volkszähler at localhost:8080
@@ -59,22 +65,24 @@ def get_average(n_days):
 		for key in chans: 
 			hours[key][i] /= n_days
 	
-	if False:											# calculate new "channels"
-		hours['Kosten'] = [0.0]*24
-		hours['Bezug+Erzeug'] = [0.0]*24
-		hours['Auto+Klima'] = [0.0]*24
-		hours['Bezug+Erzeug-Auto-Klima'] = [0.0]*24
+	if True:											# calculate new "channels"
+		hours['Kosten-Bezug'] = [0.0]*24
+		hours['Wert-Erzeug'] = [0.0]*24
+		#hours['Bezug+Erzeug'] = [0.0]*24
+		#hours['Auto+Klima'] = [0.0]*24
+		#hours['Bezug+Erzeug-Auto-Klima'] = [0.0]*24
 		
 		for i in range(0,24):
-			hours['Kosten'][i] = (hours['Bezug'][i] * hours['tibber'][i]) / 1000			# Wh * ¢/kWh / 1000 = ¢
-			hours['Bezug+Erzeug'][i] = hours['Bezug'][i] + abs(hours['Erzeug'][i])			# total consumption
-			hours['Auto+Klima'][i] = hours['Auto'][i] + hours['Klima'][i]
-			hours['Bezug+Erzeug-Auto-Klima'][i] = hours['Bezug'][i] + abs(hours['Erzeug'][i]) - hours['Auto'][i] - hours['Klima'][i]
+			hours['Kosten-Bezug'][i] = (hours['Bezug'][i] * hours['tibber'][i]) / 1000			# Wh * ¢/kWh / 1000 = ¢/h
+			hours['Wert-Erzeug'][i] = abs(hours['Erzeug'][i]) * hours['tibber'][i] / 1000		# Wh * ¢/kWh / 1000 = ¢/h
+			#hours['Bezug+Erzeug'][i] = hours['Bezug'][i] + abs(hours['Erzeug'][i])				# total consumption [Wh]
+			#hours['Auto+Klima'][i] = hours['Auto'][i] + hours['Klima'][i]
+			#hours['Bezug+Erzeug-Auto-Klima'][i] = hours['Bezug'][i] + abs(hours['Erzeug'][i]) - hours['Auto'][i] - hours['Klima'][i]
 		
 	if True:											# show average values
 		headerline = ''
 		for chan in hours.keys(): headerline += ','+chan
-		print("\n%i day AVERAGE\nhour%s"%(n_days,headerline))
+		print("\n%s\t%i day\t%i shift\tAVERAGE\nhour%s"%(datetime.now().strftime('%Y-%m-%d\t%H:%M:%S'),n_days,day_shift,headerline))
 		
 		for i in range(0,24): 
 			hourline = ''
@@ -86,7 +94,8 @@ def get_average(n_days):
 	return(hours)
 
 
-print(n_days,'days to go')
-avg_day = get_average(n_days)
+print(n_days,'days to go', 'shift '+str(day_shift) if day_shift else '')
+avg_day = get_average(n_days,day_shift)
 
 exit(0)
+
