@@ -152,28 +152,31 @@ Dabei spielen folgende Komponenten der Regelung zusammen:
 Die schwarzen Werte zeigt der Haus-Zähler ohne Minuszeichen an.
 Rot muss bezahlt werden. Die Einspeisung betrug 400 bis 450 W in diesem Abschnitt.
 
-**Die Ausgabe des Scripts** im verbose mode, jede Sekunde neu:
+**Die Ausgabe des Scripts** im verbose mode, ca. jede Sekunde neu:
 ```
-11:22:05, voltage 48.5 V, PV power 373 W, load power 144 W
+09:59:47, voltage 52.6 V, PV power 578 W, load power 152 W
+timer active: bat discharge 50 %, input 100 %, energy 137/1000 Wh 
 
-input history [299, 266, 285, 271]       1:2 4.9 %      3:4 11.0 %
-saw stop 280
+voltage correction 52.5 V, dif 0.1 V
+no saw detected
+input history [167, 163, 166, 163]       1:2 1.8 %      3:4 2.4 %
 
-interval 1.00 s, meter 7 W (2 W import)
-input 280 W 
+meter    5 W (5 W import), interval 1.02 s
+input  163 W
 1 soyo
 2 soyo
 1 eSmart3
-primary          SOC   9         Mode CC
-PV        54.9 V           4.2 A         203 W
-Battery   48.4 V           3.2 A         155 W
-Load      48.5 V           1.0 A         48 W
-Temp     int 36 °C      bat 21 °C
 
-secondary        SOC   9         Mode CC
-PV        55.3 V           3.5 A         170 W
-Battery   48.6 V           3.5 A         170 W
-Temp     int 28 °C      out 14 °C
+primary          SOC  46         Mode CC
+PV        59.1 V           5.0 A         263 W
+Battery   52.6 V           5.0 A         263 W
+Load      52.5 V           2.9 A         152 W
+Temp     int 37 °C      bat 20 °C
+
+secondary        SOC  53         Mode CC
+PV        56.0 V           6.1 A         322 W
+Battery   52.9 V           6.1 A         322 W
+Temp     int 32 °C      out 14 °C
 
 2 eSmart3
 ```
@@ -182,7 +185,7 @@ Temp     int 28 °C      out 14 °C
 Zur Genauigkeit der Daten vom esmart3 hat der Autor der [Esmart3 Bibliothek](https://github.com/skagmo/esmart_mppt), [die ich modifiziert verwende](https://github.com/E-t0m/esmart_mppt), [einen Bericht veröffentlicht](https://skagmo.com/page.php?p=documents%2F04_esmart3_review).
 Meiner Beobachtung nach, stimmt die eingespeiste Leistung vom Soyosource Inverter recht genau mit dem angeforderten Wert überein.
 Zu beachten gibt es noch die verzögerte Ansprechzeit (ramp speed) von meines Wissens 400 W/s. Der Soyo braucht also 2+ Sekunden von 0 auf 100% Leistung. (das ist Absicht, kein Fehler)
-Darum habe ich die beiden Soyo einfach nur parallel angesteuert, um eine möglichst kurze Ansprechzeit zu haben, mit mehr Soyos würde das entsprechend noch besser, aber auch einer würde funktionieren!
+Darum habe ich die Soyos einfach nur parallel angesteuert, um eine möglichst kurze Ansprechzeit zu haben, mit mehr Soyos wird das entsprechend noch besser, aber auch einer funktioniert!
 (Der 2-phasige Anschluss meiner Anlage wäre nicht nötig und stammt von Experimenten mit Phasen-basierter Nulleinspeisung, die ich inzwischen verworfen habe! Trotzdem schön zu haben.)
 Ab wann macht **ein weiterer Wechselrichter** Sinn? 
 Der Grundverbrauch liegt laut Hersteller bei < 2 W. Mit 3 W gerechnet, ergeben sich 72 Wh / Tag.
