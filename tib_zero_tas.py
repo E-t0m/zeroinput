@@ -74,7 +74,7 @@ def get_average(n_days):								# gets hourly averages from volkszähler databas
 		for key in conf['vz_chans']: hours[key][i] /= n_days
 	
 	hours['B+E'] = [0.0]*24
-	for i in range(0,24): hours['B+E'][i] = hours['Bezug'][i] + abs(hours['Erzeug'][i])		# total consumption [Wh]
+	for i in range(0,24): hours['B+E'][i] = hours['Bezug'][i] + abs(hours['Erzeug'][i]) - hours['Auto'][i]		# total consumption - Auto [Wh]
 			
 	if debug:									# show average values
 		headerline = ''
@@ -137,7 +137,7 @@ def main():
 	
 	cap_p = dict(); pv_pt = dict(); sum_p = 0; j = 0
 	lowest_price_timed = list(s_fupri.values())[0]		# set to the highest price
-	if verbose and sum_p < bat_cap: print('%s\t%s\t%s\t%s\t%s'%('date time','price','average','set','sum'))	# show table header if there is a table
+	if verbose and sum_p < bat_cap: print('%s\t%s\t%s\t%s\t%s'%('date time','price','set','average','sum'))	# show table header if there is a table
 
 	for i in s_fupri:									# iterate over relevant hours
 		cur_p = int(vz_in['B+E'][int(i[-2:])])			# get the average power of the current hour
@@ -151,7 +151,7 @@ def main():
 			else:		 cap_p[i] = '%.f'%(cur_p)		# all other get the 7d average amount
 			j += 1
 			lowest_price_timed = s_fupri[i]				# the lowest price with input
-			if verbose: print('%s %.2f\t%i\t%s\t%i'%(i,s_fupri[i]*100,cur_p,cap_p[i],sum_p))
+			if verbose: print('%s %.2f\t%s\t%i\t%i'%(i,s_fupri[i]*100,cap_p[i],cur_p,sum_p))
 		else:			 
 			cap_p[i] = '0'								# battery capacity was reached
 			if debug: print('%s %.2f\t%i\t%s'%(i,s_fupri[i]*100,cur_p,cap_p[i]))
