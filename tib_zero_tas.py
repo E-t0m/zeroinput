@@ -137,24 +137,27 @@ def main():
 	
 	cap_p = dict(); pv_pt = dict(); sum_p = 0; j = 0
 	lowest_price_timed = list(s_fupri.values())[0]		# set to the highest price
-	if verbose and sum_p < bat_cap: print('%s\t%s\t%s\t%s\t%s'%('date time','price','set','average','sum'))	# show table header if there is a table
-
+	if verbose and sum_p < bat_cap: print('%s\t%s\t%s\t%s\t%s'%('date time','price','set','average','sum'))	# show table header if there is a table	
+	
 	for i in s_fupri:									# iterate over relevant hours
 		cur_p = int(vz_in['B+E'][int(i[-2:])])			# get the average power of the current hour
 		
 		if sum_p < bat_cap:								# as long as there is energy to dispose
 			sum_p += cur_p
 			
-			if 	 j == 0: cap_p[i] = '9999'				# most expensive price gets "unlimited"
-			elif j == 1: cap_p[i] = '%.f'%(cur_p * 1.2)	# 2nd expensive price gets 120%
-			elif j == 2: cap_p[i] = '%.f'%(cur_p * 1.2)	# 3rd expensive price gets 110%
-			else:		 cap_p[i] = '%.f'%(cur_p)		# all other get the 7d average amount
+			if 	 j == 0: cap_p[i] = conf['max_inverter_power']	# maximum power for that hour
+			elif j == 1: cap_p[i] = cur_p * 1.2		# 2nd expensive price gets 120%
+			elif j == 2: cap_p[i] = cur_p * 1.1		# 3rd expensive price gets 110%
+			else:		 cap_p[i] = cur_p			# all other get the 7d average amount
+
+			if cap_p[i] > conf['max_inverter_power']: cap_p[i] = conf['max_inverter_power']
+			cap_p[i] = '%.f'%(cap_p[i])
 			j += 1
 			lowest_price_timed = s_fupri[i]				# the lowest price with input
 			if verbose: print('%s %.2f\t%s\t%i\t%i'%(i,s_fupri[i]*100,cap_p[i],cur_p,sum_p))
 		else:			 
 			cap_p[i] = '0'								# battery capacity was reached
-			if debug: print('%s %.2f\t%i\t%s'%(i,s_fupri[i]*100,cur_p,cap_p[i]))
+			if debug: print('%s %.2f\t%i\t%s'%(i,s_fupri[i]*100,cur_p,cap_p[i]))	
 	
 	if debug: print('lowest price timed %.2f'%(lowest_price_timed*100),'with',conf['bat_efficiency'],'%% = %.2f'%(lowest_price_timed*conf['bat_efficiency']))
 	for i in future_prices:
