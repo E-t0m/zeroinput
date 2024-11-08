@@ -107,7 +107,7 @@ def read_average():										# read cached data or start a query
 def get_voltage():										# get the latest battery voltage from volkszähler
 	time_resp = str(get(url='http://'+conf['vz_host_port']+'/data.json?uuid[]='+conf['vz_voltage_uuid']+'&from=now&to=now&options=raw').json()['data'][0]['from'])	# timecode for latest known voltage
 	vz_voltage = get(url='http://'+conf['vz_host_port']+'/data.json?uuid[]='+conf['vz_voltage_uuid']+'&from='+time_resp+'&to='+time_resp+'&options=raw').json()['data'][0]['tuples'][0][1] # latest known voltage
-	bat_cap = int(vz_voltage*1000-49700)				# simple abstraction for low voltage of 16s LiFePo4 battery capacity
+	bat_cap = int(vz_voltage*1000-49700)			# simple abstraction for low voltage of 16s LiFePo4 battery capacity
 	if verbose: print('latest voltage',vz_voltage,'V, bat efficiency',conf['bat_efficiency'],'%, remaining bat capacity',bat_cap if bat_cap > 0 else 0,'Wh')
 	return(vz_voltage, bat_cap)
 
@@ -122,7 +122,8 @@ def main():
 	for i in tibber_response['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow']:	prices[i['startsAt'][0:13]] = i['total']
 	
 	price_avg = 0
-	future_stop = (datetime.now() + timedelta(days=0 if datetime.now().hour < 10 else 1)).replace(hour=10, minute=0, second=0, microsecond=0) # don't calculate for next day time
+	#future_stop = (datetime.now() + timedelta(days=0 if datetime.now().hour < 10 else 1)).replace(hour=10, minute=0, second=0, microsecond=0) # don't calculate for next day time
+	future_stop = (datetime.now() + timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0) # don't calculate for next day time
 	future_prices = dict()								# prices to come
 	for i in prices:
 		tib_time = datetime.strptime(i+':59:59', '%Y-%m-%dT%H:%M:%S')
@@ -137,7 +138,7 @@ def main():
 	
 	cap_p = dict(); pv_pt = dict(); sum_p = 0; j = 0
 	lowest_price_timed = list(s_fupri.values())[0]		# set to the highest price
-	if verbose and sum_p < bat_cap: print('%s\t%s\t%s\t%s\t%s'%('date time','price','set','average','sum'))	# show table header if there is a table	
+	if verbose and sum_p < bat_cap: print('%s\t%s\t%s\t%s\t%s'%('date time','price','set','average','sum'))	# show table header if there is a table
 	
 	for i in s_fupri:									# iterate over relevant hours
 		cur_p = int(vz_in['B+E'][int(i[-2:])])			# get the average power of the current hour
@@ -157,7 +158,7 @@ def main():
 			if verbose: print('%s %.2f\t%s\t%i\t%i'%(i,s_fupri[i]*100,cap_p[i],cur_p,sum_p))
 		else:			 
 			cap_p[i] = '0'								# battery capacity was reached
-			if debug: print('%s %.2f\t%i\t%s'%(i,s_fupri[i]*100,cur_p,cap_p[i]))	
+			if debug: print('%s %.2f\t%i\t%s'%(i,s_fupri[i]*100,cur_p,cap_p[i]))
 	
 	if debug: print('lowest price timed %.2f'%(lowest_price_timed*100),'with',conf['bat_efficiency'],'%% = %.2f'%(lowest_price_timed*conf['bat_efficiency']))
 	for i in future_prices:
@@ -204,12 +205,24 @@ def main():
 						hot_on = True
 						msg += ' 1' if tasmota_switch( conf['tasmota_dev']['auto1_on'],'1') == 200 else ' 1FAIL'
 						msg += ' 2' if tasmota_switch( conf['tasmota_dev']['auto2_on'],'1') == 200 else ' 2FAIL'
+						#msg += ' 5' if tasmota_switch( conf['tasmota_dev']['charger_on'],'1') == 200 else ' 5FAIL' # don't hotswitch charger
 						if not verbose: syslog.syslog(syslog.LOG_INFO, msg)
 				else:
 					if not timer_is_set[1] and not timer_is_set[2]:
-						msg += ' T on:'; timer_is_set[1] = True; timer_is_set[2] = True
-						msg += ' 1' if tasmota_timer( conf['tasmota_dev']['auto1_on'],cur_timer,'1') == 200 else ' 1FAIL'
-						msg += ' 2' if tasmota_timer( conf['tasmota_dev']['auto2_on'],cur_timer,'1') == 200 else ' 2FAIL'
+						if not 'T on' in msg: msg += ' T on:'
+						
+						if tasmota_timer( conf['tasmota_dev']['auto1_on'],cur_timer,'1') == 200: msg += ' 1'; timer_is_set[1] = True
+						else: msg += ' 1FAIL'
+						
+						if tasmota_timer( conf['tasmota_dev']['auto2_on'],cur_timer,'1') == 200: msg += ' 2'; timer_is_set[2] = True 
+						else: msg += ' 2FAIL'
+					
+					if False: #not timer_is_set[5] and not pv_pt[cur_p_time]:			# don't charge the battery when inverter is active
+						if not 'T on' in msg: msg += ' T on:'
+						
+						if tasmota_timer( conf['tasmota_dev']['charger_on'],cur_timer,'1') == 200: msg += ' 5'; timer_is_set[5] = True
+						else: msg+= ' 5FAIL'
+						
 						if not verbose: syslog.syslog(syslog.LOG_INFO, msg +' at '+ cur_timer)
 			
 			else:										# middle and upper
@@ -220,14 +233,23 @@ def main():
 					else:
 						msg += 'hot off:'
 						hot_off = True
-						msg += ' 1' if tasmota_switch( conf['tasmota_dev']['auto1_off'],'0') == 200 else ' 1FAIL'
-						msg += ' 2' if tasmota_switch( conf['tasmota_dev']['auto2_off'],'0') == 200 else ' 2FAIL'
+						msg += ' 3' if tasmota_switch( conf['tasmota_dev']['auto1_off'],'0') == 200 else ' 3FAIL'
+						msg += ' 4' if tasmota_switch( conf['tasmota_dev']['auto2_off'],'0') == 200 else ' 4FAIL'
+						#msg += ' 6' if tasmota_switch( conf['tasmota_dev']['charger_off'],'0') == 200 else ' 6FAIL' # don't hotswitch charger
 						if not verbose: syslog.syslog(syslog.LOG_INFO, msg)
 				else:
 					if not timer_is_set[3] and not timer_is_set[4]:
-						msg += 'T off:'; timer_is_set[3] = True; timer_is_set[4] = True
-						msg += ' 3' if tasmota_timer( conf['tasmota_dev']['auto1_off'],cur_timer,'0') == 200 else ' 3FAIL'
-						msg += ' 4' if tasmota_timer( conf['tasmota_dev']['auto2_off'],cur_timer,'0') == 200 else ' 4FAIL'
+						if not 'T off' in msg: msg += 'T off:'
+						if tasmota_timer( conf['tasmota_dev']['auto1_off'],cur_timer,'0') == 200: msg += ' 3'; timer_is_set[3] = True
+						else: msg += ' 3FAIL'
+						
+						if tasmota_timer( conf['tasmota_dev']['auto2_off'],cur_timer,'0') == 200: msg += ' 4'; timer_is_set[4] = True
+						else: msg += ' 4FAIL'
+					
+					if False: #not timer_is_set[6]:
+						if not 'T off' in msg: msg += 'T off:' 
+						if tasmota_timer( conf['tasmota_dev']['charger_off'],cur_timer,'0') == 200: msg += ' 6'; timer_is_set[6] = True
+						else: msg += ' 6FAIL'
 						if not verbose: syslog.syslog(syslog.LOG_INFO, msg +' at '+ cur_timer)
 				
 				if price_ut < cur_price:				# upper threshold
