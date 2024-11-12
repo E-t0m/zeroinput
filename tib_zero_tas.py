@@ -39,42 +39,45 @@ def tasmota_switch(dev,action):							# switch tasmota device on / off
 
 def get_average(n_days):								# gets hourly averages from volkszähler database, see profiler.py for further statistical usage
 	hours = {}
-	for key in conf['vz_chans'].keys(): hours[key] = [0.0]*24
+	keys = ['Inverter','Import','Auto']
+	for key in keys: hours[key] = [0.0]*24
 	
-	if verbose: print('query volkszähler:')
+	if verbose: print('query volkszähler for consumption data:')
 	for day in range(0,n_days):
 		begin	= (datetime.today() - timedelta(days=day,hours=24)).replace(minute=0, second=0,microsecond=0)
-		end		= (datetime.today() - timedelta(days=day,hours=1 )).replace(minute=50,second=0,microsecond=0)
+		end		= (datetime.today() - timedelta(days=day,hours=1 )).replace(minute=59,second=0,microsecond=0)
 		beginstamp	= str(int(begin.timestamp())).ljust(13,'0')
 		endstamp	= str(int(end.timestamp())).ljust(13,'0')
-		url = 'http://'+conf['vz_host_port']+'/data.json?from='+beginstamp+'&to='+endstamp+'&group=hour'	# asumes volkszähler at localhost:8080
-		for uuid in conf['vz_chans'].values(): url += '&uuid[]='+uuid
-	
+		url = 'http://'+conf['vz_host_port']+'/data.json?from='+beginstamp+'&to='+endstamp+'&group=hour'
+		
+		for key in keys: url += '&uuid[]='+conf['vz_chans'][key]
+		
 		if verbose: 
 			print(day, '\tbegin',begin,beginstamp,'\tend',end,endstamp,'\t',end='')
 			begin_request = datetime.now()
 		jresp = get(url=url).json()
-		if verbose: print('request duration:', datetime.now()-begin_request)
+		if verbose: print('request duration:', datetime.now()-begin_request,'\trows:',jresp['data'][0]['rows'])
 		
 		for row in jresp['data']:
-			for key in conf['vz_chans']:
+			for key in keys:
 				if conf['vz_chans'][key] == row['uuid']: chan_n = key
 			for value in row['tuples']:
 				tval = datetime.fromtimestamp(value[0]/1000)
 				hours[chan_n][tval.hour] += value[1]
 		
 		if verbose:
-			if debug: print("\nday\thour\t%s"%(list(conf['vz_chans'])))	# show summary
+			if debug: print("\nday\thour\t%s"%(keys))	# show summary
 			for i in range(0,24): 
 				hourline = ''
-				for key in conf['vz_chans']: hourline += '% 8.2f\t'%hours[key][i]
+				for key in keys: hourline += '% 8.2f\t'%hours[key][i]
 				if debug: print('%i\t%i\t%s'%(day,i,hourline))
 	
 	for i in range(0,24):								# calculate hourly averages
-		for key in conf['vz_chans']: hours[key][i] /= n_days
+		for key in keys: hours[key][i] /= n_days
 	
-	hours['B+E'] = [0.0]*24
-	for i in range(0,24): hours['B+E'][i] = hours['Bezug'][i] + abs(hours['Erzeug'][i]) - hours['Auto'][i]		# total consumption - Auto [Wh]
+	hours['IIA'] = [0.0]*24
+	#for i in range(0,24): hours['IIA'][i] = hours['Import'][i] + abs(hours['Inverter'][i])							# total consumption [Wh]
+	for i in range(0,24): hours['IIA'][i] = hours['Import'][i] + abs(hours['Inverter'][i]) - hours['Auto'][i]		# total consumption - Auto [Wh]
 			
 	if debug:									# show average values
 		headerline = ''
@@ -96,7 +99,7 @@ def read_average():										# read cached data or start a query
 		vz_in['timestamp'] = 1000000.123456				# a very old timestamp
 	
 	if datetime.fromtimestamp(vz_in['timestamp']).strftime('%Y-%m-%d %H') != datetime.now().strftime('%Y-%m-%d %H'):
-		vz_in['B+E'] = get_average(7)['B+E']			# query volkszähler for hourly averages of 7 days
+		vz_in['IIA'] = get_average(7)['IIA']			# query volkszähler for hourly averages of 7 days
 		vz_in['timestamp'] = datetime.now().timestamp()
 		with open(join(dirname(__file__),'avg_cache.json'),'w') as fo:
 			json_dump(vz_in,fo)							# write current averages to file
@@ -104,12 +107,49 @@ def read_average():										# read cached data or start a query
 		if verbose: print('using cached volkszähler averages from',datetime.fromtimestamp(vz_in['timestamp']).strftime('%Y-%m-%d %H:%M'))
 	return(vz_in)
 
-def get_voltage():										# get the latest battery voltage from volkszähler
-	time_resp = str(get(url='http://'+conf['vz_host_port']+'/data.json?uuid[]='+conf['vz_voltage_uuid']+'&from=now&to=now&options=raw').json()['data'][0]['from'])	# timecode for latest known voltage
-	vz_voltage = get(url='http://'+conf['vz_host_port']+'/data.json?uuid[]='+conf['vz_voltage_uuid']+'&from='+time_resp+'&to='+time_resp+'&options=raw').json()['data'][0]['tuples'][0][1] # latest known voltage
-	bat_cap = int(vz_voltage*1000-49700)			# simple abstraction for low voltage of 16s LiFePo4 battery capacity
-	if verbose: print('latest voltage',vz_voltage,'V, bat efficiency',conf['bat_efficiency'],'%, remaining bat capacity',bat_cap if bat_cap > 0 else 0,'Wh')
-	return(vz_voltage, bat_cap)
+def get_bat_cap():										# get battery energy content and voltage
+	if verbose: print('query volkszähler for energy content:')
+	
+	days_back = 0
+	while True:
+		begin	= (datetime.today() - timedelta(days=days_back)).replace(hour=0,minute=0,second=0,microsecond=0)
+		end		= datetime.today().replace(microsecond=0)
+		beginstamp	= str(int(begin.timestamp())).ljust(13,'0')
+		endstamp	= str(int(end.timestamp())).ljust(13,'0')
+		url = 'http://'+conf['vz_host_port']+'/data.json?from='+beginstamp+'&to='+endstamp		+'&uuid[]='+conf['vz_chans']['BatV']
+		
+		if verbose: 
+			print(days_back, '\tbegin',begin,beginstamp,'\tend',end,endstamp,'\t',end='')
+			begin_request = datetime.now()
+		jresp = get(url=url).json()
+		if verbose: print('request duration:', datetime.now()-begin_request,'\trows:',jresp['data'][0]['rows'])
+		
+		if days_back == 0: latest_voltage = jresp['data'][0]['tuples'][-1][1]
+		
+		if jresp['data'][0]['min'][1] < 49: break		# voltage < 49 stop searching
+		days_back += 1
+	
+	begin	= (datetime.today() - timedelta(days=days_back)).replace(hour=0,minute=0,second=0,microsecond=0)
+	end		= datetime.today().replace(microsecond=0)
+	beginstamp	= str(int(begin.timestamp())).ljust(13,'0')
+	endstamp	= str(int(end.timestamp())).ljust(13,'0')
+	url = 'http://'+conf['vz_host_port']+'/data.json?from='+beginstamp+'&to='+endstamp+'&group=day'
+	for key in ['Inverter','PV']: url += '&uuid[]='+conf['vz_chans'][key]
+	
+	if verbose: 
+		print(days_back, '\tbegin',begin,beginstamp,'\tend',end,endstamp,'\t',end='')
+		begin_request = datetime.now()
+	jresp = get(url=url).json()
+	if verbose: print('request duration:', datetime.now()-begin_request,'\trows:',jresp['data'][0]['rows'])
+	
+	bat_cap = 0
+	for row in jresp['data']:
+		if row['uuid'] == conf['vz_chans']['PV']:			bat_cap += abs(row['consumption'])
+		elif row['uuid'] == conf['vz_chans']['Inverter']:	bat_cap += row['consumption']
+	
+	if verbose: print('latest voltage %.1f'%latest_voltage,'V, remaining battery content %.f Wh'%bat_cap)
+	return(latest_voltage,int(bat_cap))
+
 
 def main():
 	prices = dict()
@@ -122,34 +162,34 @@ def main():
 	for i in tibber_response['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow']:	prices[i['startsAt'][0:13]] = i['total']
 	
 	price_avg = 0
-	#future_stop = (datetime.now() + timedelta(days=0 if datetime.now().hour < 10 else 1)).replace(hour=10, minute=0, second=0, microsecond=0) # don't calculate for next day time
-	future_stop = (datetime.now() + timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0) # don't calculate for next day time
+	future_stop = (datetime.now() + timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0) # don't calculate for next day time after 10:00
+	
 	future_prices = dict()								# prices to come
 	for i in prices:
 		tib_time = datetime.strptime(i+':59:59', '%Y-%m-%dT%H:%M:%S')
-		if datetime.now() < tib_time and tib_time < future_stop:	# define calculation phase
+		if datetime.now() < tib_time: # and tib_time < future_stop:	# define calculation phase # currently without stop time
 			price_avg += prices[i]
 			future_prices[i] = prices[i]
 	
 	vz_in = read_average()								# get average consumption data
-	vz_voltage, bat_cap = get_voltage()					# get voltage and remaining battery capacity
-
+	vz_voltage, bat_cap = get_bat_cap()					# get voltage and remaining battery content
+	
 	s_fupri = dict(sorted(future_prices.items(), key=lambda item: item[1], reverse=True))	# sort future prices by descending price
 	
 	cap_p = dict(); pv_pt = dict(); sum_p = 0; j = 0
 	lowest_price_timed = list(s_fupri.values())[0]		# set to the highest price
-	if verbose and sum_p < bat_cap: print('%s\t%s\t%s\t%s\t%s'%('date time','price','set','average','sum'))	# show table header if there is a table
+	if verbose and sum_p < bat_cap: print('%s\t%s\t%s\t%s'%('date time     price','set','average','sum'))	# show table header if there is a table
 	
 	for i in s_fupri:									# iterate over relevant hours
-		cur_p = int(vz_in['B+E'][int(i[-2:])])			# get the average power of the current hour
+		cur_p = int(vz_in['IIA'][int(i[-2:])])			# get the average power of the current hour
 		
 		if sum_p < bat_cap:								# as long as there is energy to dispose
 			sum_p += cur_p
 			
 			if 	 j == 0: cap_p[i] = conf['max_inverter_power']	# maximum power for that hour
-			elif j == 1: cap_p[i] = cur_p * 1.2		# 2nd expensive price gets 120%
-			elif j == 2: cap_p[i] = cur_p * 1.1		# 3rd expensive price gets 110%
-			else:		 cap_p[i] = cur_p			# all other get the 7d average amount
+			elif j == 1: cap_p[i] = cur_p * 1.2			# 2nd expensive price gets 120%
+			elif j == 2: cap_p[i] = cur_p * 1.1			# 3rd expensive price gets 110%
+			else:		 cap_p[i] = cur_p				# all other get the 7d average amount
 
 			if cap_p[i] > conf['max_inverter_power']: cap_p[i] = conf['max_inverter_power']
 			cap_p[i] = '%.f'%(cap_p[i])
@@ -157,7 +197,7 @@ def main():
 			lowest_price_timed = s_fupri[i]				# the lowest price with input
 			if verbose: print('%s %.2f\t%s\t%i\t%i'%(i,s_fupri[i]*100,cap_p[i],cur_p,sum_p))
 		else:			 
-			cap_p[i] = '0'								# battery capacity was reached
+			cap_p[i] = '0'								# battery content was reached
 			if debug: print('%s %.2f\t%i\t%s'%(i,s_fupri[i]*100,cur_p,cap_p[i]))
 	
 	if debug: print('lowest price timed %.2f'%(lowest_price_timed*100),'with',conf['bat_efficiency'],'%% = %.2f'%(lowest_price_timed*conf['bat_efficiency']))
