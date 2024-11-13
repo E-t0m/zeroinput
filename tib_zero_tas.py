@@ -129,11 +129,15 @@ def get_bat_cap():										# get battery energy content and voltage
 		if jresp['data'][0]['min'][1] < 49: break		# voltage < 49 stop searching
 		days_back += 1
 	
-	begin	= (datetime.today() - timedelta(days=days_back)).replace(hour=0,minute=0,second=0,microsecond=0)
+	min_v = 999
+	for ts,v,s in jresp['data'][0]['tuples']: 			# find latest minimum voltage with timestamp
+		if v <= min_v: 
+			min_ts = ts; min_v = v
+	
 	end		= datetime.today().replace(microsecond=0)
-	beginstamp	= str(int(begin.timestamp())).ljust(13,'0')
+	beginstamp	= str(min_ts).ljust(13,'0')				# use minimum timestamp
 	endstamp	= str(int(end.timestamp())).ljust(13,'0')
-	url = 'http://'+conf['vz_host_port']+'/data.json?from='+beginstamp+'&to='+endstamp+'&group=day'
+	url = 'http://'+conf['vz_host_port']+'/data.json?from='+beginstamp+'&to='+endstamp+'&group=hour'
 	for key in ['Inverter','PV']: url += '&uuid[]='+conf['vz_chans'][key]
 	
 	if verbose: 
@@ -147,7 +151,7 @@ def get_bat_cap():										# get battery energy content and voltage
 		if row['uuid'] == conf['vz_chans']['PV']:			bat_cap += abs(row['consumption'])
 		elif row['uuid'] == conf['vz_chans']['Inverter']:	bat_cap += row['consumption']
 	
-	if verbose: print('latest voltage %.1f'%latest_voltage,'V, remaining battery content %.f Wh'%bat_cap)
+	if verbose: print('%s minimum voltage %.1f V,'%(datetime.fromtimestamp(min_ts/1000),min_v),'latest voltage %.1f V,'%latest_voltage,'remaining battery content %.f Wh'%bat_cap)
 	return(latest_voltage,int(bat_cap))
 
 
