@@ -76,7 +76,6 @@ def get_average(n_days):								# gets hourly averages from volkszähler databas
 		for key in keys: hours[key][i] /= n_days
 	
 	hours['IIA'] = [0.0]*24
-	#for i in range(0,24): hours['IIA'][i] = hours['Import'][i] + abs(hours['Inverter'][i])							# total consumption [Wh]
 	for i in range(0,24): hours['IIA'][i] = hours['Import'][i] + abs(hours['Inverter'][i]) - hours['Auto'][i]		# total consumption - Auto [Wh]
 			
 	if debug:									# show average values
@@ -134,10 +133,12 @@ def get_bat_cap():										# get battery energy content and voltage
 		if v <= min_v: 
 			min_ts = ts; min_v = v
 	
+	begin	= datetime.fromtimestamp(min_ts/1000)
 	end		= datetime.today().replace(microsecond=0)
 	beginstamp	= str(min_ts).ljust(13,'0')				# use minimum timestamp
 	endstamp	= str(int(end.timestamp())).ljust(13,'0')
 	url = 'http://'+conf['vz_host_port']+'/data.json?from='+beginstamp+'&to='+endstamp+'&group=hour'
+	
 	for key in ['Inverter','PV']: url += '&uuid[]='+conf['vz_chans'][key]
 	
 	if verbose: 
@@ -151,7 +152,7 @@ def get_bat_cap():										# get battery energy content and voltage
 		if row['uuid'] == conf['vz_chans']['PV']:			bat_cap += abs(row['consumption'])*conf['bat_efficiency']*0.01
 		elif row['uuid'] == conf['vz_chans']['Inverter']:	bat_cap += row['consumption']
 	
-	if verbose: print('%s minimum voltage %.1f V,'%(datetime.fromtimestamp(min_ts/1000),min_v),'latest voltage %.1f V,'%latest_voltage,'remaining battery content %.f Wh'%bat_cap)
+	if verbose: print('minimum voltage %.1f V,'%min_v,'latest voltage %.1f V,'%latest_voltage,'remaining battery content %.f Wh'%bat_cap)
 	return(latest_voltage,int(bat_cap))
 
 
