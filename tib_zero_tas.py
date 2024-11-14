@@ -126,7 +126,7 @@ def get_bat_cap():										# get battery energy content and voltage
 		
 		if days_back == 0: latest_voltage = jresp['data'][0]['tuples'][-1][1]
 		
-		if jresp['data'][0]['min'][1] < 49: break		# voltage < 49 stop searching
+		if jresp['data'][0]['min'][1] <= 48: break		# voltage < 48 stop searching
 		days_back += 1
 	
 	min_v = 999
@@ -148,7 +148,7 @@ def get_bat_cap():										# get battery energy content and voltage
 	
 	bat_cap = 0
 	for row in jresp['data']:
-		if row['uuid'] == conf['vz_chans']['PV']:			bat_cap += abs(row['consumption'])
+		if row['uuid'] == conf['vz_chans']['PV']:			bat_cap += abs(row['consumption'])*conf['bat_efficiency']*0.01
 		elif row['uuid'] == conf['vz_chans']['Inverter']:	bat_cap += row['consumption']
 	
 	if verbose: print('%s minimum voltage %.1f V,'%(datetime.fromtimestamp(min_ts/1000),min_v),'latest voltage %.1f V,'%latest_voltage,'remaining battery content %.f Wh'%bat_cap)
