@@ -44,8 +44,8 @@ def get_average(n_days):								# gets hourly averages from volkszähler databas
 	
 	if verbose: print('query volkszähler for consumption data:')
 	for day in range(0,n_days):
-		begin	= (datetime.today() - timedelta(days=day+day_shift,hours=24)).replace(minute=0,second=0,microsecond=0)
-		end		= (datetime.today() - timedelta(days=day+day_shift,hours=0 )).replace(minute=0,second=0,microsecond=0)
+		begin	= (datetime.today() - timedelta(days=day,hours=24)).replace(minute=0,second=0,microsecond=0)
+		end		= (datetime.today() - timedelta(days=day,hours=0 )).replace(minute=0,second=0,microsecond=0)
 		beginstamp	= str(int(begin.timestamp())).ljust(13,'0')
 		endstamp	= str(int(end.timestamp())).ljust(13,'0')
 		url = 'http://'+conf['vz_host_port']+'/data.json?from='+beginstamp+'&to='+endstamp+'&group=hour'
