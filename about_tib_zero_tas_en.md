@@ -1,66 +1,90 @@
 the -v erbose output looks like this
 
 ```
-using cached volkszähler averages from 2024-11-14 15:00
+query volkszähler for consumption data:
+0 	begin 2024-11-20 16:00:00 1732114800000 	end 2024-11-21 15:59:00 1732201140000 	request duration: 0:00:04.035486 	rows: 25
+1 	begin 2024-11-19 16:00:00 1732028400000 	end 2024-11-20 15:59:00 1732114740000 	request duration: 0:00:04.814463 	rows: 25
+2 	begin 2024-11-18 16:00:00 1731942000000 	end 2024-11-19 15:59:00 1732028340000 	request duration: 0:00:03.845095 	rows: 25
+3 	begin 2024-11-17 16:00:00 1731855600000 	end 2024-11-18 15:59:00 1731941940000 	request duration: 0:00:03.875253 	rows: 25
+4 	begin 2024-11-16 16:00:00 1731769200000 	end 2024-11-17 15:59:00 1731855540000 	request duration: 0:00:03.851959 	rows: 25
+5 	begin 2024-11-15 16:00:00 1731682800000 	end 2024-11-16 15:59:00 1731769140000 	request duration: 0:00:04.018686 	rows: 25
+6 	begin 2024-11-14 16:00:00 1731596400000 	end 2024-11-15 15:59:00 1731682740000 	request duration: 0:00:03.858579 	rows: 25
 query volkszähler for energy content:
-0 	begin 2024-11-14 00:00:00 1731538800000 	end 2024-11-14 15:56:16 1731596176000 	request duration: 0:00:00.177119 	rows: 5412
-0 	begin 2024-11-14 07:56:44 1731567404000 	end 2024-11-14 15:56:16 1731596176000 	request duration: 0:00:00.902164 	rows: 9
-minimum voltage 47.8 V, latest voltage 51.5 V, remaining battery content 1137 Wh
+0 	begin 2024-11-21 00:00:00 1732143600000 	end 2024-11-21 16:03:36 1732201416000 	request duration: 0:00:00.159054 	rows: 6295
+1 	begin 2024-11-20 00:00:00 1732057200000 	end 2024-11-21 16:03:36 1732201416000 	request duration: 0:00:00.329424 	rows: 13311
+1 	begin 2024-11-20 08:52:47 1732089167000 	end 2024-11-21 16:03:37 1732201417000 	request duration: 0:00:02.939414 	rows: 33
+minimum voltage 48.3 V, latest voltage 52.3 V, remaining battery content 2283 Wh
 date time     price	set	average	sum
-2024-11-15T08 38.09	900	360	360
-2024-11-14T17 37.87	385	321	681
-2024-11-14T18 37.65	326	296	977
-2024-11-15T09 37.27	338	338	1315
-tibber price avg: 34.57 min: 30.99 max: 38.09 spread: 7.10 (19 %) lt: 34.57 ht: 33.86, 92%lpt 34.29
+2024-11-21T17 41.00	900	452	452
+2024-11-21T16 40.14	490	408	860
+2024-11-21T18 38.51	428	389	1249
+2024-11-21T19 37.65	402	402	1651
+2024-11-22T08 36.46	359	359	2010
+2024-11-22T09 36.16	463	463	2473
+tibber price avg: 33.55 min: 28.48 max: 41.00 spread: 12.52 (31 %) lt: 33.55 ht: 32.30, 92%lpt: 33.27
 set lt to max: 31.50
-                     2024-11-14T00 31.42                                         o
-                     2024-11-14T01 31.19                                         o
-                     2024-11-14T02 30.74                                        o
-                     2024-11-14T03 30.29                                        o
-                     2024-11-14T04 30.19                                        o
-                     2024-11-14T05 30.29                                        o
-                     2024-11-14T06 31.62                                         o
-                     2024-11-14T07 33.07                                           o
-                     2024-11-14T08 34.44                                            o
-                     2024-11-14T09 34.06                                            o
-                     2024-11-14T10 34.27                                            o
-                     2024-11-14T11 34.17                                            o
-                     2024-11-14T12 33.79                                           o
-                     2024-11-14T13 34.48                                            o
-                     2024-11-14T14 35.26                                             o
-now                  2024-11-14T15 36.23    0 PVpt                                    <
-T off: 3 4           2024-11-14T16 36.86    0 PVpt                                    <
-                     2024-11-14T17 37.87  385 PVpt                                     <
-                     2024-11-14T18 37.65  326 PVpt                                     <
-                     2024-11-14T19 36.96    0 PVpt                                    <
-                     2024-11-14T20 35.81    0 PVpt                                   <
-                     2024-11-14T21 34.72    0 PVpt                                  <
-                     2024-11-14T22 33.94    0                                      <
-                     2024-11-14T23 32.70    0                                     |
-                     2024-11-15T00 32.46    0                                     |
-                     2024-11-15T01 32.01    0                                     |
-                     2024-11-15T02 32.05    0                                     |
-                     2024-11-15T03 31.65    0                                    |
-                     2024-11-15T04 31.74    0                                    |
-                     2024-11-15T05 32.24    0                                     |
-                     2024-11-15T06 34.70    0 PVpt                                  <
-                     2024-11-15T07 36.47    0 PVpt                                    <
-                     2024-11-15T08 38.09  900 PVpt                                      <
-                     2024-11-15T09 37.27  338 PVpt                                     <
-                     2024-11-15T10 35.84    0 PVpt                                   <
-                     2024-11-15T11 35.39    0 PVpt                                   <
-                     2024-11-15T12 33.80    0                                      |
-                     2024-11-15T13 33.81    0                                      |
-                     2024-11-15T14 35.01    0 PVpt                                   <
-                     2024-11-15T15 36.18    0 PVpt                                    <
-                     2024-11-15T16 35.25    0 PVpt                                   <
-                     2024-11-15T17 35.53    0 PVpt                                   <
-                     2024-11-15T18 35.35    0 PVpt                                   <
-                     2024-11-15T19 34.59    0 PVpt                                  <
-                     2024-11-15T20 33.09    0                                      |
-                     2024-11-15T21 32.49    0                                     |
-                     2024-11-15T22 32.19    0                                     |
- T on: 1 2           2024-11-15T23 30.99    0                                   >
+                     2024-11-21T00 30.50                                        o
+                     2024-11-21T01 30.07                                        o
+                     2024-11-21T02 29.64                                       o
+                     2024-11-21T03 29.33                                       o
+                     2024-11-21T04 29.34                                       o
+                     2024-11-21T05 30.32                                        o
+                     2024-11-21T06 32.07                                          o
+                     2024-11-21T07 33.77                                           o
+                     2024-11-21T08 35.14                                             o
+                     2024-11-21T09 35.38                                             o
+                     2024-11-21T10 34.47                                            o
+                     2024-11-21T11 33.06                                           o
+                     2024-11-21T12 32.83                                          o
+                     2024-11-21T13 33.69                                           o
+                     2024-11-21T14 36.17                                              o
+                     2024-11-21T15 37.74                                               o
+now                  2024-11-21T16 40.14  490 PVpt                                        <
+T off: 3 4           2024-11-21T17 41.00  900 PVpt                                         <
+                     2024-11-21T18 38.51  428 PVpt                                      <
+                     2024-11-21T19 37.65  402 PVpt                                     <
+                     2024-11-21T20 34.94    0 PVpt                                  <
+                     2024-11-21T21 33.96    0 PVpt                                 <
+                     2024-11-21T22 33.94    0 PVpt                                 <
+                     2024-11-21T23 32.10    0                                     |
+                     2024-11-22T00 33.13    0                                      <
+                     2024-11-22T01 31.95    0                                    |
+ T on: 1 2           2024-11-22T02 30.96    0                                   >
+                     2024-11-22T03 30.19    0                                   >
+                     2024-11-22T04 29.86    0                                  >
+                     2024-11-22T05 30.28    0                                   >
+                     2024-11-22T06 33.25    0                                      <
+                     2024-11-22T07 35.42    0 PVpt                                   <
+                     2024-11-22T08 36.46  359 PVpt                                    <
+                     2024-11-22T09 36.16  463 PVpt                                    <
+                     2024-11-22T10 35.47    0 PVpt                                   <
+                     2024-11-22T11 33.22    0                                      <
+                     2024-11-22T12 31.83    0                                    |
+                     2024-11-22T13 30.65    0                                   >
+                     2024-11-22T14 30.76    0                                   >
+                     2024-11-22T15 31.96    0                                    |
+                     2024-11-22T16 32.55    0                                     <
+                     2024-11-22T17 34.60    0 PVpt                                  <
+                     2024-11-22T18 35.29    0 PVpt                                   <
+                     2024-11-22T19 34.64    0 PVpt                                  <
+                     2024-11-22T20 31.95    0                                    |
+                     2024-11-22T21 31.97    0                                    |
+                     2024-11-22T22 30.41    0                                   >
+                     2024-11-22T23 28.48    0                                 >
 done.
 
 ```
+At first the consumption data is taken from volkszähler's database. This is cached hourly.
+PV power, inverter input, net demand and auto (car / charger) is used to calculate a 7 day average profile.
+
+Then the energy content gets fetched: It searches for the latest empty battery voltage and calculates the remaining battery content.
+
+The tasmota timers (and switches) are set by thresholds.
+
+The zeroinput timer file is calculated with descending hour prices as far as tibber allows the foresight.
+The coming, price sorted hours get summed with their 7-day-average energy usage. This is done as long there is energy in the battery.
+This information is written to zeroinput's timer file, which regulates the inverter.
+
+PVpt is PV pass through, where the PV energy is directly transformed by the inverter, because of the small price gap to the next sheduled input hour.
+
+tib_zero_tas.py should run every 10 min up to 60 min by cron.
