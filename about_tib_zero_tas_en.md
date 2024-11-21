@@ -75,7 +75,7 @@ done.
 
 ```
 At first the consumption data is taken from volkszähler's database. This is cached hourly.
-PV power, inverter input, net demand and auto (car / charger) is used to calculate a 7 day average profile.
+PV power, inverter input, net demand and auto (car / charger) is used to calculate a 7 day average profile. (similar to [profiler.py](https://github.com/E-t0m/zeroinput/blob/main/profiler.py))
 
 Then the energy content gets fetched: It searches for the latest empty battery voltage and calculates the remaining battery content.
 
