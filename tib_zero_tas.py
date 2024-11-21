@@ -44,8 +44,8 @@ def get_average(n_days):								# gets hourly averages from volkszähler databas
 	
 	if verbose: print('query volkszähler for consumption data:')
 	for day in range(0,n_days):
-		begin	= (datetime.today() - timedelta(days=day,hours=24)).replace(minute=0, second=0,microsecond=0)
-		end		= (datetime.today() - timedelta(days=day,hours=1 )).replace(minute=59,second=0,microsecond=0)
+		begin	= (datetime.today() - timedelta(days=day+day_shift,hours=24)).replace(minute=0,second=0,microsecond=0)
+		end		= (datetime.today() - timedelta(days=day+day_shift,hours=0 )).replace(minute=0,second=0,microsecond=0)
 		beginstamp	= str(int(begin.timestamp())).ljust(13,'0')
 		endstamp	= str(int(end.timestamp())).ljust(13,'0')
 		url = 'http://'+conf['vz_host_port']+'/data.json?from='+beginstamp+'&to='+endstamp+'&group=hour'
@@ -63,6 +63,7 @@ def get_average(n_days):								# gets hourly averages from volkszähler databas
 				if conf['vz_chans'][key] == row['uuid']: chan_n = key
 			for value in row['tuples']:
 				tval = datetime.fromtimestamp(value[0]/1000)
+				if tval > end: continue					# drop next day values sometimes sent by vz
 				hours[chan_n][tval.hour] += value[1]
 		
 		if verbose:
@@ -125,7 +126,7 @@ def get_bat_cap():										# get battery energy content and voltage
 		
 		if days_back == 0: latest_voltage = jresp['data'][0]['tuples'][-1][1]
 		
-		if jresp['data'][0]['min'][1] <= 48: break		# voltage < 48 stop searching
+		if jresp['data'][0]['min'][1] <= 48.5: break		# voltage < 48.5V considers a empty battery
 		days_back += 1
 	
 	min_v = 999
@@ -218,7 +219,7 @@ def main():
 	price_ut = price_avg - (price_spread * 0.1 )		# upper threshold - set the factor to your needs
 	
 	if verbose:	print('tibber price avg: %.2f'%price_avg,'min: %.2f'%(price_min),'max: %.2f'%(price_max),'spread: %.2f'%price_spread,'(%.f %%)'%(price_spread/price_max*100), \
-						'lt: %.2f'%price_lt,'ht: %.2f,'%price_ut,'%i%%lpt %.2f'%(conf['bat_efficiency'],lowest_price_timed*conf['bat_efficiency']))
+						'lt: %.2f'%price_lt,'ht: %.2f,'%price_ut,'%i%%lpt: %.2f'%(conf['bat_efficiency'],lowest_price_timed*conf['bat_efficiency']))
 	if price_lt > conf['timer_max_price']: 
 		price_lt = conf['timer_max_price']
 		if verbose: print('set lt to max: %.2f'%price_lt)
