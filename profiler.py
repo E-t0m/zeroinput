@@ -5,12 +5,13 @@ from requests import get
 from datetime import timedelta, datetime
 from sys import argv
 
-chans = {		'Wh Erzeug':	'your-vz-UUID-here',
-				'Wh Bezug':		'your-vz-UUID-here',
-				'¢/kWh tibber':	'your-vz-UUID-here',
-				'Wh Auto':		'your-vz-UUID-here',
-				'Wh Klima':		'your-vz-UUID-here',
-				'Wh PV':		'your-vz-UUID-here',
+chans = {		'Wh Erzeug':	'your-UUID-here',
+				'Wh Bezug':		'your-UUID-here',
+				'¢/kWh tibber':	'your-UUID-here',
+				'Wh Auto':		'your-UUID-here',
+				'Wh Lader':		'your-UUID-here',
+				'Wh Klima':		'your-UUID-here',
+				'Wh PV':		'your-UUID-here',
 		}
 
 try:
@@ -50,7 +51,7 @@ def get_average(n_days,day_shift):
 			
 			for value in row['tuples']:
 				tval = datetime.fromtimestamp(value[0]/1000)
-				if tval > end: continue												# drop next day values sometimes send from vz
+				if tval > end: continue												# drop next day values sometimes sent by vz
 				#print('%s\t\t%i\t%i\t% .2f'%(chan_n,tval.day,tval.hour,value[1]))	# show hourly values by channel
 				hours[chan_n][tval.hour] += value[1]
 		
@@ -66,14 +67,14 @@ def get_average(n_days,day_shift):
 			hours[key][i] /= n_days
 	
 	if True:											# calculate new "channels"
-		hours['¢/h Kosten Bezug-Auto'] = [0.0]*24
+		hours['Wh Bezug-Auto-Klima'] = [0.0]*24
+		hours['¢/h Kosten Bezug-Auto-Klima'] = [0.0]*24
 		hours['¢/h Wert-Erzeug'] = [0.0]*24
-		hours['Wh Bezug-Auto'] = [0.0]*24
 		
 		for i in range(0,24):
-			hours['Wh Bezug-Auto'][i] = hours['Wh Bezug'][i] - hours['Wh Auto'][i]
-			hours['¢/h Kosten Bezug-Auto'][i] = (hours['Wh Bezug-Auto'][i] * hours['¢/kWh tibber'][i]) / 1000	# Wh * ¢/kWh / 1000 = ¢/h
-			hours['¢/h Wert-Erzeug'][i] = abs(hours['Wh Erzeug'][i]) * hours['¢/kWh tibber'][i] / 1000			# Wh * ¢/kWh / 1000 = ¢/h
+			hours['Wh Bezug-Auto-Klima'][i] = hours['Wh Bezug'][i] - hours['Wh Auto'][i] - hours['Wh Klima'][i]
+			hours['¢/h Kosten Bezug-Auto-Klima'][i] = (hours['Wh Bezug-Auto-Klima'][i] * hours['¢/kWh tibber'][i]) / 1000	# Wh * ¢/kWh / 1000 = ¢/h
+			hours['¢/h Wert-Erzeug'][i] = abs(hours['Wh Erzeug'][i]) * hours['¢/kWh tibber'][i] / 1000						# Wh * ¢/kWh / 1000 = ¢/h
 		
 	if True:											# show average values
 		headerline = ''
@@ -101,6 +102,4 @@ print(n_days,'days to go', 'shift '+str(day_shift) if day_shift else '')
 avg_day = get_average(n_days,day_shift)
 
 exit(0)
-
-
 
