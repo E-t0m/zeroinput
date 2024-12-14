@@ -39,7 +39,7 @@ def tasmota_switch(dev,action):							# switch tasmota device on / off
 
 def get_average(n_days):								# gets hourly averages from volkszähler database, see profiler.py for further statistical usage
 	hours = {}
-	keys = ['Inverter','Import','Auto']
+	keys = ['Inverter','Import','Auto','Lader','Klima']	# use this channels for calculation
 	for key in keys: hours[key] = [0.0]*24
 	
 	if verbose: print('query volkszähler for consumption data:')
@@ -76,10 +76,10 @@ def get_average(n_days):								# gets hourly averages from volkszähler databas
 	for i in range(0,24):								# calculate hourly averages
 		for key in keys: hours[key][i] /= n_days
 	
-	hours['IIA'] = [0.0]*24
-	for i in range(0,24): hours['IIA'][i] = hours['Import'][i] + abs(hours['Inverter'][i]) - hours['Auto'][i]		# total consumption - Auto [Wh]
+	hours['IILAK'] = [0.0]*24
+	for i in range(0,24): hours['IILAK'][i] = hours['Import'][i] + abs(hours['Inverter'][i]) - hours['Auto'][i] - hours['Lader'][i] - hours['Klima'][i]		# total consumption - Auto - Lader - Klima [Wh]
 			
-	if debug:									# show average values
+	if debug:											# show average values
 		headerline = ''
 		for chan in hours.keys(): headerline += ','+chan
 		print("\n%s\t%i day\tAVERAGE\nhour%s"%(datetime.now().strftime('%Y-%m-%d\t%H:%M:%S'),n_days,headerline))
@@ -99,7 +99,7 @@ def read_average():										# read cached data or start a query
 		vz_in['timestamp'] = 1000000.123456				# a very old timestamp
 	
 	if datetime.fromtimestamp(vz_in['timestamp']).strftime('%Y-%m-%d %H') != datetime.now().strftime('%Y-%m-%d %H'):
-		vz_in['IIA'] = get_average(7)['IIA']			# query volkszähler for hourly averages of 7 days
+		vz_in['IILAK'] = get_average(7)['IILAK']			# query volkszähler for hourly averages of 7 days
 		vz_in['timestamp'] = datetime.now().timestamp()
 		with open(join(dirname(__file__),'avg_cache.json'),'w') as fo:
 			json_dump(vz_in,fo)							# write current averages to file
@@ -108,7 +108,7 @@ def read_average():										# read cached data or start a query
 	return(vz_in)
 
 def get_bat_cap():										# get battery energy content and voltage
-	if verbose: print('query volkszähler for energy content:')
+	if verbose: print(datetime.now().strftime('%Y-%m-%d %H:%M'),'query volkszähler for energy content:')
 	
 	days_back = 0
 	while True:
@@ -126,7 +126,7 @@ def get_bat_cap():										# get battery energy content and voltage
 		
 		if days_back == 0: latest_voltage = jresp['data'][0]['tuples'][-1][1]
 		
-		if jresp['data'][0]['min'][1] <= 48.5: break		# voltage < 48.5V considers a empty battery
+		if jresp['data'][0]['min'][1] <= 48.5: break	# voltage < 48.5V considers a empty battery
 		days_back += 1
 	
 	min_v = 999
@@ -140,7 +140,7 @@ def get_bat_cap():										# get battery energy content and voltage
 	endstamp	= str(int(end.timestamp())).ljust(13,'0')
 	url = 'http://'+conf['vz_host_port']+'/data.json?from='+beginstamp+'&to='+endstamp+'&group=hour'
 	
-	for key in ['Inverter','PV']: url += '&uuid[]='+conf['vz_chans'][key]
+	for key in ['Inverter','PV','Lader']: url += '&uuid[]='+conf['vz_chans'][key]
 	
 	if verbose: 
 		print(days_back, '\tbegin',begin,beginstamp,'\tend',end,endstamp,'\t',end='')
@@ -150,8 +150,17 @@ def get_bat_cap():										# get battery energy content and voltage
 	
 	bat_cap = 0
 	for row in jresp['data']:
-		if row['uuid'] == conf['vz_chans']['PV']:			bat_cap += abs(row['consumption'])*conf['bat_efficiency']*0.01
-		elif row['uuid'] == conf['vz_chans']['Inverter']:	bat_cap += row['consumption']
+	
+		if row['uuid'] == conf['vz_chans']['PV']:
+			bat_cap += abs(row['consumption']) *conf['PV_2_bat_efficiency']*0.01
+	
+		if row['uuid'] == conf['vz_chans']['Lader']:
+			bat_cap += row['consumption'] *conf['AC_2_bat_efficiency']*0.01
+		
+		elif row['uuid'] == conf['vz_chans']['Inverter']:
+			bat_cap += row['consumption'] * 100/conf['bat_2_AC_efficiency']
+	
+	bat_cap *= conf['bat_2_AC_efficiency']*0.01			# effective available AC energy input power
 	
 	if verbose: print('minimum voltage %.1f V,'%min_v,'latest voltage %.1f V,'%latest_voltage,'remaining battery content %.f Wh'%bat_cap)
 	return(latest_voltage,int(bat_cap))
@@ -168,35 +177,33 @@ def main():
 	for i in tibber_response['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow']:	prices[i['startsAt'][0:13]] = i['total']
 	
 	price_avg = 0
-	future_stop = (datetime.now() + timedelta(days=1)).replace(hour=10, minute=0, second=0, microsecond=0) # don't calculate for next day time after 10:00
+	future_stop = (datetime.now() + timedelta(days=1)).replace(hour=1, minute=0, second=0, microsecond=0) # don't calculate after this time
 	
 	future_prices = dict()								# prices to come
 	for i in prices:
 		tib_time = datetime.strptime(i+':59:59', '%Y-%m-%dT%H:%M:%S')
-		if datetime.now() < tib_time: # and tib_time < future_stop:	# define calculation phase # currently without stop time
+		if datetime.now() < tib_time and tib_time < future_stop:	# define calculation phase
 			price_avg += prices[i]
 			future_prices[i] = prices[i]
 	
 	vz_in = read_average()								# get average consumption data
 	vz_voltage, bat_cap = get_bat_cap()					# get voltage and remaining battery content
 	
-	s_fupri = dict(sorted(future_prices.items(), key=lambda item: item[1], reverse=True))	# sort future prices by descending price
+	s_fupri = dict(sorted(future_prices.items(), key=lambda item: item[1], reverse=True))	# sort future prices descending 
 	
 	cap_p = dict(); pv_pt = dict(); sum_p = 0; j = 0
 	lowest_price_timed = list(s_fupri.values())[0]		# set to the highest price
 	if verbose and sum_p < bat_cap: print('%s\t%s\t%s\t%s'%('date time     price','set','average','sum'))	# show table header if there is a table
 	
 	for i in s_fupri:									# iterate over relevant hours
-		cur_p = int(vz_in['IIA'][int(i[-2:])])			# get the average power of the current hour
+		cur_p = int(vz_in['IILAK'][int(i[-2:])])		# get the average power of the current hour
 		
 		if sum_p < bat_cap:								# as long as there is energy to dispose
 			sum_p += cur_p
 			
-			if 	 j == 0: cap_p[i] = conf['max_inverter_power']	# maximum power for that hour
-			elif j == 1: cap_p[i] = cur_p * 1.2			# 2nd expensive price gets 120%
-			elif j == 2: cap_p[i] = cur_p * 1.1			# 3rd expensive price gets 110%
-			else:		 cap_p[i] = cur_p				# all other get the 7d average amount
-
+			if 	 j == 0: cap_p[i] = conf['max_inverter_power']	# most expensive price is unlimited
+			else:		 cap_p[i] = cur_p * ((1.1-j*0.1)+1 if j < 11 else 1) # decending from 200% for 2nd to 100% for 11th hour of the 7day average amount
+			
 			if cap_p[i] > conf['max_inverter_power']: cap_p[i] = conf['max_inverter_power']
 			cap_p[i] = '%.f'%(cap_p[i])
 			j += 1
@@ -206,11 +213,6 @@ def main():
 			cap_p[i] = '0'								# battery content was reached
 			if debug: print('%s %.2f\t%i\t%s'%(i,s_fupri[i]*100,cur_p,cap_p[i]))
 	
-	if debug: print('lowest price timed %.2f'%(lowest_price_timed*100),'with',conf['bat_efficiency'],'%% = %.2f'%(lowest_price_timed*conf['bat_efficiency']))
-	for i in future_prices:
-		pv_pt[i] = False if (lowest_price_timed*conf['bat_efficiency'] > future_prices[i]*100) else True	# pass through PV power if the current price is higher than loss_of_load% of the lowest timed input price
-		if debug: print(i,'%.2f'%(future_prices[i]*100),['<','>'][pv_pt[i]],'%.2f'%(lowest_price_timed*conf['bat_efficiency']),['','PVpt'][pv_pt[i]])
-	
 	price_avg = price_avg / len(future_prices) *100		# average price
 	price_min = min(future_prices.values()) *100		# minimum price
 	price_max = max(future_prices.values())	*100		# maximum price
@@ -219,10 +221,18 @@ def main():
 	price_ut = price_avg - (price_spread * 0.1 )		# upper threshold - set the factor to your needs
 	
 	if verbose:	print('tibber price avg: %.2f'%price_avg,'min: %.2f'%(price_min),'max: %.2f'%(price_max),'spread: %.2f'%price_spread,'(%.f %%)'%(price_spread/price_max*100), \
-						'lt: %.2f'%price_lt,'ht: %.2f,'%price_ut,'%i%%lpt: %.2f'%(conf['bat_efficiency'],lowest_price_timed*conf['bat_efficiency']))
+						'lt: %.2f'%price_lt,'ht: %.2f,'%price_ut,'%i%%lpt: %.2f'%(conf['bat_2_AC_efficiency'],lowest_price_timed*conf['bat_2_AC_efficiency']))
 	if price_lt > conf['timer_max_price']: 
 		price_lt = conf['timer_max_price']
 		if verbose: print('set lt to max: %.2f'%price_lt)
+	
+	if debug: print('lowest price timed %.2f'%(lowest_price_timed*100),'with',conf['bat_2_AC_efficiency'],'%% = %.2f'%(lowest_price_timed*conf['bat_2_AC_efficiency']))
+	for i in future_prices:
+		if lowest_price_timed*conf['bat_2_AC_efficiency'] > future_prices[i]*100 or future_prices[i]*100 < price_lt: 
+				pv_pt[i] = False
+		else:	pv_pt[i] = True		# pass through PV power if the current price is higher than loss_of_load% of the lowest timed input price
+		
+		if debug: print(i,'%.2f'%(future_prices[i]*100),['<','>'][pv_pt[i]],'%.2f'%(lowest_price_timed*conf['bat_2_AC_efficiency']),['','PVpt'][pv_pt[i]])
 	
 	tib_hour_now = datetime.now().strftime('%Y-%m-%dT%H')
 	
