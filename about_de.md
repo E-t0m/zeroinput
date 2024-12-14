@@ -13,7 +13,7 @@ Wenn **dann** noch Leistung übrig ist, dann wird auch der **Akku** geladen.
 ![Schaltkasten](https://user-images.githubusercontent.com/110770475/204104803-e4959f68-4e98-4980-82a2-20e1e6b33e83.jpg)
 0. Rohrlüfter in KG Rohr als aktive Kühlung, Thermosensor von 9
 1. esmart3 MPPT Laderegler (das Billigteil wird unter verschiedensten Namen angeboten)
-[Anleitung und Spezifikation](https://www.solarcontroller-inverter.com/download/18122110445698.html), [Herstellerseite](https://www.solarcontroller-inverter.com/products/MPPT-eSmart3-Series-Solar-Controller.htm), [Konfigurationssoftware Windows](https://www.solarcontroller-inverter.com/download/20113011263165.html), [alternativer Link](http://www.mediafire.com/file/mt77gai7xxzig1g/install_SolarMate_CS_Windows.exe)
+[Anleitung und Spezifikation](https://www.solarcontroller-inverter.com/download/18122110445698.html), [Herstellerseite](https://www.ipandee.com/products/mppt-solar-charge-controller-esmart-12v-24v-36v-48v-20a-60a/), [Konfigurationssoftware Windows](http://www.mediafire.com/file/mt77gai7xxzig1g/install_SolarMate_CS_Windows.exe)
 2. Soyosource GTN 1200W (900 W im Batteriemodus), ACHTUNG! meines Wissens liegt kein Zertifikat für VDE-AR-N 4105 vor, in Deutschland ist das Gerät damit nicht zulässig. [Anleitung und Spezifikation](https://www.mediafire.com/file/kvn0jvyuubd3364/soyosource1.200W%252BGrid%252BTie%252BInverter.pdf/file)
 3. AC Not-Aus Schalter
 4. Sammelschraube für PV +
@@ -56,6 +56,7 @@ In der Praxis **schwankt der Wert am Zähler minimal um die 0**, übrigens zeigt
 
 ## Funktionen
 Das [Script](https://github.com/E-t0m/zeroinput) hat diese Funktionen:
+- automatische Umschaltung zwischen einem und mehreren Invertern
 - Unterspannungschutz Akku unter 48 V
 - Leistungsanpassung Akku von 48 V bis 51 V, mittels Regelkurve, mögliche Gesamtleistung immer zuzüglich PV
 - "Über"einspeisung ab 53 V bis "Saturation charging voltage" ("Sättigungsladespannung“, am esmart3), 0,2 W / 0,1 V, "zieht die Nulllinie nach unten", bei Überschuss
@@ -63,7 +64,7 @@ Das [Script](https://github.com/E-t0m/zeroinput) hat diese Funktionen:
 - Nachtlimit (ein kleiner Akku hält keine ganze Nacht durch)
 - Minimalleistung
 - Maximalleistung
-- Permanentes Verschieben der Nulllinie in Richtung Bezug oder Export.
+- automatische Anpassung oder permanentes Verschieben der Nulllinie in Richtung Bezug oder Export.
 - Korrektur der Kabelverluste zum Akku
 - Alarmierung bei erhöhter Batterietemperatur oder interner Temperatur des esmart3
 - "Ramp mode" für starke Sprünge im Verbrauch
@@ -213,8 +214,8 @@ SUBSYSTEMS=="usb-serial", DRIVERS=="ch341-uart", SYMLINK+="rs485"
 ```
 Oder bei mehreren gleichen Geräten unterschieden durch den Anschluss am Raspi:
 ```
-SUBSYSTEMS=="usb" ATTRS{devpath}=="1.1" SYMLINK+="esm0"
-SUBSYSTEMS=="usb" ATTRS{devpath}=="1.3" SYMLINK+="esm1"
+SUBSYSTEMS=="usb" ATTRS{devpath}=="1.1" SYMLINK+="rs485a"
+SUBSYSTEMS=="usb" ATTRS{devpath}=="1.3" SYMLINK+="rs485b"
 ```
 - Die ganzen Geräte wie oben schon beschrieben montieren.
 - Den RS485-Anschluss des Raspi (i.d.R. ein USB-Stick mit Klemmen) mit den RS485 Anschlüssen von Soyo und esmart3 verbinden: A+ an A+, B- an B-.
