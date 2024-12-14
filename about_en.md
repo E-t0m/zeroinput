@@ -12,7 +12,7 @@ The own consumption in the house is covered first. If there is still power left,
 ![control cabinet](https://user-images.githubusercontent.com/110770475/204104803-e4959f68-4e98-4980-82a2-20e1e6b33e83.jpg)
 0. Tube fan in tube as active cooling, thermal sensor from 9
 1. Esmart3 MPPT charge controller (this cheap part is offered under various names)
-[guidance and specification](https://www.solarcontroller-inverter.com/download/18122110445698.html), [manufacturer page](https://www.solarcontroller-inverter.com/products/MPPT-eSmart3-Series-Solar-Controller.htm), [Configuration software Windows](https://www.solarcontroller-inverter.com/download/20113011263165.html), [alternative link](http://www.mediafire.com/file/mt77gai7xxzig1g/install_SolarMate_CS_Windows.exe)
+[guidance and specification](https://www.solarcontroller-inverter.com/download/18122110445698.html), [manufacturer page](https://www.ipandee.com/products/mppt-solar-charge-controller-esmart-12v-24v-36v-48v-20a-60a/), [Configuration software Windows](http://www.mediafire.com/file/mt77gai7xxzig1g/install_SolarMate_CS_Windows.exe)
 2. Soyosource GTN 1200W (900 W in battery mode), Please make sure that this device can be connected to the grid in your country. [guidance and specification](https://www.mediafire.com/file/kvn0jvyuubd3364/soyosource1.200W%252BGrid%252BTie%252BInverter.pdf/file)
 3. AC emergency stop switch
 4. Collecting screw for PV+
@@ -55,6 +55,7 @@ In practice, **the value on the meter fluctuates minimally around 0**, by the wa
 
 ## functions
 The [script](https://github.com/E-t0m/zeroinput) has these functions:
+- automatic switching between one and multiple inverters
 - Battery undervoltage protection below 48V
 - Power adjustment battery from 48 V to 51 V, using control curve, possible total power always plus PV
 - "Over"feed from 53 V to "Saturation charging voltage" (on the esmart3), 0.2 W / 0.1 V, "pulls the zero line down", if there is an excess
@@ -62,7 +63,7 @@ The [script](https://github.com/E-t0m/zeroinput) has these functions:
 - Night limit (a small battery doesn't last all night)
 - Minimum power
 - Maximum power
-- Permanent shifting of the zero line in the direction of demand or export.
+- Automatic adjustment or permanent shifting of the zero line towards demand or export
 - Correction of battery cable loss
 - Alarm for increased battery temperature or internal temperature of the esmart3
 - Ramp mode for high changes in consumption
@@ -213,8 +214,8 @@ SUBSYSTEMS=="usb-serial", DRIVERS=="ch341-uart", SYMLINK+="rs485"
 ```
 Or with identical devices separated by the connector:
 ```
-SUBSYSTEMS=="usb" ATTRS{devpath}=="1.1" SYMLINK+="esm0"
-SUBSYSTEMS=="usb" ATTRS{devpath}=="1.3" SYMLINK+="esm1"
+SUBSYSTEMS=="usb" ATTRS{devpath}=="1.1" SYMLINK+="rs485a"
+SUBSYSTEMS=="usb" ATTRS{devpath}=="1.3" SYMLINK+="rs485b"
 ```
 - Assemble all the devices as described above.
 - Connect the RS485 port of the Raspi (usually a USB stick with clamps) to the RS485 ports of Soyo and esmart3: A+ to A+, B- to B-.
