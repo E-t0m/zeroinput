@@ -64,7 +64,7 @@ Das [Script](https://github.com/E-t0m/zeroinput) hat diese Funktionen:
 - Nachtlimit (ein kleiner Akku hält keine ganze Nacht durch)
 - Minimalleistung
 - Maximalleistung
-- automatische Anpassung oder permanentes Verschieben der Nulllinie in Richtung Bezug oder Export.
+- Automatische Anpassung oder permanentes Verschieben der Nulllinie in Richtung Bezug oder Export
 - Korrektur der Kabelverluste zum Akku
 - Alarmierung bei erhöhter Batterietemperatur oder interner Temperatur des esmart3
 - "Ramp mode" für starke Sprünge im Verbrauch
