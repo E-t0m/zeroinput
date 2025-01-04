@@ -147,9 +147,10 @@ Dabei spielen folgende Komponenten der Regelung zusammen:
 - Leistungsanpassung an die Batteriespannung, die Entladekurve von LFP fällt rasant ab
 
 ### **Schwankungen** der Regelung in einer eher ruhigen Phase
-![Schwankungen](https://user-images.githubusercontent.com/110770475/204105644-0ce5aaba-ebd4-4854-8335-e142a41a482f.jpg)
-Die schwarzen Werte zeigt der Haus-Zähler ohne Minuszeichen an.
-Rot muss bezahlt werden. Die Einspeisung betrug 400 bis 450 W in diesem Abschnitt.
+![schwankungen_mit_zeroshift](https://github.com/user-attachments/assets/9b7ab215-dbf8-4942-87af-356f95d4f6e5)
+Die schwarzen Werte zeigen die Schwankungen in Bezug / Einspeisung an.
+Die Einspeisung - von einem Inverter - betrug etwa 150 W in diesem Abschnitt.
+Lila zeigt die automatische "Anhebung der Nulllinie" bei steigender Einspeisung durch wechselnden Verbrauch.
 
 **Die Ausgabe des Scripts** im verbose mode, ca. jede Sekunde neu:
 ```
@@ -282,5 +283,5 @@ Die Konfiguration des Soyosource Inverters ist sehr übersichtlich
 ## Viel Spaß beim Nachbauen!
 
 Weitere Informationen gibt es in den Foren:
-- [Akku Doktor Forum](https://www.akkudoktor.net/forum/migrated-forums-balkonsolar/anleitung-saldierte-nulleinspeisung-mit-dem-haus-stromzaehler)
+- [Akku Doktor Forum](https://akkudoktor.net/t/skalierbare-high-end-cheap-tech-nulleinspeisung-mit-volkszaehler-monitor-und-tibber-integration/5031)
 - [photovoltaikforum](https://www.photovoltaikforum.com/thread/179609-nulleinspeisung-mit-mme-volkszaehler-soyosource-gti-esmart3-laderegler-akku-sald/)
