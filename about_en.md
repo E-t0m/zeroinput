@@ -55,12 +55,10 @@ In practice, **the value on the meter fluctuates minimally around 0**, by the wa
 
 ## functions
 The [script](https://github.com/E-t0m/zeroinput) has these functions:
-- automatic switching between one and multiple inverters
+- Automatic switching between one and multiple inverters
 - Battery undervoltage protection below 48V
 - Power adjustment battery from 48 V to 51 V, using control curve, possible total power always plus PV
 - "Over"feed from 53 V to "Saturation charging voltage" (on the esmart3), 0.2 W / 0.1 V, "pulls the zero line down", if there is an excess
-- Battery discharge current limitation, possible total power always plus PV
-- Night limit (a small battery doesn't last all night)
 - Minimum power
 - Maximum power
 - Automatic adjustment or permanent shifting of the zero line towards demand or export
@@ -68,7 +66,7 @@ The [script](https://github.com/E-t0m/zeroinput) has these functions:
 - Alarm for increased battery temperature or internal temperature of the esmart3
 - Ramp mode for high changes in consumption
 - Suppression of the oscillation of the control loop
-- Time-controlled battery discharge
+- Time-controlled battery discharge and inverter power
 
 These values **can and should** be **adjusted** to the respective system and battery size!
 Of course you could also integrate other charge controllers, such as Epever or Victron. The battery voltage and PV power are very important values for the control!
@@ -155,29 +153,27 @@ Red must be paid. The feed was 400 to 450 W in this section.
 
 **The output of the script** in verbose mode, updated every second:
 ```
-09:59:47, voltage 52.6 V, PV power 578 W, load power 152 W
-timer active: bat discharge 50 %, input 100 %, energy 137/1000 Wh 
+14:16:51, voltage 51.8 V, PV power 320 W, load power 0 W
+timer active: bat discharge 100 %, input 100 %, energy 87/386 Wh 
 
-voltage correction 52.5 V, dif 0.1 V
-no saw detected
-input history [167, 163, 166, 163]       1:2 1.8 %      3:4 2.4 %
+voltage correction 51.7 V, dif 0.1 V
+saw stop 261
+input history [255, 267, 256, 261]       1:2 -1.9 %     3:4 -4.7 %
 
-meter    5 W (5 W import), interval 1.02 s
-input  163 W
-1 soyo
-2 soyo
+meter   10 W (auto shift 11 W import), interval 1.03 s
+input  261 W
+1 soyo 1x 261 W
+2 soyo 1x 261 W
 1 eSmart3
+esmart 40        SOC  21         Mode CC
+PV        57.6 V           2.7 A         139 W
+Battery   51.7 V           2.7 A         139 W
+Temp     int 21 °C      bat 19 °C
 
-primary          SOC  46         Mode CC
-PV        59.1 V           5.0 A         263 W
-Battery   52.6 V           5.0 A         263 W
-Load      52.5 V           2.9 A         152 W
-Temp     int 37 °C      bat 20 °C
-
-secondary        SOC  53         Mode CC
-PV        56.0 V           6.1 A         322 W
-Battery   52.9 V           6.1 A         322 W
-Temp     int 32 °C      out 14 °C
+esmart 60        SOC  25         Mode CC
+PV        55.4 V           3.5 A         181 W
+Battery   51.9 V           3.5 A         181 W
+Temp     int 15 °C      out 3 °C
 
 2 eSmart3
 ```
