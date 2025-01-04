@@ -60,8 +60,6 @@ Das [Script](https://github.com/E-t0m/zeroinput) hat diese Funktionen:
 - Unterspannungschutz Akku unter 48 V
 - Leistungsanpassung Akku von 48 V bis 51 V, mittels Regelkurve, mögliche Gesamtleistung immer zuzüglich PV
 - "Über"einspeisung ab 53 V bis "Saturation charging voltage" ("Sättigungsladespannung“, am esmart3), 0,2 W / 0,1 V, "zieht die Nulllinie nach unten", bei Überschuss
-- Begrenzung des Batterie Entladestroms, mögliche Gesamtleistung immer zuzüglich PV
-- Nachtlimit (ein kleiner Akku hält keine ganze Nacht durch)
 - Minimalleistung
 - Maximalleistung
 - Automatische Anpassung oder permanentes Verschieben der Nulllinie in Richtung Bezug oder Export
@@ -69,7 +67,7 @@ Das [Script](https://github.com/E-t0m/zeroinput) hat diese Funktionen:
 - Alarmierung bei erhöhter Batterietemperatur oder interner Temperatur des esmart3
 - "Ramp mode" für starke Sprünge im Verbrauch
 - Unterdrückung der Schwingung des Regelkreises
-- Zeitgesteuerte Entladung des Akkus
+- Zeitgesteuerte Entladung des Akkus und der Inverterleistung
 
 Diese Werte **können und sollten** an die jeweilige Anlage und Akkugröße **angepasst werden**!
 Natürlich könnte man auch andere Laderegler, wie z.B. Epever oder Victron einbinden. Die Akku-Spannung und PV-Leistung sind sehr wichtige Werte für die Regelung!
@@ -155,31 +153,30 @@ Rot muss bezahlt werden. Die Einspeisung betrug 400 bis 450 W in diesem Abschnit
 
 **Die Ausgabe des Scripts** im verbose mode, ca. jede Sekunde neu:
 ```
-09:59:47, voltage 52.6 V, PV power 578 W, load power 152 W
-timer active: bat discharge 50 %, input 100 %, energy 137/1000 Wh 
+14:16:51, voltage 51.8 V, PV power 320 W, load power 0 W
+timer active: bat discharge 100 %, input 100 %, energy 87/386 Wh 
 
-voltage correction 52.5 V, dif 0.1 V
-no saw detected
-input history [167, 163, 166, 163]       1:2 1.8 %      3:4 2.4 %
+voltage correction 51.7 V, dif 0.1 V
+saw stop 261
+input history [255, 267, 256, 261]       1:2 -1.9 %     3:4 -4.7 %
 
-meter    5 W (5 W import), interval 1.02 s
-input  163 W
-1 soyo
-2 soyo
+meter   10 W (auto shift 11 W import), interval 1.03 s
+input  261 W
+1 soyo 1x 261 W
+2 soyo 1x 261 W
 1 eSmart3
+esmart 40        SOC  21         Mode CC
+PV        57.6 V           2.7 A         139 W
+Battery   51.7 V           2.7 A         139 W
+Temp     int 21 °C      bat 19 °C
 
-primary          SOC  46         Mode CC
-PV        59.1 V           5.0 A         263 W
-Battery   52.6 V           5.0 A         263 W
-Load      52.5 V           2.9 A         152 W
-Temp     int 37 °C      bat 20 °C
-
-secondary        SOC  53         Mode CC
-PV        56.0 V           6.1 A         322 W
-Battery   52.9 V           6.1 A         322 W
-Temp     int 32 °C      out 14 °C
+esmart 60        SOC  25         Mode CC
+PV        55.4 V           3.5 A         181 W
+Battery   51.9 V           3.5 A         181 W
+Temp     int 15 °C      out 3 °C
 
 2 eSmart3
+
 ```
 
 ## Messgenauigkeit
