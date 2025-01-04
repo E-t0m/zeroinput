@@ -146,10 +146,11 @@ The following components of the regulation interact:
 - Battery voltage correction
 - Power adjustment to the battery voltage, the discharge curve of LFP falls rapidly
 
-### **Regulatory fluctuations** in a rather quiet phase
-![fluctuations](https://user-images.githubusercontent.com/110770475/204105644-0ce5aaba-ebd4-4854-8335-e142a41a482f.jpg)
-The house counter shows the black values without a minus sign.
-Red must be paid. The feed was 400 to 450 W in this section.
+### **fluctuations** in a rather quiet phase
+![schwankungen_mit_zeroshift](https://github.com/user-attachments/assets/9b7ab215-dbf8-4942-87af-356f95d4f6e5)
+The black values ​​show the fluctuations in consumption/feed-in.
+The feed-in - from one inverter - was about 150 W in this section.
+Purple shows the automatic "raising of the zero line" when the feed-in increases due to changing consumption.
 
 **The output of the script** in verbose mode, updated every second:
 ```
@@ -280,5 +281,5 @@ The configuration of the Soyosource Inverter is very clear
 ## Have fun rebuilding!
 
 More information is available on the (german) forums:
-- [Akku Doktor Forum](https://www.akkudoktor.net/forum/migrated-forums-balkonsolar/anleitung-saldierte-nulleinspeisung-mit-dem-haus-stromzaehler)
+- [Akku Doktor Forum](https://akkudoktor.net/t/skalierbare-high-end-cheap-tech-nulleinspeisung-mit-volkszaehler-monitor-und-tibber-integration/5031)
 - [photovoltaikforum](https://www.photovoltaikforum.com/thread/179609-nulleinspeisung-mit-mme-volkszaehler-soyosource-gti-esmart3-laderegler-akku-sald/)
