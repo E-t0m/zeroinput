@@ -118,7 +118,7 @@ def close_values(a,b,tol):	# check if values a and b are within tolerance
 	if a > b * (1 - 0.01*tol) and a < b *(1 + 0.01*tol): return(1)
 	return(0)
 
-def avg(inlist):	# return the average of a list variable
+def avg(inlist):			# return the average of a list variable
 	if len(inlist) == 0: return(0)
 	return( sum(inlist) / len(inlist) )
 
@@ -128,7 +128,7 @@ class discharge_times():
 		self.stamp		= datetime.now().replace(second=0, microsecond=0)
 		self.active		= False
 		self.battery	= 100
-		self.input		= 100
+		self.inverter	= 100
 		self.energy		= 0
 		self.update()
 	
@@ -150,16 +150,16 @@ class discharge_times():
 					if times[i] < datetime.now(): 
 						if states[i][0] == '0':	self.battery = 0
 						else:					self.battery = int(states[i][0])
-						if states[i][1] == '0':	self.input = 0
-						else:					self.input = int(states[i][1])
+						if states[i][1] == '0':	self.inverter = 0
+						else:					self.inverter = int(states[i][1])
 						if states[i][2] == '0':	self.energy = 0
 						else:					self.energy = int(states[i][2])
-						if debug: print(times[i].strftime('%Y-%m-%d %H:%M'),'\tbattery perc:',self.battery, '\tinput perc:',self.input)
+						if debug: print(times[i].strftime('%Y-%m-%d %H:%M'),'\tbattery perc:',self.battery, '\tinput perc:',self.inverter)
 					else: break
 			except:
 				self.active		= False	# indicates a invalid timer file!
 				self.battery	= 100
-				self.input		= 100
+				self.inverter	= 100
 				self.energy		= 9999
 
 max_input_power	= conf_max_gti_power * number_of_gti
@@ -172,9 +172,9 @@ thres_switch	= 0
 last_runtime	= 0
 bat_cont		= 0
 pv_cont			= 0
-in_pc			= 0			# input power counter
+in_pc			= 0				# input power counter
 adjusted_power	= False
-bat_history		= [0]* 5	# history vars with *n interval steps
+bat_history		= [0]* 5		# history vars with *n interval steps
 pv_history		= [0]* 20
 send_history	= [0]* 4
 long_send_history	= [0]* multi_dev_wait
@@ -204,14 +204,14 @@ for charger in esmarts:
 d = combine_chargers(esmarts)	# initially combine chargers data to one general
 for charger in esmarts: charger['dev'].close()
 
-while True:		# infinite loop, stop the script with ctl+c
+while True:						# infinite loop, stop the script with ctl+c
 	
 	main_log = False; Ls_read = 99999; Ls_ts = 99999
 	last2_send	= last_send		# dedicated history
 	last_send	= send_power	# variables
 	block_saw_detection = False	# allow saw detection
 	
-	while True:		# loop over vzlogger.log fifo
+	while True:					# loop over vzlogger.log fifo
 		if debug: print('reading vz ts:',Ls_ts)
 		
 		l = vz_in.readline()
@@ -232,7 +232,7 @@ while True:		# infinite loop, stop the script with ctl+c
 				try: Ls_ts = int( l[l.index('ts=')+3:-1] )
 				except: pass
 		
-		if Ls_read != 99999 and Ls_ts !=99999:	# check if Ls has input and timestamp
+		if Ls_read != 99999 and Ls_ts !=99999:							# check if Ls has input and timestamp
 		
 			# if the reading is older than 1 second, continue reading the vzlogger data
 			if abs( int(str(time())[:10]) - int(str(Ls_ts)[:10]) ) > 1: continue
@@ -244,23 +244,23 @@ while True:		# infinite loop, stop the script with ctl+c
 		system('clear')
 		print('%s, voltage' % (strftime('%H:%M:%S')),d['bat_volt'],'V, PV power',d['chg_power'],'W, load power',d['load_power'],'W')
 		if discharge_timer:
-			if timer.active:	print('timer active: bat discharge %i'%timer.battery,'W,' if timer.battery > 100 else '%,','input %i'%timer.input,'W,' if timer.input > 100 else '%,','energy %.0f/%i Wh'%(in_pc/3600,timer.energy),'\n')
+			if timer.active:	print('timer active: bat discharge %i'%timer.battery,'W,' if timer.battery > 100 else '%,','inverter %i'%timer.inverter,'W,' if timer.inverter > 100 else '%,','energy %.0f/%i Wh'%(in_pc/3600,timer.energy),'\n')
 			else:				print('timer.txt enabled but not active! no valid timestamp file set?\n')
 	
-	send_power = int( Ls_read + last2_send + zero_shift )			# calculate the power demand
+	send_power = int( Ls_read + last2_send + zero_shift )				# calculate the power demand
 	
 	# high change of power consumption, on rise: no active power limitation, sufficient bat_voltage
 	if (Ls_read < -400) or (Ls_read > 400 and not adjusted_power and bat_cont > 51.0):
-		if not dropped_first_up_ramp and Ls_read > 400: 		# don't delay down ramps
+		if not dropped_first_up_ramp and Ls_read > 400: 				# don't delay down ramps
 			dropped_first_up_ramp = True
 			if verbose: print('DROPPED first Ramp')
 		else:
 			if	ramp_cnt == 0:
-				ramp_cnt = 2 + number_of_gti					# in script cycles
+				ramp_cnt = 2 + number_of_gti							# in script cycles
 				ramp_power = send_power
 	
-	if ramp_cnt > 0:												# within ramp countdown
-		block_saw_detection = True								# disable saw detection
+	if ramp_cnt > 0:													# within ramp countdown
+		block_saw_detection = True										# disable saw detection
 		send_power = ramp_power
 		if verbose: print('ramp mode %i'%ramp_cnt)
 		ramp_cnt -= 1
@@ -270,7 +270,7 @@ while True:		# infinite loop, stop the script with ctl+c
 	
 	status_text = ''
 	
-	if bat_voltage_const != 0:										# battery voltage correction
+	if bat_voltage_const != 0:											# battery voltage correction
 		battery_power = d['chg_power'] - (d['load_power'] * number_of_gti)
 		bat_corr = round(0.001 * battery_power * bat_voltage_const, 1)
 		bat_history = bat_history[1:] + [d['bat_volt'] - bat_corr]
@@ -300,7 +300,7 @@ while True:		# infinite loop, stop the script with ctl+c
 	else:
 		adjusted_power = False
 		
-		if bat_cont < 48:												# set a new battery timeout
+		if bat_cont < 48 or ( (not timer.battery or (timer.battery and (in_pc/3600) > timer.energy) ) and (not timer.inverter or not pv_cont) ):	# set a new battery timeout
 			adjusted_power = True
 			send_power		= 0											# disable input
 			send_history	= [0]*4										# reset history
@@ -352,15 +352,15 @@ while True:		# infinite loop, stop the script with ctl+c
 			if verbose: print('disabled saw detection')
 		else:
 			if not close_values(send_history[-1],send_history[-2],3) and not close_values(send_history[-3],send_history[-4],3):
-				send_power = int(avg(send_history))				# break the swing up by using the average
+				send_power = int(avg(send_history))						# break the swing up by using the average
 				if verbose: print('saw stop',send_power)
 				send_history[-1] = send_power
 			else:
 				if verbose: print('no saw detected')
 		
 		if discharge_timer:												# active timer, inverter input limit
-			if timer.input <= 100:	max_input = int( max_input_power *0.01 *timer.input)	# <= 100 as percentage 
-			else:					max_input = timer.input									# > 100 as W
+			if timer.inverter <= 100:	max_input = int( max_input_power *0.01 *timer.inverter)	# <= 100 as percentage 
+			else:						max_input = timer.inverter								# > 100 as W
 			
 			if (in_pc/3600) > timer.energy and timer.battery != 0:							# 	hourly energy limit exceeded
 									max_input = 0
@@ -408,7 +408,7 @@ while True:		# infinite loop, stop the script with ctl+c
 			if conf_zero_shift <= 0: print('import)',end='')
 			else: print('export)',end='')
 		print(', interval %.2f s'% (time()-last_runtime))
-		print('input {:4d} W{}'.format(send_power, status_text))	# show the input data
+		print('inverter {:4d} W{}'.format(send_power, status_text))		# show the input data
 	
 	if temp_alarm_enabled:
 		for i in range(0,esm_n):
@@ -469,7 +469,7 @@ while True:		# infinite loop, stop the script with ctl+c
 	
 	if datetime.now().minute == 0 and datetime.now().second == 0: in_pc = 0		# reset battery energy counter every full hour
 	else:
-		in_pc += max(0, send_power-pv_power)									# only count energy from battery
+		in_pc += max(0, send_power - pv_power)									# only count energy from battery
 		
 	d = combine_chargers(esmarts)				# combine chargers data to one general
 	
