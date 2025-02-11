@@ -1,6 +1,6 @@
 # zeroinput
 set power demand to zero
-for multiple soyosource gti inverters and multiple esmart3 MPPT charge controllers
+for multiple soyosource gti inverters and multiple victron or eSmart3 MPPT charge controllers
 
 ### [Introduction in english language](about_en.md) 
 ### [Vorstellung in deutscher Sprache](about_de.md)
