@@ -9,27 +9,12 @@ The own consumption in the house is covered first. If there is still power left,
 ![scheme](https://user-images.githubusercontent.com/110770475/204104728-d1dabefa-5ac4-446d-bf72-9fb58aaae4e6.jpg)
 
 ## The components
-![control cabinet](https://user-images.githubusercontent.com/110770475/204104803-e4959f68-4e98-4980-82a2-20e1e6b33e83.jpg)
-0. Tube fan in tube as active cooling, thermal sensor from 9
-1. Esmart3 MPPT charge controller (this cheap part is offered under various names)
-[guidance and specification](https://www.solarcontroller-inverter.com/download/18122110445698.html), [manufacturer page](https://www.ipandee.com/products/mppt-solar-charge-controller-esmart-12v-24v-36v-48v-20a-60a/), [Configuration software Windows](http://www.mediafire.com/file/mt77gai7xxzig1g/install_SolarMate_CS_Windows.exe)
-2. Soyosource GTN 1200W (900 W in battery mode), Please make sure that this device can be connected to the grid in your country. [guidance and specification](https://www.mediafire.com/file/kvn0jvyuubd3364/soyosource1.200W%252BGrid%252BTie%252BInverter.pdf/file)
-3. AC emergency stop switch
-4. Collecting screw for PV+
-5. Disconnect switch for PV-
-6. Circuit breaker and RCD for L1
-7. Combined fuse and RCD for L2
-8. Step-Up MPPT controller for the 390 W module, elejoy EL-MU400SP, [guidance and specification](https://enerprof.de/media/pdf/c8/1b/b9/User-Manual_MPPT_LED_DISPLAY_STEP-UP_SOLAR_CHARGE_CONTROLLER_DE.pdf)
-9. Thermal switch for tube ventilation
-
-That just about fits in a 60x60 cm control cabinet.
-Not visible in the picture:
-* PV Module with 1690 Wp (5x 260 W Poly, 1x 390 W Mono), not optimally aligned, the poly are 20 years old.
-* Raspberry Pi (or other (micro)computer)
-* Reading head for the electricity meter (modern measuring device)
-* 16s LiFePO4 battery with 25 Ah, so 1,28 kWh
-
-The price for the entire system was just under €2k.
+- Soyosource GTN 1200W (900 W in battery mode), Please make sure that this device can be connected to the grid in your country. [guidance and specification](https://www.mediafire.com/file/kvn0jvyuubd3364/soyosource1.200W%252BGrid%252BTie%252BInverter.pdf/file)
+- Victron Solar MPPT charge controller
+- eSmart3 MPPT charge controller (this cheap part is offered under various names) [guidance and specification](https://www.solarcontroller-inverter.com/download/18122110445698.html), [manufacturer page](https://www.ipandee.com/products/mppt-solar-charge-controller-esmart-12v-24v-36v-48v-20a-60a/), [Configuration software Windows](http://www.mediafire.com/file/mt77gai7xxzig1g/install_SolarMate_CS_Windows.exe)
+- Raspberry Pi (or other (micro)computer)
+- Reading head for the electricity meter (modern measuring device) or volkszaehler compatible energymeter
+* 16s LiFePO4 battery
 
 ## functionality
 The system basically works like an island:
