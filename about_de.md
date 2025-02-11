@@ -10,27 +10,14 @@ Wenn **dann** noch Leistung übrig ist, dann wird auch der **Akku** geladen.
 ![Schema](https://user-images.githubusercontent.com/110770475/204104728-d1dabefa-5ac4-446d-bf72-9fb58aaae4e6.jpg)
 
 ## Die Komponenten
-![Schaltkasten](https://user-images.githubusercontent.com/110770475/204104803-e4959f68-4e98-4980-82a2-20e1e6b33e83.jpg)
-0. Rohrlüfter in KG Rohr als aktive Kühlung, Thermosensor von 9
-1. esmart3 MPPT Laderegler (das Billigteil wird unter verschiedensten Namen angeboten)
-[Anleitung und Spezifikation](https://www.solarcontroller-inverter.com/download/18122110445698.html), [Herstellerseite](https://www.ipandee.com/products/mppt-solar-charge-controller-esmart-12v-24v-36v-48v-20a-60a/), [Konfigurationssoftware Windows](http://www.mediafire.com/file/mt77gai7xxzig1g/install_SolarMate_CS_Windows.exe)
-2. Soyosource GTN 1200W (900 W im Batteriemodus), ACHTUNG! meines Wissens liegt kein Zertifikat für VDE-AR-N 4105 vor, in Deutschland ist das Gerät damit nicht zulässig. [Anleitung und Spezifikation](https://www.mediafire.com/file/kvn0jvyuubd3364/soyosource1.200W%252BGrid%252BTie%252BInverter.pdf/file)
-3. AC Not-Aus Schalter
-4. Sammelschraube für PV +
-5. Trennschalter für PV -
-6. Sicherungsautomat und RCD für L1
-7. kombinierte Sicherung und RCD für L2
-8. Step-Up MPPT Regler für das 390 W Modul, elejoy EL-MU400SP, [Anleitung und Spezifikation](https://enerprof.de/media/pdf/c8/1b/b9/User-Manual_MPPT_LED_DISPLAY_STEP-UP_SOLAR_CHARGE_CONTROLLER_DE.pdf)
-9. Thermoschalter für die Lüftung
+- Soyosource GTN 1200W (900 W im Batteriemodus), ACHTUNG! meines Wissens liegt kein Zertifikat für VDE-AR-N 4105 vor, in Deutschland ist das Gerät damit nicht zulässig. [Anleitung und Spezifikation](https://www.mediafire.com/file/kvn0jvyuubd3364/soyosource1.200W%252BGrid%252BTie%252BInverter.pdf/file)
+- esmart3 MPPT Laderegler (das Billigteil wird unter verschiedensten Namen angeboten)
+[Anleitung und Spezifikation](https://www.solarcontroller-inverter.com/download/18122110445698.html), [Herstellerseite](https://www.ipandee.com/products/mppt-solar-charge-controller-esmart-12v-24v-36v-48v-20a-60a/), [Konfigurationssoftware Windows](http://www.mediafire.com/file/mt77gai7xxzig1g/install_SolarMate_CS_Windows.exe)3. AC Not-Aus Schalter
+- Victron Smartsolar MPPT Regler
 
-Das passt gerade so in einen 60x60 cm Schaltschrank.
-Nicht zu sehen auf dem Bild:
-* PV Module mit 1690 Wp (5x 260 W Poly, 1x 390 W Mono), nicht optimal ausgerichtet, die Poly sind 20 Jahre alt (185€/kWp)!
-* Raspberry Pi (oder anderer (Kleinst)rechner)
-* Lesekopf für den Stromzähler (moderne Messeinrichtung)
-* 16s LiFePO4 Akku mit 25 Ah, also 1,28 kWh
-
-Der Preis für die gesamte Anlage war knapp 2 k€.
+- Raspberry Pi (oder anderer (Kleinst)rechner)
+- Lesekopf für den Stromzähler (moderne Messeinrichtung), oder ein Volkszähler-kompatibles Energymeter
+* 16s LiFePO4 Akku
 
 ## Funktionsweise
 Die Anlage funktioniert grundlegend wie eine Insel:
@@ -56,6 +43,7 @@ In der Praxis **schwankt der Wert am Zähler minimal um die 0**, übrigens zeigt
 
 ## Funktionen
 Das [Script](https://github.com/E-t0m/zeroinput) hat diese Funktionen:
+- zeitgesteuerte Entladung des Akkus und der Inverterleistung
 - automatische Umschaltung zwischen einem und mehreren Invertern
 - Unterspannungschutz Akku unter 48 V
 - Leistungsanpassung Akku von 48 V bis 51 V, mittels Regelkurve, mögliche Gesamtleistung immer zuzüglich PV
@@ -67,7 +55,6 @@ Das [Script](https://github.com/E-t0m/zeroinput) hat diese Funktionen:
 - Alarmierung bei erhöhter Batterietemperatur oder interner Temperatur des esmart3
 - "Ramp mode" für starke Sprünge im Verbrauch
 - Unterdrückung der Schwingung des Regelkreises
-- Zeitgesteuerte Entladung des Akkus und der Inverterleistung
 
 Diese Werte **können und sollten** an die jeweilige Anlage und Akkugröße **angepasst werden**!
 Natürlich könnte man auch andere Laderegler, wie z.B. Epever oder Victron einbinden. Die Akku-Spannung und PV-Leistung sind sehr wichtige Werte für die Regelung!
