@@ -152,31 +152,32 @@ Die schwarzen Werte zeigen die Schwankungen in Bezug / Einspeisung an.
 Die Einspeisung - von einem Inverter - betrug etwa 150 W in diesem Abschnitt.
 Lila zeigt die automatische "Anhebung der Nulllinie" bei steigender Einspeisung durch wechselnden Verbrauch.
 
-**Die Ausgabe des Scripts** im verbose mode, ca. jede Sekunde neu:
+**Die Ausgabe des Scripts** ca. jede Sekunde:
 ```
-14:16:51, voltage 51.8 V, PV power 320 W, load power 0 W
-timer active: bat discharge 100 %, input 100 %, energy 87/386 Wh 
+port          name        PV W   bat V   bat I   mode  P load  T int  T ext         
+all           combined     842   52.97   15.80            759                       
+/dev/ttyACM0  esmart 60    265   53.10    5.00   MPPT             25      8 out     
+/dev/ttyACM1  esmart 40    311   52.80    5.90   MPPT     253     32     18 bat     
+/dev/ttyACM2  VE 150/35    266   53.00    4.90   BULK                               
 
-voltage correction 51.7 V, dif 0.1 V
-saw stop 261
-input history [255, 267, 256, 261]       1:2 -1.9 %     3:4 -4.7 %
+timer active: bat discharge 0 %, energy 0/0 Wh, inverter 100 % 
 
-meter   10 W (auto shift 11 W import), interval 1.03 s
-input  261 W
-1 soyo 1x 261 W
-2 soyo 1x 261 W
-1 eSmart3
-esmart 40        SOC  21         Mode CC
-PV        57.6 V           2.7 A         139 W
-Battery   51.7 V           2.7 A         139 W
-Temp     int 21 °C      bat 19 °C
+voltage correction 53.3 V, dif -0.3 V
+no saw detected
+input history [782, 775, 768, 759] 	1:2  1.2 %	 3:4  0.9 %
 
-esmart 60        SOC  25         Mode CC
-PV        55.4 V           3.5 A         181 W
-Battery   51.9 V           3.5 A         181 W
-Temp     int 15 °C      out 3 °C
+meter  339 W (auto shift 0 W import), interval 1.00 s, 14:22:24
+inverter  759 W limited, PV -94 W, no battery discharge
 
-2 eSmart3
+1:  power request 3 x 253 W
+2:  power request 3 x 253 W
+1:  /dev/ttyACM0 : esmart 60 status request
+1:  /dev/ttyACM1 : esmart 40 status request
+REC /dev/ttyACM2 : VE 150/35 delay 1.00 s
+REC /dev/ttyACM0 : esmart 60 delay 2.93 s
+2:  /dev/ttyACM0 : esmart 60 status request
+REC /dev/ttyACM1 : esmart 40 delay 2.93 s
+2:  /dev/ttyACM1 : esmart 40 status request
 
 ```
 
