@@ -7,15 +7,13 @@ from json import load as json_load
 from os.path import abspath, join, dirname
 from time import strftime, time, localtime, sleep
 from datetime import timedelta, datetime
-from sys import argv
 from threading import Thread, Event
 from traceback import print_exc
+import sys
 
-if '-h' in argv or '--help' in argv:
+if '-h' in sys.argv or '--help' in sys.argv:
 	print(' -v\t\tverbose mode with console output\n','-web\t\toutput to html file\n','-no-input\tdisable power input\n','-test-alarm\texecute alarm command and stop')
 	exit(0)
-
-victron_debug = False					# show errors of victron data handling
 
 try:
 	with open(join(dirname(__file__),'zeroinput.conf'),'r') as fi: conf = json_load(fi)		# read configuration from file
@@ -27,7 +25,7 @@ except Exception as e:
 
 mppt_data = {'combined':{}}
 nesmart3 = 0; nvictron = 0; nsoyosource = 0
-victron_devs = list(); esmart3_devs = list(); soyosource_devs= list()
+victron_devs = []; esmart3_devs = []; soyosource_devs= []
 for dev in conf['rs485']:
 	if 'mppt_type' in conf['rs485'][dev] and conf['rs485'][dev]['mppt_type'] == 'victron':
 										victron_devs.append(dev)
@@ -41,33 +39,34 @@ for dev in conf['rs485']:
 										soyosource_devs.append(dev)
 										nsoyosource += 1
 
-if '-test-alarm' in argv:
+if '-test-alarm' in sys.argv:
 	print('test alarm command:')
 	from os import system
 	system(conf['rs485']['/dev/ttyACM0']['alarm']['int_cmd'])	# change this to your needs
 	exit(0)
 
-no_input = True if '-no-input' in argv else False
-web_stats = True if '-web' in argv else False
+no_input = True if '-no-input' in sys.argv else False
+web_stats = True if '-web' in sys.argv else False
+verbose = False
 
-if '-v' in argv:
+if '-v' in sys.argv:
+	verbose = True
 	con_stats = True
 	from os import system
-	print('start', argv)
+	print('start', sys.argv)
 else: con_stats = False
 
-if con_stats or web_stats:
+if web_stats:
 	verbose = True
-	import sys
 	from io import StringIO as io_StringIO
 	output_buffer = io_StringIO()
-	sys.stdout = output_buffer
+	sys.stdout = output_buffer		# comment here for DEBUGGING
 
 
 def display_mppt_data():			# display the mppt charger data
 	if not verbose: return
 	global mppt_data
-	print('{:12s}  {:10s} {:>5s}  {:>6s}  {:>6s}  {:>5s}  {:>5s}  {:>5s}  {:>5s} {:<8s}'.format('port','name','PV W','bat V','bat I','mode','P load','T int','T ext',''))	# header line
+	print('{:12s}  {:10s} {:>5s}  {:>6s}  {:>6s}  {:>5s}  {:>5s}  {:>4s}  {:>4s} {:<8s}'.format('port','name','W PV','V bat','I bat','mode','Pload','Tint','Text',''))	# header line
 	
 	for port in mppt_data:
 		if 'CS' in mppt_data[port].keys():
@@ -76,7 +75,7 @@ def display_mppt_data():			# display the mppt charger data
 			elif	conf['rs485'][port]['mppt_type'] == 'eSmart3': mppt_dev_mode = ['WAIT','MPPT','BULK','FLOAT','PRE'][mppt_data[port]['CS']]
 		else: mppt_dev_mode = ''
 			
-		print('{:12s}  {:10s} {:>5s}  {:>6s}  {:>6s}   {:<6s} {:>5s}  {:>5s}  {:>5s} {:<8s}'.format(
+		print('{:12s}  {:10s} {:>5s}  {:>6s}  {:>6s}   {:<6s} {:>4s} {:>3s} {:>3s} {:<8s}'.format(
 			'all' if port == 'combined' else port,
 			'combined' if port == 'combined' else conf['rs485'][port]['name'],
 			'%5i' % mppt_data[port]['PPV']		if 'PPV' in mppt_data[port].keys() else '',
@@ -246,44 +245,46 @@ class esmart:						# eSmart3 MPPT charger lib by skagmo.com 2018: https://github
 			print("Error fixed")
 
 
-def handle_victron_data(serialport, stop_event: Event):	# reads serial data of victron devices
+def handle_victron_data(serialport, stop_event: Event):													# reads serial data of victron devices
 	global mppt_data
 	rec_buf = {}
+	victron_debug = False
 	try:
-		ser = Serial(port=serialport, baudrate=19200, timeout=1)
+		ser = Serial(port=serialport, baudrate=19200, bytesize=8, parity='N', stopbits=1, timeout=2, xonxoff=0, rtscts=0)
+		ser.reset_input_buffer()
 		while True:
 			if stop_event.is_set(): 
 				ser.close()
 				return(0)
-			data = ser.readline()								# read serial port
+			data = b''; char = ''
+			while char != b'\n':
+				char = ser.read()
+				data += char
 			if victron_debug: print('victron raw data:',data)
 			if data:
-				sdata	= str(data).split('\\t',2)				# convert to string and split
-				name	= sdata[0][2:]
-				if len(sdata) > 1 and '\\r' in sdata[1]:
-						val = sdata[1].split('\\r',1)[0]
-				else:	val = '0'
+				snv = str(data)[2:].split('\\t')
+				if len(snv) == 2: name,val = snv
+				else: continue
+				val = val[:-5]
 				if name == 'V': name = 'Vbat'
 				if name == 'I': name = 'Ibat'
-				if name == 'PID':								# begin new dataset with PID
-																	mppt_data[serialport] = rec_buf
-																	#print(serialport, mppt_data[serialport])		# print new dataset
-																	if verbose: print('REC',serialport,':',conf['rs485'][serialport]['name'],'' if 'ts' not in mppt_data[serialport].keys() \
+				if name == 'PID':										# begin new dataset with PID
+																		mppt_data[serialport] = rec_buf
+																		if verbose: print('REC',serialport,':',conf['rs485'][serialport]['name'],'' if 'ts' not in mppt_data[serialport].keys() \
 																						else 'delay %1.2f s'%(time()- mppt_data[serialport]['ts']) )
-																	rec_buf = {'ts':time(),'PPV':mppt_data[serialport]['PPV']} # keep old PPV for continuity, overwrite below
-				if name in ['PID','SER#','OR','LOAD','Checksum']:	rec_buf[name] = val				# add as string
-				elif name in ['Vbat','Ibat','VPV'] and  val.isnumeric():
-																	rec_buf[name] = 0.001* int(val)	# add as float
-				elif val.isnumeric():								rec_buf[name] = int(val)			# add as int
+																		rec_buf = {'ts':time()}
+																		if 'PPV' in mppt_data[serialport].keys(): rec_buf['PPV'] = mppt_data[serialport]['PPV'] # keep old PPV for continuity, overwrite below
+				if name in ['PID','SER#','OR','LOAD','Checksum']:		rec_buf[name] = val					# add as string
+				elif name in ['Vbat','Ibat','VPV'] and val.isnumeric():	rec_buf[name] = 0.001* int(val)		# add as float
+				elif val.isnumeric():									rec_buf[name] = int(val)			# add as int
 				else: 
-					if victron_debug: print('victron ELSE',sdata,'\n')
+					if victron_debug: print('victron ELSE',data,'\n')
 					pass	# there seems to be a transmission error, ignore it
 			continue
 	except Exception as e:
 		stop_event.set()							# tell all threads to stop
-		print(e,file=sys.__stdio__)
-		print_exc(file=sys.__stdio__)
-	finally:
+		print(e)
+		print_exc()
 		ser.close()
 		return(1)
 
@@ -292,7 +293,7 @@ if __name__ =="__main__":
 	try:
 		stop_event = Event(); victron_threads = []
 		for port in victron_devs:
-			victron_threads.append( Thread(target=handle_victron_data, args=(port, stop_event)) )	# victron reader threads
+			victron_threads.append( Thread(target=handle_victron_data, args=(port, stop_event)) )		# victron reader threads
 			victron_threads[-1].start()
 		
 		max_input_power	 = conf['max_input_power']
@@ -320,11 +321,11 @@ if __name__ =="__main__":
 		vz_in				= open(conf['vzlogger_log_file'],'r')
 		
 		
-		if conf['discharge_timer']: timer = discharge_times()			# set up timer
+		if conf['discharge_timer']: timer = discharge_times()											# set up timer
 		if verbose: print('zeroinput starts\n')
 		
-		esmart_handles = list()
-		for port in esmart3_devs:										# set up esmart3 devices
+		esmart_handles = []
+		for port in esmart3_devs:																		# set up esmart3 devices
 			esmart_handles.append( { 'obj': esmart() } )
 			esmart_handles[-1]['obj'].set_port(port)
 			esmart_handles[-1]['obj'].open()
@@ -333,35 +334,39 @@ if __name__ =="__main__":
 				esmart_handles[-1]['obj'].esmart_status_request()
 				sleep(0.20)
 			esmart_handles[-1]['obj'].close()
+		if verbose: print('reading power meter data\n')
 		
-		while True:														# infinite loop, stop the script with ctl+c
+		while True:																						# infinite loop, stop the script with ctl+c
 			
 			main_log = False; Ls_read = 99999; Ls_ts = 99999
 			last2_send	= last_send		# dedicated history
 			last_send	= send_power	# variables
 			block_saw_detection = False	# allow saw detection
 			
-			combine_charger_data()					# update charger summary
+			combine_charger_data()																		# update charger summary
 			
 			if con_stats or web_stats:
+				if con_stats: system('clear')
+				
 				if web_stats:
 					with open(join(dirname(__file__),'zeroinput.html'),'w') as webfile: 
 						webfile.write("""<!DOCTYPE html><html><head><meta http-equiv="refresh" content="1" ><style>body {font-size: 200%;color: #BBBBBB;background-color: #111111;}</style></head><body><pre>\n""")
 						webfile.write(output_buffer.getvalue())
 						webfile.write('\n</pre></body></html>')
-				if con_stats:
-					system('clear')
-					output_buffer.seek(0)
-					print(output_buffer.getvalue(), file=sys.__stdout__)
-				output_buffer.seek(0)				# reset
-				output_buffer.truncate(0)
+					
+					if con_stats:
+						output_buffer.seek(0)
+						print(output_buffer.getvalue(), file=sys.__stdout__)
 				
-				display_mppt_data()					# display charger data
+					output_buffer.seek(0)
+					output_buffer.truncate(0)
+				
+				display_mppt_data()																		# display charger data
 				if conf['discharge_timer']:
 					if timer.active:	print('\ntimer active: bat discharge %i'%timer.battery,'W,' if timer.battery > 100 else '%,','energy %.0f/%i Wh,'%(in_pc/3600,timer.energy),'inverter %i'%timer.inverter,'W' if timer.inverter > 100 else '%','\n')
 					else:				print('\ntimer.txt enabled but not active! no valid timestamp file set?\n')
 			
-			while True:					# loop over vzlogger.log fifo
+			while True:																					# loop over vzlogger.log fifo
 				l = vz_in.readline()
 				if '[main] vzlogger' in l: 
 					main_log = True
@@ -380,7 +385,7 @@ if __name__ =="__main__":
 						try: Ls_ts = int( l[l.index('ts=')+3:-1] )
 						except: pass
 				
-				if Ls_read != 99999 and Ls_ts !=99999:							# check if Ls has input and timestamp
+				if Ls_read != 99999 and Ls_ts !=99999:													# check if Ls has input and timestamp
 				
 					# if the reading is older than 1 second, continue reading the vzlogger data
 					if abs( int(str(time())[:10]) - int(str(Ls_ts)[:10]) ) > 1: continue
@@ -388,20 +393,20 @@ if __name__ =="__main__":
 					break	# stop reading the vzlogger pipe
 				sleep(0.001)
 			
-			send_power = int( Ls_read + last2_send + zero_shift )				# calculate the power demand
+			send_power = int( Ls_read + last2_send + zero_shift )										# calculate the power demand
 			
 			# high change of power consumption, on rise: no active power limitation, sufficient bat_voltage
 			if (Ls_read < -400) or (Ls_read > 400 and not adjusted_power and bat_cont > 51.0):
-				if not dropped_first_up_ramp and Ls_read > 400: 				# don't delay down ramps
+				if not dropped_first_up_ramp and Ls_read > 400: 										# don't delay down ramps
 					dropped_first_up_ramp = True
 					if verbose: print('DROPPED first Ramp')
 				else:
 					if	ramp_cnt == 0:
-						ramp_cnt = 2 + conf['total_number_of_inverters']							# in script cycles
+						ramp_cnt = 2 + conf['total_number_of_inverters']								# in script cycles
 						ramp_power = send_power
 			
-			if ramp_cnt > 0:													# within ramp countdown
-				block_saw_detection = True										# disable saw detection
+			if ramp_cnt > 0:																			# within ramp countdown
+				block_saw_detection = True																# disable saw detection
 				send_power = ramp_power
 				if verbose: print('ramp mode %i'%ramp_cnt)
 				ramp_cnt -= 1
@@ -411,7 +416,7 @@ if __name__ =="__main__":
 			
 			status_text = ''
 			
-			if conf['bat_voltage_const'] != 0:											# battery voltage correction
+			if conf['bat_voltage_const'] != 0:															# battery voltage correction
 				battery_power = mppt_data['combined']['PPV'] - (mppt_data['combined']['Pload'] * conf['total_number_of_inverters'])
 				bat_corr = round(0.001 * battery_power * conf['bat_voltage_const'], 1)
 				bat_history = bat_history[1:] + [mppt_data['combined']['Vbat'] - bat_corr]
@@ -419,18 +424,18 @@ if __name__ =="__main__":
 			else:
 				bat_history = bat_history[1:] + [mppt_data['combined']['Vbat']]
 			
-			if 0 in bat_history:	bat_cont = mppt_data['combined']['Vbat']
-			else:					bat_cont = avg(bat_history)					# average of the previous battery voltages
+			if 0 in bat_history:	bat_cont = mppt_data['combined']['Vbat'] 
+			else:					bat_cont = avg(bat_history)											# average of the previous battery voltages
 			
 			pv_history = pv_history[1:]+ [mppt_data['combined']['PPV']]
-			pv_cont = int(avg(sorted(pv_history)[-5:]))							# average on high pass of the PV power, removing the gap on mppt tracker restart
+			pv_cont = int(avg(sorted(pv_history)[-5:]))													# average on high pass of the PV power, removing the gap on mppt tracker restart
 			pv_power = 0
 			
-			if no_input:														# disabled power input by command line option
+			if no_input:																				# disabled power input by command line option
 				send_power = 0
 				if verbose: print('input DISABLED by command line')
 			
-			elif datetime.now() < timeout_repeat:								# battery protection timeout
+			elif datetime.now() < timeout_repeat:														# battery protection timeout
 				send_power = 0
 				if verbose: print('battery protection timeout until', timeout_repeat.strftime('%H:%M:%S'))
 			
@@ -439,51 +444,52 @@ if __name__ =="__main__":
 				
 				if bat_cont <= 48 or ( (not timer.battery or (timer.battery and (in_pc/3600) > timer.energy) ) and (not timer.inverter or not pv_cont) ):	# set a new battery timeout
 					adjusted_power = True
-					send_power		= 0											# disable input
-					send_history	= [0]*4										# reset history
-					timeout_repeat = datetime.now() + timedelta(minutes = 1)	# repeat in one minute
+					send_power		= 0																	# disable input
+					send_history	= [0]*4																# reset history
+					timeout_repeat = datetime.now() + timedelta(minutes = 1)							# repeat in one minute
 				
 				else:
 					pv_bat_minus = 0 if bat_cont > 49 else (49-bat_cont)*50 * conf['total_number_of_inverters']	# reduction by battery voltage in relation to the base consumption of the inverter(s)
-					avg_pv		= avg(pv_history[-3:])							# use a shorter span than pv_cont
-					pv_eff		= avg_pv-(avg_pv * conf['PV_to_AC_efficiency'] * 0.01)	# efficiency gap
-					pv_p_minus	= pv_bat_minus + pv_eff							# pv reduction
-					pv_power	= max(0,int(avg_pv - pv_p_minus))				# remaining PV power
-					bat_power_by_voltage = conf['max_bat_discharge']				# unlimited bat discharge so far
+					avg_pv		= avg(pv_history[-3:])													# use a shorter span than pv_cont
+					pv_eff		= avg_pv-(avg_pv * conf['PV_to_AC_efficiency'] * 0.01)					# efficiency gap
+					pv_p_minus	= pv_bat_minus + pv_eff													# pv reduction
+					pv_power	= max(0,int(avg_pv - pv_p_minus))										# remaining PV power
+					bat_power_by_voltage = conf['max_bat_discharge']									# unlimited bat discharge so far
 					
-					if conf['discharge_timer'] and not timer.battery:					# disabled battery discharge, pass through pv power
+					if conf['discharge_timer'] and not timer.battery:									# disabled battery discharge, pass through pv power
 						if	send_power > pv_power:
 							send_power = pv_power
 							adjusted_power = True
 							if verbose and pv_cont:	status_text	+= ((' limited, PV -%i W' % round(pv_p_minus)) if pv_p_minus else ' ') + ', no battery discharge'
 					
-					elif bat_cont >= 48 and bat_cont <= 51:								# limit battery power, pass through pv power
-						bat_power_percent_by_voltage	= (bat_cont - 46.93 ) **3.281	# powercurve between 48-51 V, results in 1-100%
+					elif bat_cont >= 48 and bat_cont <= 51:												# limit battery power, pass through pv power
+						bat_power_percent_by_voltage	= (bat_cont - 46.93 ) **3.281					# powercurve between 48-51 V, results in 1-100%
 						bat_power_by_voltage			= int(0.01 * max_input_power * bat_power_percent_by_voltage)	# 100% above 51 V
 						
 						if verbose: status_text = ', Bat %i W (%.1f%%)'	% (bat_power_by_voltage, bat_power_percent_by_voltage) + ', PV %i W (-%i W)'% (pv_power, pv_p_minus) if pv_power  != 0 else ''
 					
-					if bat_cont > 55.0:											# give some free power to the world = "pull down the zero line" (not zero shift!)
-						free_power = int((bat_cont - 55.0)*10 *0.5)				# 0.5 W / 0.1 V, maximum depends on mppt chargers "saturation charging voltage", usually 57 V
-						send_power += free_power
-						if verbose and free_power > 0: status_text += ', free export by voltage %i W' % free_power
+					if conf['free_power_export'] and bat_cont > 55:										# give some free power to the world = "pull down the zero line" (not zero shift!)
+						free_power = int( 0.5 * (bat_cont - 55.0) * conf['max_input_power'] )			# full energy input at maximum bat voltage: depends on mppt chargers "saturation charging voltage", usually 57 V
+						if free_power > 0:
+							send_power += free_power
+							if verbose: status_text += ', free export by voltage %i W' % free_power
 					else: free_power = 0
 				
-					if conf['discharge_timer']:											# active timer, battery limit
+					if conf['discharge_timer']:															# active timer, battery limit
 						if timer.battery == 0:		bat_discharge = 0 
 						elif timer.battery <= 100:	bat_discharge = int(conf['max_bat_discharge'] *0.01 *timer.battery)	# <= 100 as percentage
 						else:						bat_discharge = timer.battery										# > 100 as W
 					else:							bat_discharge = conf['max_bat_discharge']							# bat discharge by configuration
 					
-					if bat_discharge > bat_power_by_voltage:													# bat timer limited to voltage power
+					if bat_discharge > bat_power_by_voltage:											# bat timer limited to voltage power
 													bat_discharge = bat_power_by_voltage
 					
-					if send_power  >	pv_power +	bat_discharge:				# battery discharge limit
+					if send_power  >	pv_power +	bat_discharge:										# battery discharge limit
 						send_power =	pv_power +	bat_discharge
 						adjusted_power = True
 						if verbose: status_text += ', battery discharge limit %i W'%bat_discharge
 				
-				send_history = send_history[1:]+[send_power]					# update send_power history
+				send_history = send_history[1:]+[send_power]											# update send_power history
 				
 				if block_saw_detection:
 					if verbose: print('disabled saw detection')
@@ -495,18 +501,18 @@ if __name__ =="__main__":
 					else:
 						if verbose: print('no saw detected')
 				
-				if conf['discharge_timer']:												# active timer, inverter input limit
+				if conf['discharge_timer']:																# active timer, inverter input limit
 					if timer.inverter <= 100:	max_input = int( max_input_power *0.01 *timer.inverter)	# <= 100 as percentage 
 					else:						max_input = timer.inverter								# > 100 as W
 					
-					if (in_pc/3600) > timer.energy and timer.battery != 0:							# 	hourly energy limit exceeded
+					if (in_pc/3600) > timer.energy and timer.battery != 0:								# 	hourly energy limit exceeded
 											max_input = 0
 											status_text	+= ', hourly energy limit exceeded'
 					
 					if max_input > max_input_power:
 											max_input = max_input_power
 				
-				else:						max_input = max_input_power 							# the limit of the gti(s) by configuration
+				else:						max_input = max_input_power 								# the limit of the gti(s) by configuration
 				
 				if send_power	< 10:			# keep it positive with a little gap on bottom
 					send_power	= 0				# disable input
@@ -520,12 +526,12 @@ if __name__ =="__main__":
 					send_history[-1] = send_power
 					status_text	+= ', inverter MAX power limit %i W'%max_input
 			
-				if verbose:						# show saw tooth values
+				if verbose:																				# show saw tooth values
 					print(	'input history', send_history, '\t1:2 {: 4.1f} %\t 3:4 {: 4.1f} %'.format( 
 							 round((1-(send_history[-1] / (0.01+send_history[-2])))*100,1), round((1-(send_history[-3] / (0.01+send_history[-4])))*100,1) ) )
 			
-			with open('/tmp/vz/soyo.log','w') as fo:								# send some values to volkszähler
-				fo.write('%i: soyosend = %i\n'		% ( time(),	-send_power ) )		# the keywords have to be created as channels in vzlogger.conf to make it work there!
+			with open('/tmp/vz/soyo.log','w') as fo:													# send some values to volkszähler
+				fo.write('%i: soyosend = %i\n'		% ( time(),	-send_power ) )							# the keywords have to be created as channels in vzlogger.conf to make it work there!
 				fo.write('%i: zero_shift_w = %i\n'	% ( time(),	-zero_shift ) )
 				fo.write('%i: bat_v = %f\n'			% ( time(),	bat_cont ) )
 				
@@ -577,7 +583,7 @@ if __name__ =="__main__":
 			else: zero_shift = conf['zero_shifting']
 			
 			
-			for j in [1,2]:																				# send power demand two times to the inverters
+			for i in [1,2]:																				# send power demand two times to the inverters
 				if send_power != 0:
 					if conf['total_number_of_inverters'] == 1 or (sorted(long_send_history)[-4] < conf['single_inverter_threshold']):	# filter 3 spikes before switching to all inverters
 						open_soyosource = Serial(conf['basic_load_inverter_port'], 4800)
@@ -592,43 +598,44 @@ if __name__ =="__main__":
 							open_soyosource.close()
 						soyo_demands = '%i x %i W'%(conf['total_number_of_inverters'],(1.0 * send_power / conf['total_number_of_inverters']))
 						n_active_inverters = conf['total_number_of_inverters']
-					if verbose: print('%i:  power request %s'%(j,soyo_demands))
+					if verbose: print('%i:  power request %s'%(i,soyo_demands))
 				else:
 					n_active_inverters = 0
 					if verbose: print('. power request')												# don't send power request
-				sleep(0.07)																				# wait
-			
+				sleep(0.05)																				# wait
 			
 			for charger in esmart_handles: charger['obj'].open()										# open the esmart ports
 			
-			for i in [1,2]:									# poll 2 times
-				if datetime.now() > timeout_repeat or pv_cont != 0:				# after battery protection timeout or at day time
+			for i in [1,2]:																				# poll 2 times
+				if datetime.now() > timeout_repeat or pv_cont != 0:										# after battery protection timeout or at day time
 					for charger in esmart_handles:
-						charger['obj'].esmart_status_request()					# request esmart3 device status
+						charger['obj'].esmart_status_request()											# request esmart3 device status
 						if verbose:	print('%i:  %s : %s status request'%(i,charger['obj'].port,conf['rs485'][charger['obj'].port]['name']))
-				elif verbose: 	print('. eSmart3 status')			# don't send but sleep
-				sleep(0.15)
+				elif verbose: 	print('. eSmart3 status')												# don't send but sleep
+				sleep(0.22)
 			
 			for charger in esmart_handles: charger['obj'].close()
 			
 			
-			if datetime.now().minute == 0 and datetime.now().second == 0: in_pc = 0		# reset battery energy counter every full hour
-			else:	in_pc += max(0, send_power - pv_power)								# only count energy from battery
+			if datetime.now().minute == 0 and datetime.now().second == 0: in_pc = 0						# reset battery energy counter every full hour
+			else:	in_pc += max(0, send_power - pv_power)												# only count energy from battery
 		
 			if conf['discharge_timer']: timer.update()
+			if stop_event.is_set(): break
 			continue
 	
 	except KeyboardInterrupt:
-		print("zeroinput interrupted.",file= sys.__stdout__)
+		print("zeroinput interrupted.",file=sys.__stdout__)
 	
 	except Exception as e:
-		print(e,file= sys.__stdout__)
-		print_exc(file= sys.__stdout__)
+		print(e,file=sys.__stdout__)
+		print_exc(file=sys.__stdout__)
 	
 	finally:
-		if verbose: print('\nstop threads. ',file= sys.__stdout__)
-		stop_event.set()							# tell all threads to stop
+		if verbose: print('stop threads',file=sys.__stdout__)
+		stop_event.set()																				# tell all threads to stop
 		for i in victron_threads: i.join()
-		if verbose: print(argv[0],"done!",file= sys.__stdout__)
+		for port in conf['rs485']: Serial(port).close()													# close all serial ports
+		if verbose: print(sys.argv[0],"done.",file=sys.__stdout__)
 	
 exit(0)
