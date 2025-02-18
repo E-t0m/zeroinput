@@ -472,6 +472,7 @@ if __name__ =="__main__":
 						free_power = int( 0.5 * (bat_cont - 55.0) * conf['max_input_power'] )			# full energy input at maximum bat voltage: depends on mppt chargers "saturation charging voltage", usually 57 V
 						if free_power > 0:
 							send_power += free_power
+							adjusted_power = True
 							if verbose: status_text += ', free export by voltage %i W' % free_power
 					else: free_power = 0
 				
@@ -503,7 +504,8 @@ if __name__ =="__main__":
 				
 				if conf['discharge_timer']:																# active timer, inverter input limit
 					if timer.inverter <= 100:	max_input = int( max_input_power *0.01 *timer.inverter)	# <= 100 as percentage 
-					else:						max_input = timer.inverter								# > 100 as W
+					else:						max_input = timer.inverter 								# > 100 as W
+					max_input += free_power																# add free power to timer limit
 					
 					if (in_pc/3600) > timer.energy and timer.battery != 0:								# 	hourly energy limit exceeded
 											max_input = 0
