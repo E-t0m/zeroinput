@@ -137,7 +137,7 @@ class discharge_times():			# handle timer.txt file
 		self.active		= False
 		self.battery	= 100
 		self.inverter	= 100
-		self.energy		= 0
+		self.energy		= conf['max_input_power']
 		self.update()
 	
 	def update(self):
@@ -364,7 +364,7 @@ if __name__ =="__main__":
 				display_mppt_data()																		# display charger data
 				if conf['discharge_timer']:
 					if timer.active:	print('\ntimer active: bat discharge %i'%timer.battery,'W,' if timer.battery > 100 else '%,','energy %.0f/%i Wh,'%(in_pc/3600,timer.energy),'inverter %i'%timer.inverter,'W' if timer.inverter > 100 else '%','\n')
-					else:				print('\ntimer.txt enabled but not active! no valid timestamp file set?\n')
+					else:				print('\ntimer.txt enabled but not active! no valid timer file set?\n')
 			
 			while True:																					# loop over vzlogger.log fifo
 				l = vz_in.readline()
@@ -442,7 +442,8 @@ if __name__ =="__main__":
 			else:
 				adjusted_power = False
 				
-				if bat_cont <= 48 or ( (not timer.battery or (timer.battery and (in_pc/3600) > timer.energy) ) and (not timer.inverter or not pv_cont) ):	# set a new battery timeout
+				if bat_cont <= 48 or (conf['discharge_timer'] and										# set a new battery timeout
+					( (not timer.battery or (timer.battery and (in_pc/3600) > timer.energy) ) and (not timer.inverter) )):
 					adjusted_power = True
 					send_power		= 0																	# disable input
 					send_history	= [0]*4																# reset history
@@ -587,7 +588,7 @@ if __name__ =="__main__":
 			
 			for i in [1,2]:																				# send power demand two times to the inverters
 				if send_power != 0:
-					if conf['total_number_of_inverters'] == 1 or (sorted(long_send_history)[-4] < conf['single_inverter_threshold']):	# filter 3 spikes before switching to all inverters
+					if conf['total_number_of_inverters'] == 1 or (sorted(long_send_history)[-4] <= conf['single_inverter_threshold']):	# filter 3 spikes before switching to all inverters
 						open_soyosource = Serial(conf['basic_load_inverter_port'], 4800)
 						set_soyo_demand(open_soyosource,send_power)										# ONE inverter is used for basic load
 						open_soyosource.close()
