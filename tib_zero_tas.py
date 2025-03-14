@@ -8,13 +8,18 @@ from datetime import datetime, timedelta
 from time import mktime
 from requests import get
 from sys import argv
-import syslog
 
 try:
 	with open(join(dirname(__file__),'tib_zero_tas.conf'),'r') as fi: conf = json_load(fi)	# read configuration from file
 except:
 	print('error reading config file')
 	exit(1)
+
+if conf['write_timers_to_syslog']:
+	import syslog
+	use_syslog = True
+else:
+	use_syslog = False
 
 if '-h' in argv or '-help' in argv: 
 	print('[ -v verbose ]','[ -debug ]',' o outside calculation phase, | between the thresholds, > below lower threshold, < above upper threshold')
@@ -24,9 +29,9 @@ verbose = True if '-v' in argv else False				# use -v for output to the console
 if '-debug' in argv: verbose = True; debug = True		# use -debug for more output
 else: debug = False
 
-def tasmota_timer(dev,time,action):						# set tasmota timer
+def tasmota_timer(dev,time):							# set tasmota timer
 	try:
-		res = get('http://'+dev['ip']+'/cm?cmnd=Timer'+dev['timer_id']+'{\"Enable\":1,\"Mode\":0,\"Time\":\"'+time+'\",\"Window\":\"0\",\"Days\":\"SMTWTFS\",\"Repeat\":0,\"Output\":'+dev['output']+',\"Action\":'+action+'}' ).status_code
+		res = get('http://'+dev['ip']+'/cm?cmnd=Timer'+dev['timer_id']+'{\"Enable\":1,\"Mode\":0,\"Time\":\"'+time+'\",\"Window\":\"0\",\"Days\":\"SMTWTFS\",\"Repeat\":0,\"Output\":'+dev['output']+',\"Action\":'+dev['action']+'}' ).status_code
 	except:
 		res = 1
 	return(res)
@@ -233,87 +238,61 @@ def main():
 	price_min = min(future_prices.values()) *100		# minimum price
 	price_max = max(future_prices.values())	*100		# maximum price
 	price_spread = (price_max-price_min)				# price spread
-	price_lt = price_avg #- (price_spread * 0.5 )		# lower threshold - set the factor to your needs
-	price_ut = price_avg - (price_spread * 0.1 )		# upper threshold - set the factor to your needs
 	
 	charge_bat_to_ac_eff = conf['bat_to_AC_efficiency'] * conf['AC_to_bat_efficiency'] * 0.01
 	max_price_for_charge = lowest_price_timed * charge_bat_to_ac_eff - conf['battery_charge_profit']
 	
-	
-	if verbose:	print('tibber price avg: %.2f'%price_avg,'min: %.2f'%(price_min),'max: %.2f'%(price_max),'spread: %.2f'%price_spread,'(%.f %%)'%(price_spread/price_max*100), \
-						'lt: %.2f'%price_lt,'ht: %.2f'%price_ut,
+	if verbose:	print('tibber price avg: %.2f'%price_avg,'min: %.2f'%(price_min),'max: %.2f'%(price_max),'spread: %.2f'%price_spread,'(%.f %%)'%(price_spread/price_max*100),
 						'\npvpt\t > %.2f ¢, %i%%lpt'%(lowest_price_timed*conf['bat_to_AC_efficiency'],conf['bat_to_AC_efficiency']),
 						'\ncharge\t < %.2f ¢, %i%%lpt - %i ¢ profit'%(max_price_for_charge,charge_bat_to_ac_eff,conf['battery_charge_profit']))
-	if price_lt > conf['timer_max_price']: 
-		price_lt = conf['timer_max_price']
-		if verbose: print('set timer lt to max: %.2f'%price_lt)
 	
 	if debug: print('lowest price timed %.2f'%(lowest_price_timed*100),'with',conf['bat_to_AC_efficiency'],'%% = %.2f'%(lowest_price_timed*conf['bat_to_AC_efficiency']))
 	for i in future_prices:
-		if conf['disable_pvpt'] or (lowest_price_timed*conf['bat_to_AC_efficiency'] > future_prices[i]*100 or future_prices[i]*100 < price_lt):
+		if conf['disable_pvpt'] or (lowest_price_timed*conf['bat_to_AC_efficiency'] > future_prices[i]*100):
 				pv_pt[i] = False
 		else:	pv_pt[i] = True							# pass through PV power if the current price is higher than loss_of_load% of the lowest timed input price
 		
 		if debug: print(i,'%.2f'%(future_prices[i]*100),['<','>'][pv_pt[i]],'%.2f'%(lowest_price_timed*conf['bat_to_AC_efficiency']),['','PVpt'][pv_pt[i]])
 	
-	tib_hour_now = datetime.now().strftime('%Y-%m-%dT%H')
-	
-	timer_is_set =(len(conf['tasmota_dev'])+1)*[conf['disable_tasmota_timer']]	# True disables timers!
+	tib_next_hour = (datetime.now()+timedelta(hours=1)).strftime('%Y-%m-%dT%H')
 	
 	for cur_p_time in prices:							# iterate over all prices
 		
 		cur_price = prices[cur_p_time]*100				# current tibber price in ¢
-		cur_timer = cur_p_time[-2:]+':00'				# current time for tasmota timer format
 		calc_time = True if cur_p_time in future_prices else False	# checks for calculation phase
-		msg = 'now ' if tib_hour_now == cur_p_time else ''
+		msg = 'now ' if datetime.now().strftime('%Y-%m-%dT%H') == cur_p_time else ''
 		
-		if not calc_time:
-			if not verbose: continue
-			p_char = 'o'
-		else:											# current and future hours to calculate
-			if cur_price < price_lt: 					# lower threshold
-				p_char = '>'
+		if not conf['disable_tasmota_timer']:
+			for tasd in conf['tasmota_dev']:			# iterate over all devices
 				
-				if tib_hour_now == cur_p_time:
+				if 'max_price' in conf['tasmota_dev'][tasd]:
+					if conf['tasmota_dev'][tasd]['max_price'] == 0: 
+						tasd_max_price = 0	# charger device without constant threshold
+											# charging calculation not yet done
+					else: tasd_max_price = conf['tasmota_dev'][tasd]['max_price']
+				else:
+					tasd_max_price = 0
+				
+				if cur_p_time == tib_next_hour and tasd_max_price != 0:
+					cur_timer = cur_p_time[-2:]+':00'	# current time for tasmota timer format
 					
-					if not timer_is_set[1]:
-						if not 'T on' in msg: msg += ' T on:'
+					if cur_price < tasd_max_price and '_on' in tasd:
 						
-						if tasmota_timer( conf['tasmota_dev']['auto_on'],cur_timer,'3') == 200: msg += ' A1'; timer_is_set[1] = True
-						else: msg += ' A1FAIL'
+						if tasmota_timer(conf['tasmota_dev'][tasd], cur_timer) == 200: msg += tasd+' '
+						else: msg += tasd+':FAIL '
+						if not verbose and use_syslog: syslog.syslog(syslog.LOG_INFO, msg +' at '+ cur_timer)
 					
-					if False: #not timer_is_set[5] and not pv_pt[cur_p_time]:			# don't charge the battery when inverter is active
-						if not 'T on' in msg: msg += ' T on:'
+					if cur_price >= tasd_max_price and '_off' in tasd:
 						
-						if tasmota_timer( conf['tasmota_dev']['charger_on'],cur_timer,'1') == 200: msg += ' 5'; timer_is_set[5] = True
-						else: msg+= ' 5FAIL'
-						
-						if not verbose: syslog.syslog(syslog.LOG_INFO, msg +' at '+ cur_timer)
+						if tasmota_timer(conf['tasmota_dev'][tasd], cur_timer) == 200: msg += tasd+' '
+						else: msg += tasd+':FAIL '
+						if not verbose and use_syslog: syslog.syslog(syslog.LOG_INFO, msg +' at '+ cur_timer)
 			
-			else:										# middle and upper
-				p_char = '|'
-				
-				if tib_hour_now == cur_p_time:
-					
-					if not timer_is_set[2]:
-						if not 'T off' in msg: msg += 'T off:' 
-						
-						if tasmota_timer( conf['tasmota_dev']['auto_off'],cur_timer,'3') == 200: msg += ' A0'; timer_is_set[2] = True
-						else: msg += ' A0FAIL'
-					
-					if False: #not timer_is_set[6]:
-					
-						if tasmota_timer( conf['tasmota_dev']['charger_off'],cur_timer,'0') == 200: msg += ' 6'; timer_is_set[6] = True
-						else: msg += ' 6FAIL'
-						if not verbose: syslog.syslog(syslog.LOG_INFO, msg +' at '+ cur_timer)
-				
-				if price_ut < cur_price:				# upper threshold
-					p_char = '<'
-		
 		if verbose: print(str(msg).ljust(20),cur_p_time,'%2.2f %1s %4s %4s'%(cur_price,
 			'¢' if max_price_for_charge > cur_price else ' ',
 			(cap_p[cur_p_time] if calc_time else ' '),
-			(['','PVpt'][pv_pt[cur_p_time]] if calc_time else '')),str(p_char).rjust(int(cur_price)))
+			(['','PVpt'][pv_pt[cur_p_time]] if calc_time else '')),'|',str('o').rjust(int(cur_price)))
+	
 	
 	if conf['disable_zeroinput_timer']:
 		if verbose: print('disabled zeroinput timer')
