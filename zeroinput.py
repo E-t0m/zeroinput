@@ -402,7 +402,7 @@ if __name__ =="__main__":
 					if verbose: print('DROPPED first Ramp')
 				else:
 					if	ramp_cnt == 0:
-						ramp_cnt = 2 + conf['total_number_of_inverters']								# in script cycles
+						ramp_cnt = 2 + n_active_inverters												# counted in script cycles
 						ramp_power = send_power
 			
 			if ramp_cnt > 0:																			# within ramp countdown
@@ -417,7 +417,8 @@ if __name__ =="__main__":
 			status_text = ''
 			
 			if conf['bat_voltage_const'] != 0:															# battery voltage correction
-				battery_power = mppt_data['combined']['PPV'] - (mppt_data['combined']['Pload'] * conf['total_number_of_inverters'])
+				if mppt_data['combined']['Pload'] == 0:		battery_power = mppt_data['combined']['PPV'] - send_history[-1]					# no inverter connected to an eSmart3
+				else:										battery_power = mppt_data['combined']['PPV'] - mppt_data['combined']['Pload']	# asuming one inverter connected as load to an eSmart3 
 				bat_corr = round(0.001 * battery_power * conf['bat_voltage_const'], 1)
 				bat_history = bat_history[1:] + [mppt_data['combined']['Vbat'] - bat_corr]
 				if verbose and bat_corr: print('voltage correction',round(bat_history[-1],1),'V, dif',bat_corr,'V')
@@ -450,7 +451,7 @@ if __name__ =="__main__":
 					timeout_repeat = datetime.now() + timedelta(minutes = 1)							# repeat in one minute
 				
 				else:
-					pv_bat_minus = 0 if bat_cont > 49 else (49-bat_cont)*50 * conf['total_number_of_inverters']	# reduction by battery voltage in relation to the base consumption of the inverter(s)
+					pv_bat_minus = 0 if bat_cont > 49 else (49-bat_cont)*50 * n_active_inverters	# reduction by battery voltage in relation to the base consumption of the inverter(s)
 					avg_pv		= avg(pv_history[-3:])													# use a shorter span than pv_cont
 					pv_eff		= avg_pv-(avg_pv * conf['PV_to_AC_efficiency'] * 0.01)					# efficiency gap
 					pv_p_minus	= pv_bat_minus + pv_eff													# pv reduction
