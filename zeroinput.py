@@ -23,21 +23,16 @@ except Exception as e:
 	print('error reading config file')
 	exit(1)
 
-mppt_data = {'combined':{}}
-nesmart3 = 0; nvictron = 0; nsoyosource = 0
-victron_devs = []; esmart3_devs = []; soyosource_devs= []
+mppt_data = {'combined':{}}; victron_devs = []; esmart3_devs = []; soyosource_devs= []
 for dev in conf['rs485']:
 	if 'mppt_type' in conf['rs485'][dev] and conf['rs485'][dev]['mppt_type'] == 'victron':
 										victron_devs.append(dev)
-										nvictron += 1
 										mppt_data[dev] = {}
 	if 'mppt_type' in conf['rs485'][dev] and conf['rs485'][dev]['mppt_type'] == 'eSmart3':
 										esmart3_devs.append(dev)
-										nesmart3 += 1
 										mppt_data[dev] = {}
-	if 'inverter' in conf['rs485'][dev] and conf['rs485'][dev]['inverter']  == 'soyosource':
+	if 'inverter' in conf['rs485'][dev] and conf['rs485'][dev]['inverter'] == 'soyosource':
 										soyosource_devs.append(dev)
-										nsoyosource += 1
 
 if '-test-alarm' in sys.argv:
 	print('test alarm command:')
@@ -72,13 +67,14 @@ def display_mppt_data():			# display the mppt charger data
 		if 'CS' in mppt_data[port].keys():
 			if 		conf['rs485'][port]['mppt_type'] == 'victron': 
 				mppt_dev_mode = '' if mppt_data[port]['CS'] > 14 else ['OFF','','FAULT','BULK','ABSORB','FLOAT','','EQUAL','','','START','','RECOND','','EXTCON'][mppt_data[port]['CS']]
-			elif	conf['rs485'][port]['mppt_type'] == 'eSmart3': mppt_dev_mode = ['WAIT','MPPT','BULK','FLOAT','PRE'][mppt_data[port]['CS']]
+			elif	conf['rs485'][port]['mppt_type'] == 'eSmart3': 
+				mppt_dev_mode = '' if mppt_data[port]['CS'] > 4 else ['WAIT','MPPT','BULK','FLOAT','PRE'][mppt_data[port]['CS']]
 		else: mppt_dev_mode = ''
 			
 		print('{:12s}  {:10s} {:>5s}  {:>6s}  {:>6s}   {:<6s} {:>4s} {:>3s} {:>3s} {:<8s}'.format(
 			'all' if port == 'combined' else port,
 			'combined' if port == 'combined' else conf['rs485'][port]['name'],
-			'%5i' % mppt_data[port]['PPV']		if 'PPV' in mppt_data[port].keys() else '',
+			'%5i'  % mppt_data[port]['PPV']		if 'PPV'  in mppt_data[port].keys() else '',
 			'%3.2f'% mppt_data[port]['Vbat']	if 'Vbat' in mppt_data[port].keys() else '',
 			'%3.2f'% mppt_data[port]['Ibat']	if 'Ibat' in mppt_data[port].keys() else '', 
 			mppt_dev_mode,
@@ -175,7 +171,6 @@ class esmart:						# eSmart3 MPPT charger lib by skagmo.com 2018: https://github
 	def __init__(self):
 		self.state = 0 # STATE_START
 		self.data = []
-		self.fields = {}
 		self.port = ""
 		self.timeout = 0
 	
@@ -451,7 +446,7 @@ if __name__ =="__main__":
 					timeout_repeat = datetime.now() + timedelta(minutes = 1)							# repeat in one minute
 				
 				else:
-					pv_bat_minus = 0 if bat_cont > 49 else (49-bat_cont)*50 * n_active_inverters	# reduction by battery voltage in relation to the base consumption of the inverter(s)
+					pv_bat_minus = 0 if bat_cont > 49 else (49-bat_cont)*50 * n_active_inverters		# reduction by battery voltage in relation to the base consumption of the inverter(s)
 					avg_pv		= avg(pv_history[-3:])													# use a shorter span than pv_cont
 					pv_eff		= avg_pv-(avg_pv * conf['PV_to_AC_efficiency'] * 0.01)					# efficiency gap
 					pv_p_minus	= pv_bat_minus + pv_eff													# pv reduction
@@ -470,8 +465,8 @@ if __name__ =="__main__":
 						
 						if verbose: status_text = ', Bat %i W (%.1f%%)'	% (bat_power_by_voltage, bat_power_percent_by_voltage) + ', PV %i W (-%i W)'% (pv_power, pv_p_minus) if pv_power  != 0 else ''
 					
-					if conf['free_power_export'] and bat_cont > 55:										# give some free power to the world = "pull down the zero line" (not zero shift!)
-						free_power = int( 0.5 * (bat_cont - 55.0) * conf['max_input_power'] )			# full energy input at maximum bat voltage: depends on mppt chargers "saturation charging voltage", usually 57 V
+					if conf['free_power_export'] and bat_cont >= 54.5:										# give some free power to the world = "pull down the zero line" (not zero shift!)
+						free_power = int( (1.0/(57-54.5)) * (bat_cont - 54.5) * conf['max_input_power'] )	# full energy input at maximum bat voltage: depends on mppt chargers "saturation charging voltage", usually 57 V
 						if free_power > 0:
 							send_power += free_power
 							adjusted_power = True
