@@ -298,6 +298,7 @@ if __name__ =="__main__":
 		last2_send		= 0
 		ramp_cnt		= 0
 		ramp_power		= 0
+		free_power		= 0
 		dropped_first_up_ramp	= False
 		bat_cont		= 0				# continous bat voltage
 		pv_cont			= 0				# continous pv voltage
@@ -347,7 +348,7 @@ if __name__ =="__main__":
 					with open(join(dirname(__file__),'zeroinput.html'),'w') as webfile: 
 						webfile.write("""<!DOCTYPE html><html><head><meta http-equiv="refresh" content="1" ><style>body {font-size: 200%;color: #BBBBBB;background-color: #111111;}</style></head><body><pre>\n""")
 						webfile.write(output_buffer.getvalue())
-						webfile.write('\n</pre></body></html>')
+						webfile.write("""\n</pre></body></html>""")
 					
 					if con_stats:
 						output_buffer.seek(0)
