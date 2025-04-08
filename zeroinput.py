@@ -480,7 +480,7 @@ if __name__ =="__main__":
 						else:						bat_discharge = timer.battery										# > 100 as W
 					else:							bat_discharge = conf['max_bat_discharge']							# bat discharge by configuration
 					
-					if bat_discharge > bat_power_by_voltage:											# bat timer limited to voltage power
+					if bat_discharge > bat_power_by_voltage:											# battery timer limited to voltage power
 													bat_discharge = bat_power_by_voltage
 					
 					if send_power  >	pv_power +	bat_discharge:										# battery discharge limit
@@ -505,9 +505,9 @@ if __name__ =="__main__":
 					else:						max_input = timer.inverter 								# > 100 as W
 					max_input += free_power																# add free power to timer limit
 					
-					if (in_pc/3600) > timer.energy and timer.battery != 0:								# 	hourly energy limit exceeded
-											max_input = 0
-											status_text	+= ', hourly energy limit exceeded'
+					if (in_pc/3600) > timer.energy and timer.battery != 0:								# hourly battery discharge limit exceeded
+											max_input = pv_power
+											status_text	+= ', hourly battery energy limit exceeded'
 					
 					if max_input > max_input_power:
 											max_input = max_input_power
