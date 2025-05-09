@@ -48,7 +48,7 @@ The [script](https://github.com/E-t0m/zeroinput) has these functions:
 - Maximum power
 - Automatic adjustment or permanent shifting of the zero line towards demand or export
 - Correction of battery cable loss
-- Alarm for increased battery temperature or internal temperature of the esmart3
+- Alarm for increased external (e.g. battery) or internal temperature of the esmart3
 - Ramp mode for high changes in consumption
 - Suppression of the oscillation of the control loop
 - Time-controlled battery discharge and inverter power
