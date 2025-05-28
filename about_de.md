@@ -1,9 +1,6 @@
 # Saldierte Nulleinspeisung mit dem Haus-Stromzähler
 
-Hallo Allerseits,
-ich möchte hier meine Regelung zur Null-Einspeisung vorstellen.
-
-Es wird **zuerst** der Eigenverbrauch im Haus abgedeckt.
+Es wird **zuerst** der Eigenverbrauch im Haus gedeckt.
 Wenn **dann** noch Leistung übrig ist, dann wird auch der **Akku** geladen.
 
 Oder: Vorgaben in der [timer-Datei](https://github.com/E-t0m/zeroinput/blob/main/timer.txt) setzen andere Werte.
@@ -12,29 +9,34 @@ Oder: Vorgaben in der [timer-Datei](https://github.com/E-t0m/zeroinput/blob/main
 ![Schema](https://user-images.githubusercontent.com/110770475/204104728-d1dabefa-5ac4-446d-bf72-9fb58aaae4e6.jpg)
 
 ## Die Komponenten
-- Soyosource GTN 1200W (900 W im Batteriemodus), ACHTUNG! meines Wissens liegt kein Zertifikat für VDE-AR-N 4105 vor, in Deutschland ist das Gerät damit nicht zulässig. [Anleitung und Spezifikation](https://www.mediafire.com/file/kvn0jvyuubd3364/soyosource1.200W%252BGrid%252BTie%252BInverter.pdf/file)
+- Soyosource GTN 1200W (max. 900 W im Batteriemodus), ACHTUNG! meines Wissens liegt kein Zertifikat für VDE-AR-N 4105 vor, in Deutschland ist das Gerät damit nicht zulässig. [Anleitung und Spezifikation](https://www.mediafire.com/file/kvn0jvyuubd3364/soyosource1.200W%252BGrid%252BTie%252BInverter.pdf/file)
 - Victron Solar und / oder eSmart3 MPPT Laderegler [Anleitung und Spezifikation](https://www.solarcontroller-inverter.com/download/18122110445698.html), [Herstellerseite](https://www.ipandee.com/products/mppt-solar-charge-controller-esmart-12v-24v-36v-48v-20a-60a/), [Konfigurationssoftware Windows](http://www.mediafire.com/file/mt77gai7xxzig1g/install_SolarMate_CS_Windows.exe)
 - Raspberry Pi (oder anderer (Kleinst)rechner)
 - Lesekopf für den Stromzähler (moderne Messeinrichtung), oder ein Volkszähler-kompatibles Energymeter
 * 16s LiFePO4 Akku
 
 ## Funktionsweise
-Die Anlage funktioniert grundlegend wie eine Insel:
-PV, Akku und der Soyosource Netzwechselrichter (als Last) hängen am Laderegler.
-(Weitere Netzwechselrichter müssen wegen des 40A-Limit des Esmart3 direkt an den Akku angeschlossen werden.)
+Der Aufbau entspricht dem einer Inselanlage:
+PV-Module, Akku und der Soyosource Netzwechselrichter (am Lastausgang) sind am eSmart3 Laderegler angeschlossen.
+
+(Zur direkten Erfassung des Verbrauchs. Manche Victron Regler sind ohne Lastausgang.
+Weitere Netzwechselrichter müssen wegen des 40A-Limit am Lastausgang des eSmart3 direkt an den Akku angeschlossen werden.
+Die Regelung funktioniert auch ohne eSmart3 Regler und ohne Inverter als Last.)
+
 Die Soyosource Inverter lassen sich per RS485 (Modbus) in der Einspeiseleistung regeln.
 Dafür werden auch Messklemmen angeboten, aber damit könnte man keine Phasen saldieren.
 Für die Regelung ist der Raspberry Pi zuständig, auf dem die [Volkszähler](http://volkszaehler.org) Software läuft.
 Der Volkszähler liest mittels Lesekopf am Haus-Stromzähler die sekundengenauen, geeichten! echten Verbrauchsdaten ab.
 Der OBIS Datensatz mit der Bezeichnung "1-0:16.7.0" gibt den aktuellen saldierten Verbrauch an.
 Mit negativen Werten bei Einspeisung, auch bei Zählern mit Rücklaufsperre! Zumindest macht das meiner (DD3 BZ06) so.
+Ohne "16.7.0" vom Zähler ist die Regelung nicht möglich! Nachprüfen!
 
-Hier kommt dann mein Script [zeroinput](https://github.com/E-t0m/zeroinput) ins Spiel,
+Hier kommt dann das Script [zeroinput](https://github.com/E-t0m/zeroinput) ins Spiel,
 es liest die Verbrauchsdaten vom Haus-Stromzähler über den [Volkszähler](http://volkszaehler.org) aus und berechnet die nötige Einspeiseleistung, um den Zähler auf Null zu setzen.
 Grundsätzlich würde das Script auch ohne Volkszähler funktionieren und könnte den Lesekopf selbst auslesen.
 Dann würde es auf wesentlich "kleinerer" Hardware laufen, aber so ganz ohne **Monitoring** wäre mir das zu riskant.
 Der "unübliche Weg", das logfile umzuleiten, anstatt die dem Volkszähler eigenen Methoden (Datenbankzugriff über Netzwerk) zu verwenden, erhöht die Ausfallsicherheit erheblich.
-Selbst bei einem Datenbankabsturz der Volkszähler-Software arbeitet das Script weiter! Ich hatte das bereits...
+Selbst bei einem Datenbankabsturz der Volkszähler-Software arbeitet die Regelung ungestört weiter! Ich hatte das bereits.
 Wer kein Kabel zum Zähler legen will, könnte einen WIFI-Lesekopf benutzen und die Verbrauchsdaten per WLAN-Netzwerk übertragen.
 
 In der Praxis **schwankt der Wert am Zähler minimal um die 0**, übrigens zeigt mein "smart Meter" an seinem Display auch Einspeisung ohne Minuszeichen als positiven Wert an.
@@ -46,21 +48,20 @@ Das [Script](https://github.com/E-t0m/zeroinput) hat diese Funktionen:
 - automatische Umschaltung zwischen einem und mehreren Invertern
 - Unterspannungschutz Akku unter 48 V
 - Leistungsanpassung Akku von 48 V bis 51 V, mittels Regelkurve, mögliche Gesamtleistung immer zuzüglich PV
-- "Über"einspeisung ab 53 V bis "Saturation charging voltage" ("Sättigungsladespannung“, am esmart3), 0,2 W / 0,1 V, "zieht die Nulllinie nach unten", bei Überschuss
+- mögliche Export-Einspeisung ab 54,5 V, "verschenkt" Energie ins Netz
 - Minimalleistung
 - Maximalleistung
 - Automatische Anpassung oder permanentes Verschieben der Nulllinie in Richtung Bezug oder Export
 - Korrektur der Kabelverluste zum Akku
-- Alarmierung bei erhöhter externer (z.B Akku) oder interner Temperatur des esmart3
-- "Ramp mode" für starke Sprünge im Verbrauch
+- Alarmierung bei erhöhter externer (z.B Akku) oder interner Temperatur des eSmart3
+- "Rampen Modus" für starke Sprünge im Verbrauch
 - Unterdrückung der Schwingung des Regelkreises
 
-Diese Werte **können und sollten** an die jeweilige Anlage und Akkugröße **angepasst werden**!
-Natürlich könnte man auch andere Laderegler, wie z.B. Epever oder Victron einbinden. Die Akku-Spannung und PV-Leistung sind sehr wichtige Werte für die Regelung!
+
+Natürlich könnte man auch andere Laderegler, wie z.B. Epever einbinden - wenn sie auslesbar sind, denn die Akku-Spannung und PV-Leistung sind sehr wichtige Werte für die Regelung!
 Auch jeder andere Netzwechselrichter kann verwendet werden, wenn er regelbar ist.
 Denkbar ist auch ein regelbarer DC-DC-Wandler an einem Microwechselrichter.
-Meine Anlage kann z.B. nur die volle Inverterleistung abgeben, wenn die PV in dem Moment genug Leistung bringt - um den Akku nicht zu überlasten.
-Die "harten" Grenzwerte für Unter- und Überspannung etc. sind sowohl im Laderegler als auch in den Netzwechselrichtern eingestellt.
+Die "harten" Grenzwerte für Unter- und Überspannung des Akkus müssen sowohl in allen Laderegler(n) als auch in allen Netzwechselrichter(n) eingestellt werden.
 
 ## Rechtsrahmen
 Soweit ich das beurteilen kann, muss man die hier beschriebene Anlage in Deutschland sowohl beim Netzbetreiber als auch im Marktstammdatenregister anmelden,
@@ -166,25 +167,20 @@ REC /dev/ttyACM1 : esmart 40 delay 2.93 s
 2:  /dev/ttyACM1 : esmart 40 status request
 
 ```
+Die Ausgabe funktioniert sowohl im Terminal (screen, s.u.) und / oder auch per **Webbrowser**.
 
 ## Messgenauigkeit
 Zur Genauigkeit der Daten vom esmart3 hat der Autor der [Esmart3 Bibliothek](https://github.com/skagmo/esmart_mppt), [die ich modifiziert verwende](https://github.com/E-t0m/esmart_mppt), [einen Bericht veröffentlicht](https://skagmo.com/page.php?p=documents%2F04_esmart3_review).
 Meiner Beobachtung nach, stimmt die eingespeiste Leistung vom Soyosource Inverter recht genau mit dem angeforderten Wert überein.
-Zu beachten gibt es noch die verzögerte Ansprechzeit (ramp speed) von meines Wissens 400 W/s. Der Soyo braucht also 2+ Sekunden von 0 auf 100% Leistung. (das ist Absicht, kein Fehler)
+Zu beachten gibt es noch die verzögerte Ansprechzeit (ramp speed) von 400 W/s. Der Soyo braucht also 2+ Sekunden von 0 auf 100% Leistung. (das ist Absicht, kein Fehler)
 Darum habe ich die Soyos einfach nur parallel angesteuert, um eine möglichst kurze Ansprechzeit zu haben, mit mehr Soyos wird das entsprechend noch besser, aber auch einer funktioniert!
-(Der 2-phasige Anschluss meiner Anlage wäre nicht nötig und stammt von Experimenten mit Phasen-basierter Nulleinspeisung, die ich inzwischen verworfen habe! Trotzdem schön zu haben.)
-Ab wann macht **ein weiterer Wechselrichter** Sinn? 
-Der Grundverbrauch liegt laut Hersteller bei < 2 W. Mit 3 W gerechnet, ergeben sich 72 Wh / Tag.
-Also kommt man auf 72 Wh / 900 Wh * 60 Minuten = 4,8 Minuten Volllast Einspeisung.
-Läuft der "weitere" Inverter also mehr als 5 Minuten mit Volllast pro Tag, lohnt er sich, ganz grob gerechnet.
 
 ## Wirkungsgrad
-Die Ausgabe des Scripts oben zeigt: eingespeiste Leistung 643 W, wogegen der esmart 692 W Last anzeigt. Das ergibt ~ 93 % Wirkungsgrad in diesem Moment.
+Die Ausgabe des Scripts oben zeigt: eingespeiste Leistung 643 W, wogegen der eSmart3 692 W Last anzeigt. Das ergibt ~ 93 % Wirkungsgrad in diesem Moment.
 Das Laden und Entladen des Akkus kostet natürlich auch Energie.
 Mit den Beispieldaten der Tage (weiter oben) lässt sich ein Gesamtwirkungsgrad berechnen:
 - PV Erzeugung 7,7 kWh, Einspeisung 7,3 kWh, ergibt ~ 95 %
 - PV Erzeugung 6,1 kWh, Einspeisung 5,7 kWh, ergibt ~ 93 %
-
 Je mehr Energie durch den Akku geht, desto schlechter ist der Wirkungsgrad der gesamten Anlage.
 
 ## Bauanleitung
@@ -203,13 +199,13 @@ SUBSYSTEMS=="usb" ATTRS{devpath}=="1.1" SYMLINK+="rs485a"
 SUBSYSTEMS=="usb" ATTRS{devpath}=="1.3" SYMLINK+="rs485b"
 ```
 - Die ganzen Geräte wie oben schon beschrieben montieren.
-- Den RS485-Anschluss des Raspi (i.d.R. ein USB-Stick mit Klemmen) mit den RS485 Anschlüssen von Soyo und esmart3 verbinden: A+ an A+, B- an B-.
+- Den RS485-Anschluss des Raspi (i.d.R. ein USB-Stick mit Klemmen) mit den RS485 Anschlüssen von Soyo und eSmart3 verbinden: A+ an A+, B- an B-.
 - Den Volkszähler für die Nulleinspeisung ein wenig modifizieren.
 
 Wenn der eigene Volkszähler erfolgreich läuft, dann können noch Kanäle entsprechend dieser [vzlogger.conf](https://github.com/E-t0m/zeroinput/blob/main/vzlogger.conf) angelegt werden.
 Auf jeden Fall muss ***"identifier": "1-0:16.7.0\*255" und "verbosity": 15*** enthalten sein, damit das Script damit rechnen kann.
 Auch der Pfad für das "log" in der vzlogger.conf muss angepasst werden: "/tmp/vz/vzlogger.fifo"
-Obwohl es nicht zum Betrieb nötig ist, sollte der [Umgang mit Datenmengen](https://wiki.volkszaehler.org/howto/datenmengen) beachtet werden, sonst "läuft die Datenbank irgendwann über"!
+Obwohl es nicht unbedingt zum Betrieb nötig ist, sollte der [Umgang mit Datenmengen](https://wiki.volkszaehler.org/howto/datenmengen) beachtet werden, sonst "läuft die Datenbank irgendwann über"!
 
 ```
 als root:
@@ -227,6 +223,7 @@ python3 /home/vzlogger/zeroinput.py -v (mit strg+c beenden)
 oder wer screen kennt (man screen):
 screen -dmS zeroinput nice -1 python3 /home/vzlogger/zeroinput.py -v (mit screen -r "öffnen", mit strg-a, dann strg-d "schließen")
 ```
+(Natürlich kann man auch git benutzen.)
 
 Dann nochmal in einem anderen Terminal - als root - den vzlogger neu starten
 ```systemctl restart vzlogger```
@@ -241,12 +238,13 @@ diese Zeile:
 @reboot mkdir /tmp/vz; touch /tmp/vz/soyo.log; mkfifo /tmp/vz/vzlogger.fifo; screen -dmS zeroinput nice -1 python3 /home/vzlogger/zeroinput.py -v
 ```
 in die crontab eintragen.
-Um später auf die Ausgabe zu kommen, als Benutzer "vzlogger" (```su vzlogger```), ```screen -r``` eingeben. Danach strg-a, dann strg-d zum "schließen" benutzen.
+Um später auf die Ausgabe zu kommen, als Benutzer "vzlogger" (```su vzlogger```), ```screen -r``` eingeben. Danach strg-a, dann strg-d zum "Schließen" benutzen.
 
-Wenn dieser Eintrag erfolgt ist, startet die Regelung nach einem Stromausfall von selbst wieder. 
+Wenn dieser Eintrag erfolgt ist, startet die Regelung nach einem Neustart von selbst wieder. 
 Mit ein wenig Verzögerung durch die Wechselrichter selbst und den Startvorgang des Raspi.
 Wird der Lesekopf abgezogen, hört die Einspeisung einfach auf und der Zähler steigt auf den Wert des Verbrauchs.
 Sobald der Lesekopf wieder angebracht wird, beginnt die Einspeisung von selbst.
+Je nach Stromzähler muss nach einem Stromausfall wieder die "erweiterte Datenausgabe" aktiviert werden.
 
 So sieht die [Konfigurationssoftware des Esmart3 für Windows](https://www.solarcontroller-inverter.com/download/20113011263165.html), [alternativer Link](http://www.mediafire.com/file/mt77gai7xxzig1g/install_SolarMate_CS_Windows.exe) aus.
 ![Esmart3 Software](https://user-images.githubusercontent.com/110770475/204106343-8ca03bb5-ca3d-4174-9075-25db632ec087.jpg)
@@ -260,9 +258,8 @@ Die Konfiguration des Soyosource Inverters ist sehr übersichtlich
 ![Soyosource GTN setup](https://user-images.githubusercontent.com/110770475/204106365-97dc809d-fba2-4633-aa77-69b2061f7289.jpg)
 
 ### Geplant
-- Akku-Puffer für Notstromversorgung. (Erfordert einen zusätzlichen Inselwechselrichter!)
-- vorauseilende Regelung bei wiederkehrenden Verbrauchsmustern, z.B. Waschmaschine, Mikrowelle, Kochfeld
-- andere Laderegler einbinden, es muss nicht immer der Esmart3 sein
+- andere Laderegler einbinden. Der eSmart4 müsste kompatibel sein, bitte Rückmelden!
+- andere Inverter einbinden
 - Ein fertiges Volkszähler-Image, bei dem man nur noch den Lesekopf einstellen muss.
 
 ## Was fehlt noch?
