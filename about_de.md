@@ -168,9 +168,14 @@ REC /dev/ttyACM1 : esmart 40 delay 2.93 s
 
 ```
 Die Ausgabe funktioniert sowohl im Terminal (screen, s.u.) und / oder auch per **Webbrowser**.
+Dafür einen link aus dem htdocs-Ordner des Volkszählers anlegen und zeroinput.py mit dem -web Parameter starten.
+Die Seite ist dann im Browser unter der http ://üblichen-adresse-des-volkszählers **/zeroinput.html** erreichbar.
+```
+ln -s /home/vzlogger/zeroinput.html /home/pi/volkszaehler.org/htdocs
+```
 
 ## Messgenauigkeit
-Zur Genauigkeit der Daten vom esmart3 hat der Autor der [Esmart3 Bibliothek](https://github.com/skagmo/esmart_mppt), [die ich modifiziert verwende](https://github.com/E-t0m/esmart_mppt), [einen Bericht veröffentlicht](https://skagmo.com/page.php?p=documents%2F04_esmart3_review).
+Zur Genauigkeit der Daten vom esmart3 hat der Autor der [Esmart3 Bibliothek](https://github.com/skagmo/esmart_mppt), die ich modifiziert verwende, [einen Bericht veröffentlicht](https://skagmo.com/page.php?p=documents%2F04_esmart3_review).
 Meiner Beobachtung nach, stimmt die eingespeiste Leistung vom Soyosource Inverter recht genau mit dem angeforderten Wert überein.
 Zu beachten gibt es noch die verzögerte Ansprechzeit (ramp speed) von 400 W/s. Der Soyo braucht also 2+ Sekunden von 0 auf 100% Leistung. (das ist Absicht, kein Fehler)
 Darum habe ich die Soyos einfach nur parallel angesteuert, um eine möglichst kurze Ansprechzeit zu haben, mit mehr Soyos wird das entsprechend noch besser, aber auch einer funktioniert!
@@ -221,7 +226,7 @@ touch /tmp/vz/soyo.log
 mkfifo /tmp/vz/vzlogger.fifo
 python3 /home/vzlogger/zeroinput.py -v (mit strg+c beenden)
 oder wer screen kennt (man screen):
-screen -dmS zeroinput nice -1 python3 /home/vzlogger/zeroinput.py -v (mit screen -r "öffnen", mit strg-a, dann strg-d "schließen")
+screen -dmS zeroinput nice -1 python3 /home/vzlogger/zeroinput.py -v -web (mit screen -r "öffnen", mit strg-a, dann strg-d "schließen")
 ```
 (Natürlich kann man auch git benutzen.)
 
@@ -235,7 +240,7 @@ crontab -e
 ```
 diese Zeile:
 ```
-@reboot mkdir /tmp/vz; touch /tmp/vz/soyo.log; mkfifo /tmp/vz/vzlogger.fifo; screen -dmS zeroinput nice -1 python3 /home/vzlogger/zeroinput.py -v
+@reboot mkdir /tmp/vz; touch /tmp/vz/soyo.log; mkfifo /tmp/vz/vzlogger.fifo; screen -dmS zeroinput nice -1 python3 /home/vzlogger/zeroinput.py -v -web
 ```
 in die crontab eintragen.
 Um später auf die Ausgabe zu kommen, als Benutzer "vzlogger" (```su vzlogger```), ```screen -r``` eingeben. Danach strg-a, dann strg-d zum "Schließen" benutzen.
