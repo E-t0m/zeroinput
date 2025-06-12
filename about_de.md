@@ -6,7 +6,7 @@ Wenn **dann** noch Leistung übrig ist, dann wird auch der **Akku** geladen.
 Oder: Vorgaben in der [timer-Datei](https://github.com/E-t0m/zeroinput/blob/main/timer.txt) setzen andere Werte.
 
 ## Aufbau
-![Schema](https://user-images.githubusercontent.com/110770475/204104728-d1dabefa-5ac4-446d-bf72-9fb58aaae4e6.jpg)
+![scheme](https://github.com/user-attachments/assets/8d767329-15f9-4098-b4b4-a9e70d0d98c9)
 
 ## Die Komponenten
 - Soyosource GTN 1200W (max. 900 W im Batteriemodus), ACHTUNG! meines Wissens liegt kein Zertifikat für VDE-AR-N 4105 vor, in Deutschland ist das Gerät damit nicht zulässig. [Anleitung und Spezifikation](https://www.mediafire.com/file/kvn0jvyuubd3364/soyosource1.200W%252BGrid%252BTie%252BInverter.pdf/file)
@@ -76,7 +76,7 @@ Dadurch entsteht eine Sekunde Zeitversatz zu den Kurven des Haus-Stromzählers.
 
 ### So sieht dann ein recht **guter Tag mit hohem Verbrauch** aus
 ![viel Verbrauch](https://user-images.githubusercontent.com/110770475/204105529-4d6d03e1-ca13-4224-8272-4995115232d0.png)
-(2 soyo gti)
+(2 soyosource gti)
 Die Tageswerte waren: PV Erzeugung 7,7 kWh, Einspeisung 7,3 kWh, bewusst verschenkt 0 kWh.
 An diesem Tag liefen Backofen, Microwelle, Brunnenpumpe, Split-Klima, etc. Der Akku war am Ende des Tages schon leer.
 Man sieht das Ein und Ausregeln am Morgen und Abend entlang der PV-Kurve. Gegen 11 die maximale Einspeisung.
@@ -84,7 +84,7 @@ Danach und sehr schön um ca. 17:30 Uhr die Leistungsanpassung für den Batterie
 
 ### Ein sonniger Tag mit **wenig Verbrauch**
 ![wenig Verbrauch](https://user-images.githubusercontent.com/110770475/204105552-fbbc1f4d-ab04-483d-a6ea-ae0f934cab16.png)
-(2 soyo gti) Die Tageswerte waren: PV Erzeugung 6,1 kWh, Einspeisung 5,7 kWh, bewusst verschenkt 0,9 kWh.
+(2 soyosource gti) Die Tageswerte waren: PV Erzeugung 6,1 kWh, Einspeisung 5,7 kWh, bewusst verschenkt 0,9 kWh.
 Der größte Verbraucher war die Split-Klima. Die Akkuladung reichte bis weit in die Nacht.
 Hier sieht man das Einregeln am Morgen und die Nachtlimitierung am Abend.
 Der dunkelgrüne Bereich ist überschüssiger Strom, da die Batterie - siehe Spannungskurve - voll ist.
@@ -98,7 +98,7 @@ Der Akku wird nicht geladen. Im Wesentlichen entspricht das der Arbeitsweise ein
 
 ### **Waschmaschine in Heizphase**
 ![60 Grad Wäsche](https://user-images.githubusercontent.com/110770475/204105605-2a70356a-90d3-4a8a-a7a1-fddb570a9e3c.png)
-(2 soyo gti)
+(2 soyosource gti)
 Die Daten in der Tabelle beziehen sich auf den ganzen sichtbaren Ausschnitt.
 Hier wird noch die "Summe L1+L2+L3" (OBIS "1-0:16.7.0") in Schwarz angezeigt.
 Sie entspricht oberhalb der Nulllinie ziemlich genau der roten Linie für den Netzbezug ("1-0:1.8.0").
@@ -115,17 +115,17 @@ Umgekehrt sinkt die PV Leistung mit langsam ansteigender Akku Spannung nach der 
 
 ### **Milchkaffee mit Microwelle und Induktionsplatte** - für Fortgeschrittene
 ![milchkaffee](https://user-images.githubusercontent.com/110770475/204105626-c05746c4-1a6c-4252-910e-d2083dae432b.jpg)
-(2 soyo gti)
+(2 soyosource gti, ohne Rampen-Modus!)
 Die roten Flächen sind der eingekaufte Bezug. Die grünen Flächen die eigene Einspeisung.
 Die grauen Flächen sind die trägheitsbedingte Übereinspeisung, kostenlos eingespeiste Energie.
 
 ### Noch eine Verlaufsgrafik mit nur **einem Soyosource**
 ![einphasig](https://user-images.githubusercontent.com/110770475/204106401-e274ba31-8ad7-48a7-9975-7f3d39a58db0.jpg)
-(1 soyo gti)
+(1 soyosource gti, Ohne Rampen-Modus!)
 
 ### Leertakten des Akkus
 ![leertakten](https://github.com/E-t0m/zeroinput/assets/110770475/59e0d728-b6f5-4dae-9b3c-78c18e5cba8e)
-(3 soyo gti)
+(3 soyosource gti)
 Hier sieht man, wie der Backofen den Akku leer taktet.
 Dabei spielen folgende Komponenten der Regelung zusammen:
 - Begrenzung des Entladestroms der Batterie, hier 2kW vom Akku + PV-Leistung
@@ -217,9 +217,8 @@ als root:
 apt install python3-serial
 cd /home/vzlogger
 wget https://raw.githubusercontent.com/E-t0m/zeroinput/main/zeroinput.py
-wget https://raw.githubusercontent.com/E-t0m/esmart_mppt/master/esmart.py
-chmod 744 /home/vzlogger/*py
-chown vzlogger: /home/vzlogger/*py
+chmod 744 /home/vzlogger/zeroinput.py
+chown vzlogger: /home/vzlogger/zeroinput.py
 su vzlogger
 mkdir /tmp/vz
 touch /tmp/vz/soyo.log
@@ -228,7 +227,7 @@ python3 /home/vzlogger/zeroinput.py -v (mit strg+c beenden)
 oder wer screen kennt (man screen):
 screen -dmS zeroinput nice -1 python3 /home/vzlogger/zeroinput.py -v -web (mit screen -r "öffnen", mit strg-a, dann strg-d "schließen")
 ```
-(Natürlich kann man auch git benutzen.)
+(Natürlich kann man auch **git** benutzen.)
 
 Dann nochmal in einem anderen Terminal - als root - den vzlogger neu starten
 ```systemctl restart vzlogger```
@@ -258,6 +257,7 @@ Da gibt es etwas, was man am Gerät selbst nicht einstellen kann: **Li-Ion**.
 Die anderen Werte sind natürlich abhängig vom verwendeten Akku. Ich habe recht hohe und tiefe Werte einstellt, da die Leitung zum Akku nicht ganz optimal ist.
 Bisher kamen sie allerdings auch noch nicht zum Einsatz, da das Script weit weg davon operiert! (Update: Werte reduziert!)
 
+Die Einstellungen für den Akku sind auch an Victron Ladereglern durchzuführen!
 Die Konfiguration des Soyosource Inverters ist sehr übersichtlich
 
 ![Soyosource GTN setup](https://user-images.githubusercontent.com/110770475/204106365-97dc809d-fba2-4633-aa77-69b2061f7289.jpg)
