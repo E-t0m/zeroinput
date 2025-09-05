@@ -87,4 +87,12 @@ This information is written to zeroinput's timer file, which regulates the inver
 
 PVpt is PV pass through, where the PV energy is directly transformed by the inverter, because of the small price gap to the next sheduled input hour.
 
-tib_zero_tas.py should run every 10 min up to 60 min by cron.
+tib_zero_tas.py should run every 10 min up to 60 min by cron:
+```
+1,21,41 * * * *	python3 /home/vzlogger/tibber/tib_zero_tas.py -v > /home/vzlogger/tib_zero_tas.txt
+```
+i write the output to a txt file which is linked (as root) from the vzlogger htdocs folder:
+```
+ln -s /home/vzlogger/tib_zero_tas.txt /home/pi/volkszaehler.org/htdocs
+```
+It's found at http ://the-usual-volkszaehler-site /tib_zero_tas.txt
