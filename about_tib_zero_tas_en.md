@@ -1,98 +1,100 @@
 the -v erbose output looks like this
 
 ```
-using cached volkszähler averages from 2025-03-23 17:05
-2025-03-23 17:37 query volkszähler for energy content:
-0 	begin 2025-03-23 00:00:00 1742684400000 	end 2025-03-23 17:37:53 1742747873000 	request duration: 0:00:00.964860 	rows: 39454
-1 	begin 2025-03-22 00:00:00 1742598000000 	end 2025-03-23 17:37:54 1742747874000 	request duration: 0:00:02.320856 	rows: 96594
-1 	begin 2025-03-22 08:18:56 1742627936000 	end 2025-03-23 17:37:57 1742747877000 	request duration: 0:00:03.760152 	rows: 34
-minimum voltage 48.2 V, latest voltage 53.4 V, remaining battery content 8570 Wh
-date time     price	set	average	sum
-2025-03-24T07 40.74	2700	959	959
-2025-03-24T08 40.45	2700	928	1887
-2025-03-23T19 38.15	1421	748	2635
-2025-03-24T06 38.03	833	463	3098
-2025-03-23T20 37.92	1411	830	3928
-2025-03-23T18 37.85	1597	998	4926
-2025-03-24T09 37.30	2700	1177	6103
-2025-03-23T21 36.66	895	639	6742
-2025-03-23T22 36.24	641	493	7235
-2025-03-23T17 35.97	746	622	7857
-2025-03-24T05 35.45	384	349	8206
-2025-03-23T23 34.79	272	272	8478
-2025-03-24T10 34.42	2700	1023	9501
-tibber price avg: 36.10 min: 32.97 max: 40.74 spread: 7.77 (19 %) 
-pvpt	 > 32.35 ¢, 94%lpt 
-charge	 < 26.47 ¢, 82%lpt - 2 ¢ profit
-                     2025-03-23T00 22.82 ¢           |                      o
-                     2025-03-23T01 23.45 ¢           |                       o
-                     2025-03-23T02 24.01 ¢           |                        o
-                     2025-03-23T03 23.99 ¢           |                       o
-                     2025-03-23T04 24.15 ¢           |                        o
-                     2025-03-23T05 24.17 ¢           |                        o
-                     2025-03-23T06 24.15 ¢           |                        o
-                     2025-03-23T07 24.08 ¢           |                        o
-                     2025-03-23T08 23.45 ¢           |                       o
-                     2025-03-23T09 23.94 ¢           |                       o
-                     2025-03-23T10 22.83 ¢           |                      o
-                     2025-03-23T11 22.33 ¢           |                      o
-                     2025-03-23T12 22.80 ¢           |                      o
-                     2025-03-23T13 21.79 ¢           |                     o
-                     2025-03-23T14 22.56 ¢           |                      o
-                     2025-03-23T15 26.25 ¢           |                          o
-                     2025-03-23T16 31.24             |                               o
-now                  2025-03-23T17 35.97    746 PVpt |                                   o
-auto_off             2025-03-23T18 37.85   1597 PVpt |                                     o
-                     2025-03-23T19 38.15   1421 PVpt |                                      o
-                     2025-03-23T20 37.92   1411 PVpt |                                     o
-                     2025-03-23T21 36.66    895 PVpt |                                    o
-                     2025-03-23T22 36.24    641 PVpt |                                    o
-                     2025-03-23T23 34.79    272 PVpt |                                  o
-                     2025-03-24T00 34.34      0 PVpt |                                  o
-                     2025-03-24T01 33.96      0 PVpt |                                 o
-                     2025-03-24T02 33.32      0 PVpt |                                 o
-                     2025-03-24T03 32.97      0 PVpt |                                o
-                     2025-03-24T04 33.33      0 PVpt |                                 o
-                     2025-03-24T05 35.45    384 PVpt |                                   o
-                     2025-03-24T06 38.03    833 PVpt |                                      o
-                     2025-03-24T07 40.74   2700 PVpt |                                        o
-                     2025-03-24T08 40.45   2700 PVpt |                                        o
-                     2025-03-24T09 37.30   2700 PVpt |                                     o
-                     2025-03-24T10 34.42   2700 PVpt |                                  o
-                     2025-03-24T11 33.97      0 PVpt |                                 o
-                     2025-03-24T12 33.18             |                                 o
-                     2025-03-24T13 33.20             |                                 o
-                     2025-03-24T14 33.87             |                                 o
-                     2025-03-24T15 34.98             |                                  o
-                     2025-03-24T16 36.77             |                                    o
-                     2025-03-24T17 39.54             |                                       o
-                     2025-03-24T18 46.42             |                                              o
-                     2025-03-24T19 44.16             |                                            o
-                     2025-03-24T20 40.45             |                                        o
-                     2025-03-24T21 37.68             |                                     o
-                     2025-03-24T22 36.14             |                                    o
-                     2025-03-24T23 34.90             |                                  o
-done. 2025-03-23 17:38:00
+using cached volkszähler averages from 2025-09-28 17:14
+2025-09-28 17:22 query volkszähler for energy content:
+0 	begin 2025-09-28 00:00:00 1759010400000 	end 2025-09-28 17:22:30 1759072950000 	request duration: 0:00:00.777906 	rows: 39691
+1 	begin 2025-09-27 00:00:00 1758924000000 	end 2025-09-28 17:22:30 1759072950000 	request duration: 0:00:01.739430 	rows: 88420
+	begin 2025-09-27 12:14:35 1758968075000 	end 2025-09-28 17:22:32 1759072952000 	request duration: 0:00:02.370159 	rows: 30
+minimum voltage 48.2 V, latest voltage 52.9 V, remaining battery content 6210 Wh
+date time     price	 set	average	 sum
+2025-09-29T07 47.62	2700	 829	 829
+2025-09-29T08 41.05	2700	 684	1513
+2025-09-28T19 37.61	1146	 603	2116
+2025-09-29T06 37.25	 671	 373	2489
+2025-09-28T18 36.78	1097	 645	3134
+2025-09-28T20 36.18	 790	 494	3628
+2025-09-29T09 35.72	2700	 612	4240
+2025-09-28T21 34.70	 610	 436	4676
+2025-09-28T17 33.79	 519	 399	5075
+2025-09-28T22 33.36	 294	 245	5320
+2025-09-29T05 32.90	 226	 205	5525
+2025-09-28T23 32.58	 186	 186	5711
+2025-09-29T00 32.01	 152	 152	5863
+2025-09-29T10 31.93	2700	 517	6380
+tibber price avg: 34.82 min: 31.30 max: 47.62 spread: 16.32 (34 %) 
+pvpt	 > 30.01 ¢, 94%lpt  
+charge	 < 24.41 ¢, 82%lpt - 2 ¢ profit
+                     2025-09-28T00 32.80             |                                o
+                     2025-09-28T01 32.53             |                                o
+                     2025-09-28T02 32.42             |                                o
+                     2025-09-28T03 32.08             |                                o
+                     2025-09-28T04 32.83             |                                o
+                     2025-09-28T05 32.80             |                                o
+                     2025-09-28T06 33.20             |                                 o
+                     2025-09-28T07 33.78             |                                 o
+                     2025-09-28T08 32.95             |                                o
+                     2025-09-28T09 32.50             |                                o
+                     2025-09-28T10 30.96             |                              o
+                     2025-09-28T11 25.65             |                         o
+                     2025-09-28T12 23.23 ¢           |                       o
+                     2025-09-28T13 22.21 ¢           |                      o
+                     2025-09-28T14 22.74 ¢           |                      o
+                     2025-09-28T15 28.49             |                            o
+                     2025-09-28T16 31.43             |                               o
+now                  2025-09-28T17 33.79    519 PVpt |                                 o
+                     2025-09-28T18 36.78   1097 PVpt |                                    o
+                     2025-09-28T19 37.61   1146 PVpt |                                     o
+                     2025-09-28T20 36.18    790 PVpt |                                    o
+                     2025-09-28T21 34.70    610 PVpt |                                  o
+                     2025-09-28T22 33.36    294 PVpt |                                 o
+                     2025-09-28T23 32.58    186 PVpt |                                o
+                     2025-09-29T00 32.01    152 PVpt |                                o
+                     2025-09-29T01 31.75      0 PVpt |                               o
+                     2025-09-29T02 31.65      0 PVpt |                               o
+                     2025-09-29T03 31.66      0 PVpt |                               o
+                     2025-09-29T04 31.70      0 PVpt |                               o
+                     2025-09-29T05 32.90    226 PVpt |                                o
+                     2025-09-29T06 37.25    671 PVpt |                                     o
+                     2025-09-29T07 47.62   2700 PVpt |                                               o
+                     2025-09-29T08 41.05   2700 PVpt |                                         o
+                     2025-09-29T09 35.72   2700 PVpt |                                   o
+                     2025-09-29T10 31.93   2700 PVpt |                               o
+                     2025-09-29T11 31.30      0 PVpt |                               o
+                     2025-09-29T12 30.56             |                              o
+                     2025-09-29T13 30.36             |                              o
+                     2025-09-29T14 31.11             |                               o
+                     2025-09-29T15 31.59             |                               o
+                     2025-09-29T16 33.09             |                                 o
+                     2025-09-29T17 37.95             |                                     o
+                     2025-09-29T18 57.21             |                                                         o
+                     2025-09-29T19 69.60             |                                                                     o
+                     2025-09-29T20 41.14             |                                         o
+                     2025-09-29T21 35.93             |                                   o
+                     2025-09-29T22 34.08             |                                  o
+                     2025-09-29T23 32.34             |                                o
+disabled tasmota timer
+done. 2025-09-28 17:22:35
 ```
 At first the consumption data is taken from volkszähler's database. This gets cached hourly.
 PV power, inverter input, net demand, car, charger, climate is used to calculate a 7 day average profile. (similar to [profiler.py](https://github.com/E-t0m/zeroinput/blob/main/profiler.py))
 
 Then the energy content gets fetched: It searches for the latest empty battery voltage and calculates the remaining battery content.
 
-The tasmota timers (and switches) are set by thresholds.
+The tasmota timers (and switches) are set by price thresholds.
 
 The zeroinput timer file is calculated with descending hour prices as far as tibber allows the foresight.
 The coming, price sorted hours get summed with their 7-day-average energy usage. This is done as long there is energy in the battery.
-This information is written to zeroinput's timer file, which regulates the inverter.
+This information is written to zeroinput's timer file, which rules the inverter.
 
-PVpt is PV pass through, where the PV energy is directly transformed by the inverter, because of the small price gap to the next sheduled input hour.
+PVpt is PV pass through, where the PV energy is directly transformed by the inverter, because of the small price gap to the next sheduled hour with input from battery.
 
-tib_zero_tas.py should run every 10 min up to 60 min by cron:
+tib_zero_tas.py should run every 15 minutes:
 ```
-1,21,41 * * * *	python3 /home/vzlogger/tibber/tib_zero_tas.py -v > /home/vzlogger/tib_zero_tas.txt
+14,29,44,59 * * * *	python3 /home/vzlogger/tibber/tib_zero_tas.py -v -html > /home/vzlogger/tibber/tib_zero_tas.html
 ```
-i write the output to a txt file which is linked (as root) from the vzlogger htdocs folder:
+i write the output to a html file which is linked (as root) from the vzlogger htdocs folder:
 ```
-ln -s /home/vzlogger/tib_zero_tas.txt /home/pi/volkszaehler.org/htdocs
+ln -s /home/vzlogger/tib_zero_tas.html /home/pi/volkszaehler.org/htdocs
 ```
-It's found at http ://the-usual-volkszaehler-site /tib_zero_tas.txt
+It's found at http ://the-usual-volkszaehler-site /tib_zero_tas.html
