@@ -346,7 +346,7 @@ if __name__ =="__main__":
 				
 				if web_stats:
 					with open(join(dirname(__file__),'zeroinput.html'),'w') as webfile: 
-						webfile.write("""<!DOCTYPE html><html><head><meta http-equiv="refresh" content="1" ><style>body {font-size: 200%;color: #BBBBBB;background-color: #111111;}</style></head><body><pre>\n""")
+						webfile.write("""<!DOCTYPE html><html><head><meta charset="UTF-8"><meta http-equiv="refresh" content="1" ><style>body {font-size: 200%;color: #BBBBBB;background-color: #111111;}</style></head><body><pre>\n""")
 						webfile.write(output_buffer.getvalue())
 						webfile.write("""\n</pre></body></html>""")
 					
