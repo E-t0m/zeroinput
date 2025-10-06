@@ -3,7 +3,7 @@
 # indent size 4, mode Tabs
 
 debug = False
-timescale = "QUARTER_HOURLY"	# or "HOURLY"
+tibber_resolution = "QUARTER_HOURLY"	# or "HOURLY"
 
 from json import load as json_load
 from json import dump as json_dump
@@ -16,9 +16,9 @@ today_present = False; today_date = None
 tomorrow_present = False; tomorrow_date = None
 today = datetime.now().strftime('%Y-%m-%d')
 
-timeslots = 96 if timescale == 'QUARTER_HOURLY' else 24
+tibber_timeslots = 24 if tibber_resolution == 'HOURLY' else 96
 
-if debug: print('timescale:',timescale,'timeslots:',timeslots)
+if debug: print('resolution:',tibber_resolution,'timeslots:',tibber_timeslots)
 
 try:
 	with open(join(dirname(__file__),'tibber_prices.json'),'r') as fi:
@@ -27,13 +27,13 @@ except:
 	if debug: print('error reading: tibber_prices.json')
 else:
 	try:
-		if len(tibber_response['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['today']) == timeslots:
+		if len(tibber_response['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['today']) == tibber_timeslots:
 			today_present = True
 			today_date = tibber_response['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['today'][0]['startsAt'][0:10]
 			if debug: print('today data is present:',today_date)
 	except: pass
 	try:
-		if len(tibber_response['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow']) == timeslots:
+		if len(tibber_response['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow']) == tibber_timeslots:
 			tomorrow_present = True
 			tomorrow_date = tibber_response['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow'][-1]['startsAt'][0:10] 
 			if debug: print('tomorrow data is present:',tomorrow_date)
@@ -56,7 +56,7 @@ query = """
 {	viewer {
 	homes {
 	currentSubscription {
-			priceInfo(resolution: """+timescale+""") {
+			priceInfo(resolution: """+tibber_resolution+""") {
 		today {
 			total
 			startsAt }
