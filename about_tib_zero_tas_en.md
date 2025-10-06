@@ -207,12 +207,11 @@ This information is written to zeroinput's timer file, which rules the inverter.
 
 PVpt is PV pass through, where the PV energy is directly transformed by the inverter, because of the small price gap to the next sheduled hour with input from battery.
 
-tib_zero_tas.py should run every 15 minutes:
-```
-14,29,44,59 * * * *	python3 /home/vzlogger/tibber/tib_zero_tas.py -v -html > /home/vzlogger/tibber/tib_zero_tas.html
-```
-i write the output to a html file which is linked (as root) from the vzlogger htdocs folder:
+Tib_zero_tas.py should run every 15 minutes.
+I write the output to a html file which is linked (as root) from the vzlogger htdocs folder:
 ```
 ln -s /home/vzlogger/tib_zero_tas.html /home/pi/volkszaehler.org/htdocs
 ```
 It's found at http ://the-usual-volkszaehler-site /tib_zero_tas.html#now
+
+The code is here: [tibber](https://github.com/E-t0m/zeroinput/tree/main/tibber)
