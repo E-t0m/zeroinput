@@ -128,8 +128,7 @@ def avg(inlist):					# return the average of a list variable
 
 class discharge_times():			# handle timer.txt file
 	def __init__(self):
-		self.interval	= 10	# seconds
-		self.stamp		= datetime.now().replace(second=0, microsecond=0)
+		self.last_set_timer = False
 		self.active		= False
 		self.battery	= 100
 		self.inverter	= 100
@@ -137,35 +136,44 @@ class discharge_times():			# handle timer.txt file
 		self.update()
 	
 	def update(self):
-		if self.stamp + timedelta(seconds = self.interval) < datetime.now():
-			self.stamp = datetime.now()
-			times = []; states = []
-			try:
-				with open(conf['discharge_t_file'],'r') as fi:
-					for i in fi:
-						if i[0] == '#' or i == '\n': continue	# ignore empty lines
-						if i[:10] == '0000-00-00': i = datetime.now().strftime('%Y-%m-%d') + i[10:] # set to today
-						times.append(datetime.strptime(i[:16], '%Y-%m-%d %H:%M'))
-						states.append(str(i[16:]).replace('\n','').replace('\t',' ').split(' ')[1:])
+		times = []; states = []
+		
+		try:
+			with open(conf['discharge_t_file'],'r') as fi:
+				for i in fi:
+					if i[0] == '#' or i == '\n': continue	# ignore empty lines
+					if i[:10] == '0000-00-00': i = datetime.now().strftime('%Y-%m-%d') + i[10:] # set to today
+					times.append(datetime.strptime(i[:19], '%Y-%m-%d %H:%M:%S'))
+					states.append(str(i[19:]).replace('\n','').replace('\t',' ').split(' ')[1:])
+			
+			for i in range(0,len(times)):
+				self.active = True	# successful file read
 				
-				for i in range(0,len(times)):
-					self.active = True	# successful file read
-					
-					if times[i] < datetime.now(): 
-						if states[i][0] == '0':	self.battery = 0
-						else:					self.battery = int(states[i][0])
-						if states[i][1] == '0':	self.inverter = 0
-						else:					self.inverter = int(states[i][1])
-						if states[i][2] == '0':	self.energy = 0
-						else:					self.energy = int(states[i][2])
-						if False: print(times[i].strftime('%Y-%m-%d %H:%M'),'\tbattery perc:',self.battery, '\tinput perc:',self.inverter)
-					else: break
-			except:
-				self.active		= False	# indicates a invalid timer file!
-				self.battery	= 100
-				self.inverter	= 100
-				self.energy		= 9999
-
+				if times[i] < datetime.now(): 
+					if states[i][0] == '0':	self.battery = 0
+					else:					self.battery = int(states[i][0])
+					if states[i][1] == '0':	self.inverter = 0
+					else:					self.inverter = int(states[i][1])
+					if states[i][2] == '0':	self.energy = 0
+					else:					self.energy = int(states[i][2])
+					#print(times[i].strftime('%Y-%m-%d %H:%M'),'\tbattery perc:',self.battery, '\tinput perc:',self.inverter)
+				else: 
+					break
+		
+		except:							# something went wrong, reading the timer file
+			self.active		= False		# indicates a invalid timer file!
+			self.battery	= 100
+			self.inverter	= 100
+			self.energy		= 9999
+		
+		try:						# maybe there is no timer
+			if self.last_set_timer != times[i-1]:
+				self.last_set_timer = times[i-1]
+				return(1)			# indicates a energy counter reset
+			else:
+				return(0)
+		except:						# no problem with that
+			return(0)
 
 class esmart:						# eSmart3 MPPT charger lib by skagmo.com 2018: https://github.com/skagmo/esmart_mppt | adapted for zeroinput
 	def __init__(self):
@@ -507,7 +515,7 @@ if __name__ =="__main__":
 					
 					if (in_pc/3600) > timer.energy and timer.battery != 0:								# hourly battery discharge limit exceeded
 											max_input = pv_power
-											status_text	+= ', hourly battery energy limit exceeded'
+											status_text	+= ', battery discharge limit exceeded'
 					
 					if max_input > max_input_power:
 											max_input = max_input_power
@@ -616,11 +624,11 @@ if __name__ =="__main__":
 			
 			for charger in esmart_handles: charger['obj'].close()
 			
-			
-			if datetime.now().minute == 0 and datetime.now().second == 0: in_pc = 0						# reset battery energy counter every full hour
-			else:	in_pc += max(0, send_power - pv_power)												# only count energy from battery
+			in_pc += max(0, send_power - pv_power)														# count energy only from battery
 		
-			if conf['discharge_timer']: timer.update()
+			if conf['discharge_timer']: 
+				if timer.update(): in_pc = 0															# reset battery discharge energy counter
+			
 			if stop_event.is_set(): break
 			continue
 	
