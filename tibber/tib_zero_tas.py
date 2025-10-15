@@ -204,13 +204,15 @@ def main():
 	for i in tibber_response['data']['viewer']['homes'][0]['currentSubscription']['priceInfo']['tomorrow']:	prices[i['startsAt'][0:16]] = i['total']
 	price_avg = 0
 	
-	if conf['calc_after_noon']:
-										calc_stop_time = (datetime.now() + timedelta(days=9)).replace(hour=12, minute=0, second=0, microsecond=0) # calculate for the complete tibber price window
+	if conf['stop_calc_time'] > 23:
+										calc_stop_time = (datetime.now() + timedelta(days=999)).replace(hour=0, minute=0, second=0, microsecond=0) # disable = calculate for the complete tibber future price window
 	else:
-		if datetime.now().hour < 12:
-										calc_stop_time = (datetime.now() + timedelta(days=0)).replace(hour=12, minute=0, second=0, microsecond=0) # today, don't calculate battery discharge after this time
-										if verbose: print('stopping calculation before noon')
-		else:							calc_stop_time = (datetime.now() + timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0) # tomorrow
+		if datetime.now().hour < conf['stop_calc_time']:
+										calc_stop_time = (datetime.now() + timedelta(days=0)).replace(hour=conf['stop_calc_time'], minute=0, second=0, microsecond=0) # today, don't calculate battery discharge after this time
+										if verbose: print('stopping calculation before today:',conf['stop_calc_time'])
+		else:
+										calc_stop_time = (datetime.now() + timedelta(days=1)).replace(hour=conf['stop_calc_time'], minute=0, second=0, microsecond=0) # tomorrow
+										if verbose: print('stopping calculation before tomorrow:',conf['stop_calc_time'])
 	
 	future_prices = {}									# prices to come
 	for i in prices:
@@ -242,11 +244,11 @@ def main():
 			sum_p += cur_avg_energy
 			
 			if mktime(datetime.strptime(i,'%Y-%m-%dT%H:%M').timetuple()) < mktime(datetime.strptime(highest_price_time,'%Y-%m-%dT%H:%M').timetuple()):	# before peak price
-				cap_p[i] = cur_avg_energy * ((1.1-j*0.1)+1 if j < 11 else 1) # decending from 200% for 2nd to 100% for 11th hour of the 7day average amount
+				cap_p[i] = cur_avg_energy * ((2-j*0.1)+3 if j < 41 else 1 ) # decending from 500% for 1st to 100% for 40th expensive quarter hour
 			else:
 				cap_p[i] = conf['max_inverter_power']/4		# maximum power, as there is no reason to keep energy back after the preak price
 			
-			if cap_p[i] > conf['max_inverter_power']: cap_p[i] = conf['max_inverter_power']
+			if cap_p[i] > conf['max_inverter_power']/4: cap_p[i] = conf['max_inverter_power']/4
 			cap_p[i] = '%.f'%(cap_p[i])
 			j += 1
 			lowest_price_timed = s_fupri[i]				# the lowest price with input
@@ -254,6 +256,8 @@ def main():
 		else:			 
 			cap_p[i] = '0'								# battery content was reached
 			if debug: print('%s  %.2f\t%i\t%s'%(i,s_fupri[i]*100,cur_avg_energy,cap_p[i]))
+	
+	
 	
 	price_avg = price_avg / len(future_prices) *100		# average price
 	price_min = min(future_prices.values()) *100		# minimum price
