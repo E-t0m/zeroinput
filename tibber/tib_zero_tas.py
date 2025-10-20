@@ -233,6 +233,11 @@ def main():
 	
 	highest_price_time = list(s_fupri.keys())[0]		# the time of the highest price
 	lowest_price_timed = s_fupri[highest_price_time]	# set to the highest price
+
+	price_avg = price_avg / len(future_prices) *100		# average price
+	price_min = min(future_prices.values()) *100		# minimum price
+	price_max = max(future_prices.values()) *100		# maximum price
+	price_spread = (price_max-price_min)				# price spread
 	
 	if verbose and sum_p < vz_bat_cap: print('%s\t%4s\t%4s\t%5s'%('date time         price','set','average','sum'))	# show table header if there is a table
 	
@@ -244,9 +249,9 @@ def main():
 			sum_p += cur_avg_energy
 			
 			if mktime(datetime.strptime(i,'%Y-%m-%dT%H:%M').timetuple()) < mktime(datetime.strptime(highest_price_time,'%Y-%m-%dT%H:%M').timetuple()):	# before peak price
-				cap_p[i] = cur_avg_energy * ((2-j*0.1)+3 if j < 41 else 1 ) # decending from 500% for 1st to 100% for 40th expensive quarter hour
+				cap_p[i] = cur_avg_energy*( (s_fupri[i]*100 -price_min) / price_spread +1) # 200% relative to price spread
 			else:
-				cap_p[i] = conf['max_inverter_power']/4		# maximum power, as there is no reason to keep energy back after the preak price
+				cap_p[i] = conf['max_inverter_power']/4		# maximum power, as there is no reason to keep energy back after the peak price
 			
 			if cap_p[i] > conf['max_inverter_power']/4: cap_p[i] = conf['max_inverter_power']/4
 			cap_p[i] = '%.f'%(cap_p[i])
@@ -256,13 +261,6 @@ def main():
 		else:			 
 			cap_p[i] = '0'								# battery content was reached
 			if debug: print('%s  %.2f\t%i\t%s'%(i,s_fupri[i]*100,cur_avg_energy,cap_p[i]))
-	
-	
-	
-	price_avg = price_avg / len(future_prices) *100		# average price
-	price_min = min(future_prices.values()) *100		# minimum price
-	price_max = max(future_prices.values()) *100		# maximum price
-	price_spread = (price_max-price_min)				# price spread
 	
 	charge_bat_to_ac_eff = conf['bat_to_AC_efficiency'] * conf['AC_to_bat_efficiency'] * 0.01
 	max_price_for_charge = lowest_price_timed * charge_bat_to_ac_eff - conf['battery_charge_profit']
