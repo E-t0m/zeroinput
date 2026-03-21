@@ -4,7 +4,7 @@ with (multiple) soyosource gti inverters and
 (multiple) victron and / or eSmart3 MPPT charge controllers
 
 ### [Vorstellung in deutscher Sprache](about_de.md)
-#### [Introduction in english language](about_en.md) (currently not up to date, sorry)
+#### [Introduction in english language](about_en.md)
 
 ![scheme](https://github.com/user-attachments/assets/8d767329-15f9-4098-b4b4-a9e70d0d98c9)
 
