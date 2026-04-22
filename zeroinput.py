@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 # indent size 4, mode Tabs
 
-from serial import Serial
+from serial import Serial, SerialException
 from json import load as json_load
 from os.path import abspath, join, dirname
 from time import strftime, time, localtime, sleep
@@ -68,7 +68,8 @@ def display_mppt_data():			# display the mppt charger data
 			if 		conf['rs485'][port]['mppt_type'] == 'victron': 
 				mppt_dev_mode = '' if mppt_data[port]['CS'] > 14 else ['OFF','','FAULT','BULK','ABSORB','FLOAT','','EQUAL','','','START','','RECOND','','EXTCON'][mppt_data[port]['CS']]
 			elif	conf['rs485'][port]['mppt_type'] == 'eSmart3': 
-				mppt_dev_mode = '' if mppt_data[port]['CS'] > 4 else ['WAIT','MPPT','BULK','FLOAT','PRE'][mppt_data[port]['CS']]
+				if mppt_data[port]['CS'] == 'PORT': mppt_dev_mode = 'PORT ERROR'
+				else:								mppt_dev_mode = '' if mppt_data[port]['CS'] > 4 else ['WAIT','MPPT','BULK','FLOAT','PRE'][mppt_data[port]['CS']]
 		else: mppt_dev_mode = ''
 			
 		print('{:12s}  {:10s} {:>5s}  {:>6s}  {:>6s}   {:<6s} {:>4s} {:>3s} {:>3s} {:<8s}'.format(
@@ -175,6 +176,7 @@ class discharge_times():			# handle timer.txt file
 		except:						# no problem with that
 			return(0)
 
+
 class esmart:						# eSmart3 MPPT charger lib by skagmo.com 2018: https://github.com/skagmo/esmart_mppt | adapted for zeroinput
 	def __init__(self):
 		self.state = 0 # STATE_START
@@ -186,8 +188,13 @@ class esmart:						# eSmart3 MPPT charger lib by skagmo.com 2018: https://github
 	
 	def set_port(self, port):	self.port = port
 	
-	def open(self):	self.ser = Serial(self.port,9600,timeout=0.1)
-	
+	def open(self):
+		try:
+			self.ser = Serial(self.port, 9600, timeout=0.1)
+		except SerialException as e:
+			if verbose: print("Could not open port %s: %s" % (self.port, e))
+			mppt_data[self.port]['CS'] = 'PORT'
+			self.ser = None
 	def close(self):
 		try:
 			self.ser.close()
@@ -213,7 +220,8 @@ class esmart:						# eSmart3 MPPT charger lib by skagmo.com 2018: https://github
 					if (self.data[2] == 3): 
 						msg_type = self.data[3]	# Source 3 is MPPT device
 						if (self.data[3] == 0):	# Type 0 packet contains most data
-							if verbose: print('REC',self.port,':',conf['rs485'][self.port]['name'],'' if 'ts' not in mppt_data[self.port].keys() else 'delay %1.2f s'%(time()- mppt_data[self.port]['ts']) )
+							ts = time()
+							if verbose: print('REC',self.port,':',conf['rs485'][self.port]['name'],'' if 'ts' not in mppt_data[self.port].keys() else 'delay %1.2f s'%(ts- mppt_data[self.port]['ts']) )
 							mppt_data[self.port] = {}  # reset all values
 							mppt_data[self.port]['CS']		= int.from_bytes(self.data[7:9],	byteorder='little')
 							mppt_data[self.port]['VPV']		= int.from_bytes(self.data[9:11],	byteorder='little') / 10.0
@@ -225,29 +233,38 @@ class esmart:						# eSmart3 MPPT charger lib by skagmo.com 2018: https://github
 							mppt_data[self.port]['Pload']	= int.from_bytes(self.data[23:25],	byteorder='little')
 							mppt_data[self.port]['ext_temp']= self.data[25] if self.data[25] < 200 else self.data[25] - 256
 							mppt_data[self.port]['int_temp']= self.data[27] if self.data[27] < 200 else self.data[27] - 256
-							mppt_data[self.port]['ts']		= time()
+							mppt_data[self.port]['ts']		= ts
 	
 	def esmart_status_request(self):
+		if self.ser is None: return
 		try:
-			while (self.ser.inWaiting()): self.parse(self.ser.read(100))		# Send poll packet to request data every x seconds
+			while self.ser.inWaiting():
+				self.parse(self.ser.read(100))
+			
 			if (time() - self.timeout) > 1:
-				self.ser.write(b"\xaa\x01\x01\x01\x00\x03\x00\x00\x1e\x32")		# request status message
+				self.ser.write(b"\xaa\x01\x01\x01\x00\x03\x00\x00\x1e\x32")								# send status request
 				self.timeout = time()
 		except IOError:
-			print("Serial port error, fixing")
-			self.ser.close()
-			opened = 0
-			while not opened:
+			reconnect_delay = 0.5
+			reconnect_attempts = 20
+			if verbose: print("Serial port error, fixing", self.port)
+			try:
+				self.ser.close()
+			except Exception:
+				pass
+			for attempt in range(1, reconnect_attempts + 1):
 				try:
-					self.ser = Serial(self.port,38400,timeout=0)
-					if self.ser.read(100):	opened = 1
-					else:					self.ser.close()
-				except serial.serialutil.SerialException:
-					time.sleep(0.5)
-					self.ser.close()
-			print("Error fixed")
-
-
+					self.ser = Serial(self.port, 9600, timeout=0.1)
+					if verbose: print("Error fixed after %i attempt(s)" % attempt)
+					break
+				except SerialException as e:
+					if verbose: print("Attempt %i failed: %s" % (attempt, e))
+					sleep(reconnect_delay)
+			else:
+				if verbose: print("Could not reopen port after %i attempts: %s" % (reconnect_attempts, self.port))
+				mppt_data[self.port]['CS'] = 'PORT'
+	
+	
 def handle_victron_data(serialport, stop_event: Event):													# reads serial data of victron devices
 	global mppt_data
 	rec_buf = {}
@@ -272,10 +289,11 @@ def handle_victron_data(serialport, stop_event: Event):													# reads seri
 				if name == 'V': name = 'Vbat'
 				if name == 'I': name = 'Ibat'
 				if name == 'PID':										# begin new dataset with PID
+																		ts = time()
 																		mppt_data[serialport] = rec_buf
 																		if verbose: print('REC',serialport,':',conf['rs485'][serialport]['name'],'' if 'ts' not in mppt_data[serialport].keys() \
-																						else 'delay %1.2f s'%(time()- mppt_data[serialport]['ts']) )
-																		rec_buf = {'ts':time()}
+																						else 'delay %1.2f s'%(ts- mppt_data[serialport]['ts']) )
+																		rec_buf = {'ts':ts}
 																		if 'PPV' in mppt_data[serialport].keys(): rec_buf['PPV'] = mppt_data[serialport]['PPV'] # keep old PPV for continuity, overwrite below
 				if name in ['PID','SER#','OR','LOAD','Checksum']:		rec_buf[name] = val					# add as string
 				elif name in ['Vbat','Ibat','VPV'] and val.isnumeric():	rec_buf[name] = 0.001* int(val)		# add as float
@@ -380,14 +398,14 @@ if __name__ =="__main__":
 				elif 'Startup done.' in l:
 					main_log = False
 					vzout.close()
-				if main_log: vzout.write(l)
+				if main_log: vzout.write(l)																# write vzlogger data to persisent log on startup
 				
-				if '1-0:16.7.0' in l:	# read the sum L1+L2+L3, can be negative
-					try: Ls_read = int( round( float( l[l.index('value=')+6:-1+l.index('ts=')]) ,4) )
-					except: pass
-					else:
-						try: Ls_ts = int( l[l.index('ts=')+3:-1] )
-						except: pass
+				if '1-0:16.7.0' in l and 'value=' in l and 'ts=' in l:
+					try:
+						Ls_read = int(round(float(l.split('value=')[1].split()[0])))					# read the sum L1+L2+L3, can be negative
+						Ls_ts   = int(l.split('ts=')[1].split()[0].rstrip('\n'))
+					except (ValueError, IndexError):
+						pass
 				
 				if Ls_read != 99999 and Ls_ts !=99999:													# check if Ls has input and timestamp
 				
@@ -539,23 +557,24 @@ if __name__ =="__main__":
 							 round((1-(send_history[-1] / (0.01+send_history[-2])))*100,1), round((1-(send_history[-3] / (0.01+send_history[-4])))*100,1) ) )
 			
 			with open('/tmp/vz/soyo.log','w') as fo:													# send some values to volkszähler
-				fo.write('%i: soyosend = %i\n'		% ( time(),	-send_power ) )							# the keywords have to be created as channels in vzlogger.conf to make it work there!
-				fo.write('%i: zero_shift_w = %i\n'	% ( time(),	-zero_shift ) )
-				fo.write('%i: bat_v = %f\n'			% ( time(),	bat_cont ) )
+				ts = time()
+				fo.write('%i: soyosend = %i\n'		% ( ts,	-send_power ) )							# the keywords have to be created as channels in vzlogger.conf to make it work there!
+				fo.write('%i: zero_shift_w = %i\n'	% ( ts,	-zero_shift ) )
+				fo.write('%i: bat_v = %f\n'			% ( ts,	bat_cont ) )
 				
-				if 'PPV'		in mppt_data['combined'].keys():		fo.write('%i: pv_w = %i\n'		% ( time(),	-mppt_data['combined']['PPV'] ) )
-				if 'PPV'		in mppt_data['/dev/ttyACM0'].keys():	fo.write('%i: pv_w0 = %i\n'		% ( time(),	-mppt_data['/dev/ttyACM0']['PPV'] ) )
-				if 'PPV'		in mppt_data['/dev/ttyACM1'].keys():	fo.write('%i: pv_w1 = %i\n'		% ( time(),	-mppt_data['/dev/ttyACM1']['PPV'] ) )
-				if 'PPV'		in mppt_data['/dev/ttyACM2'].keys():	fo.write('%i: pv_w2 = %i\n'		% ( time(),	-mppt_data['/dev/ttyACM2']['PPV'] ) )
+				if 'PPV'		in mppt_data['combined'].keys():		fo.write('%i: pv_w = %i\n'		% ( ts,	-mppt_data['combined']['PPV'] ) )
+				if 'PPV'		in mppt_data['/dev/ttyACM0'].keys():	fo.write('%i: pv_w0 = %i\n'		% ( ts,	-mppt_data['/dev/ttyACM0']['PPV'] ) )
+				if 'PPV'		in mppt_data['/dev/ttyACM1'].keys():	fo.write('%i: pv_w1 = %i\n'		% ( ts,	-mppt_data['/dev/ttyACM1']['PPV'] ) )
+				if 'PPV'		in mppt_data['/dev/ttyACM2'].keys():	fo.write('%i: pv_w2 = %i\n'		% ( ts,	-mppt_data['/dev/ttyACM2']['PPV'] ) )
 				
-				if 'int_temp'	in mppt_data['/dev/ttyACM0'].keys():	fo.write('%i: int_temp1 = %i\n'	% ( time(),	mppt_data['/dev/ttyACM0']['int_temp'] ) )
-				if 'int_temp'	in mppt_data['/dev/ttyACM1'].keys():	fo.write('%i: int_temp0 = %i\n'	% ( time(),	mppt_data['/dev/ttyACM1']['int_temp'] ) )
-				if 'ext_temp'	in mppt_data['/dev/ttyACM0'].keys():	fo.write('%i: out_temp = %i\n'	% ( time(),	mppt_data['/dev/ttyACM0']['ext_temp'] ) )
-				if 'ext_temp'	in mppt_data['/dev/ttyACM1'].keys():	fo.write('%i: bat_temp = %i\n'	% ( time(),	mppt_data['/dev/ttyACM1']['ext_temp'] ) )
+				if 'int_temp'	in mppt_data['/dev/ttyACM0'].keys():	fo.write('%i: int_temp1 = %i\n'	% ( ts,	mppt_data['/dev/ttyACM0']['int_temp'] ) )
+				if 'int_temp'	in mppt_data['/dev/ttyACM1'].keys():	fo.write('%i: int_temp0 = %i\n'	% ( ts,	mppt_data['/dev/ttyACM1']['int_temp'] ) )
+				if 'ext_temp'	in mppt_data['/dev/ttyACM0'].keys():	fo.write('%i: out_temp = %i\n'	% ( ts,	mppt_data['/dev/ttyACM0']['ext_temp'] ) )
+				if 'ext_temp'	in mppt_data['/dev/ttyACM1'].keys():	fo.write('%i: bat_temp = %i\n'	% ( ts,	mppt_data['/dev/ttyACM1']['ext_temp'] ) )
 				
-				#if 'VPV'	in mppt_data['/dev/ttyACM0'].keys():	fo.write('%i: pv_u0 = %i\n'		% ( time(),	-mppt_data['/dev/ttyACM0']['VPV'] ) )
-				#if 'VPV'	in mppt_data['/dev/ttyACM1'].keys():	fo.write('%i: pv_u1 = %i\n'		% ( time(),	-mppt_data['/dev/ttyACM1']['VPV'] ) )
-				#if 'VPV'	in mppt_data['/dev/ttyACM2'].keys():	fo.write('%i: pv_u2 = %i\n'		% ( time(),	-mppt_data['/dev/ttyACM2']['VPV'] ) )
+				#if 'VPV'		in mppt_data['/dev/ttyACM0'].keys():	fo.write('%i: pv_u0 = %i\n'		% ( ts,	-mppt_data['/dev/ttyACM0']['VPV'] ) )
+				#if 'VPV'		in mppt_data['/dev/ttyACM1'].keys():	fo.write('%i: pv_u1 = %i\n'		% ( ts,	-mppt_data['/dev/ttyACM1']['VPV'] ) )
+				#if 'VPV'		in mppt_data['/dev/ttyACM2'].keys():	fo.write('%i: pv_u2 = %i\n'		% ( ts,	-mppt_data['/dev/ttyACM2']['VPV'] ) )
 				
 			if verbose: 
 				if send_power == 0: print('\nmeter {:4d} W'.format(Ls_read),end='')						# show the meter readings, and zero shift
@@ -577,8 +596,8 @@ if __name__ =="__main__":
 					if 'ext_temp' in mppt_data[port].keys():
 						if mppt_data[port]['ext_temp'] > conf['rs485'][port]['alarm']['temp_ext']:
 							if verbose: print('\nTEMPERATURE ALARM external temp', conf['rs485'][port]['name'], ':', conf['rs485'][port]['temp_display'] ,':', mppt_data[port]['ext_temp'],'°C\n')
-							if temp_int_alarm_time + timedelta(seconds = conf['temp_alarm_interval']) < datetime.now():
-								temp_int_alarm_time = datetime.now()
+							if temp_ext_alarm_time + timedelta(seconds = conf['temp_alarm_interval']) < datetime.now():
+								temp_ext_alarm_time = datetime.now()
 								system(conf['rs485'][port]['alarm']['ext_cmd'])
 			
 			last_runtime = time()
@@ -594,17 +613,27 @@ if __name__ =="__main__":
 			for i in [1,2]:																				# send power demand two times to the inverters
 				if send_power != 0:
 					if conf['total_number_of_inverters'] == 1 or (sorted(long_send_history)[-4] <= conf['single_inverter_threshold']):	# filter 3 spikes before switching to all inverters
-						open_soyosource = Serial(conf['basic_load_inverter_port'], 4800)
-						set_soyo_demand(open_soyosource,send_power)										# ONE inverter is used for basic load
-						open_soyosource.close()
-						soyo_demands = '%i x %i W'%(1,send_power)
+						try:
+							open_soyosource = Serial(conf['basic_load_inverter_port'], 4800)
+							set_soyo_demand(open_soyosource,send_power)									# ONE inverter is used for basic load
+							open_soyosource.close()
+						except SerialException as e:
+							if verbose: print("%s: %s" % (conf['basic_load_inverter_port'], e))
+							soyo_demands = 'ERROR sending to %s' % conf['basic_load_inverter_port']
+						else:
+							soyo_demands = '%i x %i W'%(1,send_power)
 						n_active_inverters = 1
 					else:																				# ALL inverters are used for higher demands
 						for port in soyosource_devs: 
-							open_soyosource = Serial(port, 4800)										# open the serial port for sending soyosource power demand
-							set_soyo_demand(open_soyosource,int(1.0 * send_power / conf['total_number_of_inverters']))
-							open_soyosource.close()
-						soyo_demands = '%i x %i W'%(conf['total_number_of_inverters'],(1.0 * send_power / conf['total_number_of_inverters']))
+							try:
+								open_soyosource = Serial(port, 4800)									# open the serial port for sending soyosource power demand
+								set_soyo_demand(open_soyosource,int(1.0 * send_power / conf['total_number_of_inverters']))
+								open_soyosource.close()
+							except SerialException as e:
+								if verbose: print("%s: %s" % (port, e))
+								soyo_demands = 'ERROR sending to %s' % port
+							else:
+								soyo_demands = '%i x %i W'%(conf['total_number_of_inverters'],(1.0 * send_power / conf['total_number_of_inverters']))
 						n_active_inverters = conf['total_number_of_inverters']
 					if verbose: print('%i:  power request %s'%(i,soyo_demands))
 				else:
@@ -626,8 +655,7 @@ if __name__ =="__main__":
 			
 			in_pc += max(0, send_power - pv_power)														# count energy only from battery
 		
-			if conf['discharge_timer']: 
-				if timer.update(): in_pc = 0															# reset battery discharge energy counter
+			if conf['discharge_timer'] and timer.update(): in_pc = 0									# reset battery discharge energy counter
 			
 			if stop_event.is_set(): break
 			continue
