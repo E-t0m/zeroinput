@@ -10,7 +10,7 @@ Oder: Vorgaben in der [timer-Datei](https://github.com/E-t0m/zeroinput/blob/main
 
 ## Die Komponenten
 - Soyosource GTN 1200W (max. 900 W im Batteriemodus), ACHTUNG! meines Wissens liegt kein Zertifikat für VDE-AR-N 4105 vor, in Deutschland ist das Gerät damit nicht zulässig. [Anleitung und Spezifikation](https://www.mediafire.com/file/kvn0jvyuubd3364/soyosource1.200W%252BGrid%252BTie%252BInverter.pdf/file)
-- Victron Solar und / oder eSmart3 MPPT Laderegler [Anleitung und Spezifikation](https://www.solarcontroller-inverter.com/download/18122110445698.html), [Herstellerseite](https://www.ipandee.com/products/mppt-solar-charge-controller-esmart-12v-24v-36v-48v-20a-60a/), [Konfigurationssoftware Windows](http://www.mediafire.com/file/mt77gai7xxzig1g/install_SolarMate_CS_Windows.exe)
+- Victron Solar und / oder eSmart3 (4?) MPPT Laderegler
 - Raspberry Pi (oder anderer (Kleinst)rechner)
 - Lesekopf für den Stromzähler (moderne Messeinrichtung), oder ein Volkszähler-kompatibles Energymeter
 * 16s LiFePO4 Akku
