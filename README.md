@@ -9,7 +9,7 @@ with (multiple) soyosource gti inverters and
 
 #### [Introduction in english language](about_en.md)
 - [Installation manual](zeroinput_installation_en.md)
-- [Specifications](zeroinput_spec.md)
+- [Specifications](zeroinput_spec_en.md)
 
 [Screenshots of the webconfig](screenshots)
 
