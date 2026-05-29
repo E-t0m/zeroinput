@@ -1,10 +1,17 @@
-# zeroinput
+# zeroinput v2
 set power demand to zero
 with (multiple) soyosource gti inverters and
 (multiple) victron and / or eSmart3 MPPT charge controllers
 
 ### [Vorstellung in deutscher Sprache](about_de.md)
+- [Installationsanleitung](zeroinput_installation_de.md)
+- [Spezikifationen](zeroinput_spec_de.md)
+
 #### [Introduction in english language](about_en.md)
+- [Installation manual](zeroinput_installation.md)
+- [Specifikations](zeroinput_spec.md)
+
+[Screenshots of the webconfig](screenshots)
 
 ![scheme](https://github.com/user-attachments/assets/8d767329-15f9-4098-b4b4-a9e70d0d98c9)
 
@@ -16,3 +23,5 @@ This script uses a https://volkszaehler.org/ installation for energy meter input
 - yellow shows the PV power
 
 ![basic](https://user-images.githubusercontent.com/110770475/183761064-bd2632d8-4438-4288-b05c-e8126de78463.png)
+
+The previous version is found here: [zeroinput v1](v1)
