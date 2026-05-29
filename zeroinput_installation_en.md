@@ -19,7 +19,7 @@ zeroinput therefore integrates naturally into an existing Volkszähler setup wit
 | `zeroinput.py` | Main script |
 | `predictor.py` | Load predictor (k-means, optional) |
 | `webconfig.py` | HTTP configuration server (optional, requires `-httpd`) |
-| `ve_aggregator.py` | VE.Direct Aggregator client (optional, required for `victron_agg`) |
+| [`ve_aggregator.py`](https://github.com/E-t0m/ve.direct-aggregator) | [VE.Direct Aggregator](https://github.com/E-t0m/ve.direct-aggregator) client (optional, required for `victron_agg`) |
 | `zeroinput.conf` | Configuration (JSON) |
 | `zeroinput_webconfig.html` | Web interface |
 | `zeroinput.service` | systemd service |
@@ -195,7 +195,7 @@ For a single Victron MPPT on its own port:
 "/dev/ttyACM2": {"name": "VE 150/35", "mppt_type": "victron", "pvp": 1500}
 ```
 
-For multiple Victron MPPTs on a single port via the VE.Direct Aggregator (`readtext_sendhex` firmware), use `victron_agg` with a `devices` map of SER# → `{name, pvp}`:
+For multiple Victron MPPTs on a single port via the [VE.Direct Aggregator](https://github.com/E-t0m/ve.direct-aggregator) (`readtext_sendhex` firmware), use `victron_agg` with a `devices` map of SER# → `{name, pvp}`:
 
 ```json
 "/dev/ttyACM2": {
@@ -208,7 +208,7 @@ For multiple Victron MPPTs on a single port via the VE.Direct Aggregator (`readt
 }
 ```
 
-`pvp` (PV peak power in W) is informational. `ve_aggregator.py` must be present in the same directory as `zeroinput.py`. Requires `readtext_sendhex` firmware on the Arduino/Teensy aggregator.
+`pvp` (PV peak power in W) is informational. `ve_aggregator.py` must be present in the same directory as `zeroinput.py`. Requires `readtext_sendhex` firmware on the Arduino/Teensy aggregator ([VE.Direct Aggregator](https://github.com/E-t0m/ve.direct-aggregator)).
 
 An alarm fires only when both threshold and command are set. To disable a single alarm, leave the command empty.
 
@@ -305,7 +305,7 @@ Exceptions (require restart):
 
 **RS485 bus:** Connect all devices on the same bus: A+ to A+, B- to B-. Enable termination resistors on the last device if available.
 
-**VE.Direct Aggregator:** Multiple Victron MPPTs can share a single RS485 port via an Arduino Mega 2560 or Teensy 4.1 running the `readtext_sendhex` firmware. zeroinput uses `ve_aggregator.py` to read data and send charge power limits (`SET <SER#> <watts>`). Each device is identified by its SER# — configure using `mppt_type: victron_agg` in the **rs485** tab of the web interface. Multiple aggregator ports are supported.
+**VE.Direct Aggregator:** Multiple Victron MPPTs can share a single RS485 port via an Arduino Mega 2560 or Teensy 4.1 running the [VE.Direct Aggregator](https://github.com/E-t0m/ve.direct-aggregator) (`readtext_sendhex` firmware). zeroinput uses `ve_aggregator.py` to read data and send charge power limits (`SET <SER#> <watts>`). Each device is identified by its SER# — configure using `mppt_type: victron_agg` in the **rs485** tab of the web interface. Multiple aggregator ports are supported.
 
 ---
 
