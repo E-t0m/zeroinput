@@ -12,7 +12,7 @@ def avg(lst):
 # ---------------------------------------------------------------------------
 # Predictor configuration – edit here, not in zeroinput.conf
 # ---------------------------------------------------------------------------
-VERSION			= 8
+VERSION			= 10
 LOG_FILE		= '/tmp/predictor.log'	# '' = no log
 MIN_SPREAD_W	= 150	# W: minimum spread between LOW and HIGH centroid
 STARTUP_S		= 10	# s: observation time after start before offset becomes active
@@ -85,6 +85,8 @@ class LoadPredictor:
 		self.LONG_PEAK_MIN	= 10		# s: peak longer than this cancels override
 		self.SHORT_PEAK_MAX	= SHORT_PEAK_MAX
 		self.pause_until	= 0			# timestamp until override active
+		self._inter_peak_buf= []		# last2_send samples between peaks for override target
+		self._override_target= None		# mean inter-peak baseline used when low_level unknown
 		# sustained load detection during override
 		self.high_ls_since	= None		# time() when Ls_read first exceeded threshold
 		self.LS_OVERRIDE_THR= 200		# W: Ls_read threshold to cancel override
@@ -163,8 +165,8 @@ class LoadPredictor:
 		load_prediction and min_spread_w are hot-reloadable from conf."""
 		self.enabled    = bool(conf.get('load_prediction', True))
 		self.MIN_SPREAD = int(conf.get('min_spread_w', MIN_SPREAD_W))
-		if self.verbose: print('predictor reloaded: enabled=%s min_spread=%i SHORT_PEAK_MAX=%is' % (
-			self.enabled, self.MIN_SPREAD, self.SHORT_PEAK_MAX))
+		if self.verbose: print('predictor v%i reloaded: enabled=%s min_spread=%i SHORT_PEAK_MAX=%is' % (
+			VERSION, self.enabled, self.MIN_SPREAD, self.SHORT_PEAK_MAX))
 
 	def _reset(self):
 		"""Full reset – clears history and learning state, starts cool-down."""
@@ -183,9 +185,12 @@ class LoadPredictor:
 		self.high_rise_cnt				= 0
 		self.peak_start					= None
 		self.ramp_override_by_predictor	= False
+		self._inter_peak_buf			= []
+		self._override_target			= None
 		self.high_ls_since				= None
 		self._ls_hi_dip_cnt				= 0
 		self.startup_end				= time() + self.MAX_HIST	# cool-down
+		if self.verbose: print('predictor v%i reset — re-learning' % VERSION)
 
 	def _track_peak(self, Ls_read):
 		"""Track peaks via Ls_read. Updates ramp_override_by_predictor."""
@@ -217,12 +222,15 @@ class LoadPredictor:
 					recent = [(ts, d) for ts, d in self.peak_dur_hist[-self.PAUSE_AFTER:]
 						if d < self.SHORT_PEAK_MAX and now - ts <= self.PEAK_WINDOW]
 					if (len(recent) >= self.PAUSE_AFTER
-							and now - recent[0][0] >= self.OVERRIDE_DELAY
-							and self.low_level is not None):
+							and now - recent[0][0] >= self.OVERRIDE_DELAY):
+						self._override_target = int(sum(self._inter_peak_buf) / len(self._inter_peak_buf)) \
+							if self._inter_peak_buf else None
 						self.ramp_override_by_predictor = True
 						self.pause_until = now + self.PAUSE_DURATION
-						if self.verbose: print('predictor: %i short peaks → ramp_override ON for %is' % (
-							self.PAUSE_AFTER, self.PAUSE_DURATION))
+						if self.verbose: print('predictor: %i short peaks → ramp_override ON for %is  target=%s W%s' % (
+							self.PAUSE_AFTER, self.PAUSE_DURATION,
+							self._override_target if self._override_target is not None else '?',
+							' (no low_level)' if self.low_level is None else ''))
 
 		# timeout
 		if self.ramp_override_by_predictor and now >= self.pause_until:
@@ -277,7 +285,7 @@ class LoadPredictor:
 		# peak tracking
 		self._track_peak(Ls_read)
 
-		# override active: hold low_level, monitor for sustained load
+		# override active: hold at low_level if known, otherwise hold inter-peak mean
 		if self.ramp_override_by_predictor:
 			if Ls_read > self.LS_OVERRIDE_THR:
 				self._ls_hi_dip_cnt = 0
@@ -291,15 +299,24 @@ class LoadPredictor:
 				self._ls_hi_dip_cnt += 1
 				if self._ls_hi_dip_cnt >= 3:
 					self.high_ls_since = None
-			self.offset = (self.low_level - est_load) if self.low_level is not None else 0
+			if self.low_level is not None:
+				self.offset = self.low_level - est_load
+			elif self._override_target is not None:
+				self.offset = self._override_target - est_load	# hold inter-peak baseline
+			else:
+				self.offset = -Ls_read		# fallback: neutralise spike
 			self._log(now, Ls_read, last2_send, est_load)
 			return self.offset
 
 		if Ls_read > 400:
-			# skip peak samples intentionally – transient values distort
-			# LOW/HIGH k-means clustering more than a brief gap in history
+			# skip peak samples — transient values distort LOW/HIGH k-means clustering
 			self._log(now, Ls_read, last2_send, est_load)
 			return self.offset
+
+		# accumulate inter-peak baseline samples (only when Ls_read is calm)
+		self._inter_peak_buf.append(last2_send)
+		if len(self._inter_peak_buf) > 30:
+			self._inter_peak_buf = self._inter_peak_buf[-30:]
 
 		self.history.append(est_load)
 		if len(self.history) > self.MAX_HIST:
@@ -332,5 +349,11 @@ class LoadPredictor:
 					self.high_level		= None
 					self.current_phase	= None
 					self.transition_cnt	= 0
+			else:
+				# unimodal distribution — clear levels so stale low_level doesn't persist
+				self.low_level		= None
+				self.high_level		= None
+				self.current_phase	= None
+				self.transition_cnt	= 0
 		self._log(now, Ls_read, last2_send, est_load)
 		return self.offset
