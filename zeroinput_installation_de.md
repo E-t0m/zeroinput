@@ -19,7 +19,7 @@ zeroinput fügt sich damit natürlich in eine bestehende Volkszähler-Installati
 | `zeroinput.py` | Hauptskript |
 | `predictor.py` | Lastprediktor (k-Means, optional) |
 | `webconfig.py` | HTTP-Konfigurationsserver (optional, benötigt `-httpd`) |
-| `ve_aggregator.py` | VE.Direct-Aggregator-Client (optional, benötigt für `victron_agg`) |
+| [`ve_aggregator.py`](https://github.com/E-t0m/ve.direct-aggregator) | [VE.Direct-Aggregator](https://github.com/E-t0m/ve.direct-aggregator)-Client (optional, benötigt für `victron_agg`) |
 | `zeroinput.conf` | Konfiguration (JSON) |
 | `zeroinput_webconfig.html` | Weboberfläche |
 | `zeroinput.service` | systemd-Dienst |
@@ -197,7 +197,7 @@ Für einen einzelnen Victron-MPPT an einem eigenen Port:
 "/dev/ttyACM2": {"name": "VE 150/35", "mppt_type": "victron", "pvp": 1500}
 ```
 
-Für mehrere Victron-MPPTs an einem Port über den VE.Direct-Aggregator (`readtext_sendhex`-Firmware), `victron_agg` mit einer `devices`-Zuordnung von SER# → `{name, pvp}` verwenden:
+Für mehrere Victron-MPPTs an einem Port über den [VE.Direct-Aggregator](https://github.com/E-t0m/ve.direct-aggregator) (`readtext_sendhex`-Firmware), `victron_agg` mit einer `devices`-Zuordnung von SER# → `{name, pvp}` verwenden:
 
 ```json
 "/dev/ttyACM2": {
@@ -211,7 +211,7 @@ Für mehrere Victron-MPPTs an einem Port über den VE.Direct-Aggregator (`readte
 }
 ```
 
-`pvp` (PV-Spitzenleistung in W) dient der `%PVp`-Anzeige. `ve_aggregator.py` muss im gleichen Verzeichnis wie `zeroinput.py` liegen. Erfordert `readtext_sendhex`-Firmware auf dem Arduino/Teensy-Aggregator. Geräte vom Typ `temp` werden als DS18B20-Temperatursensoren behandelt und in einer separaten Zeile der MPPT-Tabelle angezeigt.
+`pvp` (PV-Spitzenleistung in W) dient der `%PVp`-Anzeige. `ve_aggregator.py` muss im gleichen Verzeichnis wie `zeroinput.py` liegen. Erfordert `readtext_sendhex`-Firmware auf dem Arduino/Teensy-Aggregator ([VE.Direct-Aggregator](https://github.com/E-t0m/ve.direct-aggregator)). Geräte vom Typ `temp` werden als DS18B20-Temperatursensoren behandelt und in einer separaten Zeile der MPPT-Tabelle angezeigt.
 
 Ein Alarm wird nur ausgelöst wenn Schwellwert und Befehl gesetzt sind. Einzelnen Alarm deaktivieren: Befehl leer lassen.
 
@@ -308,7 +308,7 @@ Ausnahmen (erfordern Neustart):
 
 **RS485-Bus:** Alle Geräte am gleichen Bus verbinden: A+ an A+, B- an B-. Abschlusswiderstände am letzten Gerät aktivieren, sofern vorhanden.
 
-**VE.Direct-Aggregator:** Mehrere Victron-MPPTs können über einen Arduino Mega 2560 oder Teensy 4.1 mit `readtext_sendhex`-Firmware einen RS485-Port teilen. zeroinput verwendet `ve_aggregator.py` zum Auslesen und zum Senden von Ladeleistungsgrenzen (`SET <SER#> <watts>`). Jedes Gerät wird per SER# identifiziert — im **RS485**-Tab der Weboberfläche mit `mppt_type: victron_agg` konfigurieren. Mehrere Aggregator-Ports werden unterstützt.
+**VE.Direct-Aggregator:** Mehrere Victron-MPPTs können über einen Arduino Mega 2560 oder Teensy 4.1 mit [VE.Direct-Aggregator](https://github.com/E-t0m/ve.direct-aggregator)-Firmware (`readtext_sendhex`) einen RS485-Port teilen. zeroinput verwendet `ve_aggregator.py` zum Auslesen und zum Senden von Ladeleistungsgrenzen (`SET <SER#> <watts>`). Jedes Gerät wird per SER# identifiziert — im **RS485**-Tab der Weboberfläche mit `mppt_type: victron_agg` konfigurieren. Mehrere Aggregator-Ports werden unterstützt.
 
 ---
 
