@@ -139,41 +139,6 @@ Die schwarzen Werte zeigen die Schwankungen in Bezug / Einspeisung an.
 Die Einspeisung - von einem Inverter - betrug etwa 150 W in diesem Abschnitt.
 Lila zeigt die automatische "Anhebung der Nulllinie" bei steigender Einspeisung durch wechselnden Verbrauch.
 
-**Die Ausgabe des Scripts** ca. jede Sekunde:
-```
-port          name        PV W   bat V   bat I   mode  P load  T int  T ext         
-all           combined     842   52.97   15.80            759                       
-/dev/ttyACM0  esmart 60    265   53.10    5.00   MPPT             25      8 out     
-/dev/ttyACM1  esmart 40    311   52.80    5.90   MPPT     253     32     18 bat     
-/dev/ttyACM2  VE 150/35    266   53.00    4.90   BULK                               
-
-timer active: bat discharge 0 %, energy 0/0 Wh, inverter 100 % 
-
-voltage correction 53.3 V, dif -0.3 V
-no saw detected
-input history [782, 775, 768, 759] 	1:2  1.2 %	 3:4  0.9 %
-
-meter  339 W (auto shift 0 W import), interval 1.00 s, 14:22:24
-inverter  759 W limited, PV -94 W, no battery discharge
-
-1:  power request 3 x 253 W
-2:  power request 3 x 253 W
-1:  /dev/ttyACM0 : esmart 60 status request
-1:  /dev/ttyACM1 : esmart 40 status request
-REC /dev/ttyACM2 : VE 150/35 delay 1.00 s
-REC /dev/ttyACM0 : esmart 60 delay 2.93 s
-2:  /dev/ttyACM0 : esmart 60 status request
-REC /dev/ttyACM1 : esmart 40 delay 2.93 s
-2:  /dev/ttyACM1 : esmart 40 status request
-
-```
-Die Ausgabe funktioniert sowohl im Terminal (screen, s.u.) und / oder auch per **Webbrowser**.
-Dafür einen link aus dem htdocs-Ordner des Volkszählers anlegen und zeroinput.py mit dem -web Parameter starten.
-Die Seite ist dann im Browser unter der http ://üblichen-adresse-des-volkszählers **/zeroinput.html** erreichbar.
-```
-ln -s /home/vzlogger/zeroinput.html /home/pi/volkszaehler.org/htdocs
-```
-
 ## Messgenauigkeit
 Zur Genauigkeit der Daten vom esmart3 hat der Autor der [Esmart3 Bibliothek](https://github.com/skagmo/esmart_mppt), die ich modifiziert verwende, [einen Bericht veröffentlicht](https://skagmo.com/page.php?p=documents%2F04_esmart3_review).
 Meiner Beobachtung nach, stimmt die eingespeiste Leistung vom Soyosource Inverter recht genau mit dem angeforderten Wert überein.
@@ -187,68 +152,6 @@ Mit den Beispieldaten der Tage (weiter oben) lässt sich ein Gesamtwirkungsgrad 
 - PV Erzeugung 7,7 kWh, Einspeisung 7,3 kWh, ergibt ~ 95 %
 - PV Erzeugung 6,1 kWh, Einspeisung 5,7 kWh, ergibt ~ 93 %
 Je mehr Energie durch den Akku geht, desto schlechter ist der Wirkungsgrad der gesamten Anlage.
-
-## Bauanleitung
-- Den Stromzähler wenn nötig mit PIN zur (erweiterten) Datenausgabe bringen. Die PIN gibt es beim Messstellenbetreiber bzw. Netzbetreiber (nicht Stromanbieter).
-Es gibt eine [praktische App](https://play.google.com/store/apps/details?id=de.bloggingwelt.blinkeingabestromzaehler) zur PIN-Eingabe für Ungeduldige.
-- Den Volkszähler zum Laufen bringen. [Zur Anleitung](https://wiki.volkszaehler.org/howto/getstarted), [das Forum dazu](https://www.photovoltaikforum.com/board/131-volkszaehler-org/) ***Ohne Volkszähler läuft das Script nicht!*** Also zuerst damit anfangen.
-- Es ist sehr sinnvoll dem IR-Lesekopf und RS485-Adapter per udev-Regel einen [eigenen, festen Gerätenamen](https://wiki.volkszaehler.org/hardware/controllers/ir-schreib-lesekopf-usb-ausgang) zu geben.
-Für meine Geräte liegen .rules Dateien in /dev/udev/rules.d/ mit diesen Regeln:
-```
-SUBSYSTEMS=="usb-serial", DRIVERS=="cp210x", SYMLINK+="lesekopf"
-SUBSYSTEMS=="usb-serial", DRIVERS=="ch341-uart", SYMLINK+="rs485"
-```
-Oder bei mehreren gleichen Geräten unterschieden durch den Anschluss am Raspi:
-```
-SUBSYSTEMS=="usb" ATTRS{devpath}=="1.1" SYMLINK+="rs485a"
-SUBSYSTEMS=="usb" ATTRS{devpath}=="1.3" SYMLINK+="rs485b"
-```
-- Die ganzen Geräte wie oben schon beschrieben montieren.
-- Den RS485-Anschluss des Raspi (i.d.R. ein USB-Stick mit Klemmen) mit den RS485 Anschlüssen von Soyo und eSmart3 verbinden: A+ an A+, B- an B-.
-- Den Volkszähler für die Nulleinspeisung ein wenig modifizieren.
-
-Wenn der eigene Volkszähler erfolgreich läuft, dann können noch Kanäle entsprechend dieser [vzlogger.conf](https://github.com/E-t0m/zeroinput/blob/main/vzlogger.conf) angelegt werden.
-Auf jeden Fall muss ***"identifier": "1-0:16.7.0\*255" und "verbosity": 15*** enthalten sein, damit das Script damit rechnen kann.
-Auch der Pfad für das "log" in der vzlogger.conf muss angepasst werden: "/tmp/vz/vzlogger.fifo"
-Obwohl es nicht unbedingt zum Betrieb nötig ist, sollte der [Umgang mit Datenmengen](https://wiki.volkszaehler.org/howto/datenmengen) beachtet werden, sonst "läuft die Datenbank irgendwann über"!
-
-```
-als root:
-apt install python3-serial
-cd /home/vzlogger
-wget https://raw.githubusercontent.com/E-t0m/zeroinput/main/zeroinput.py
-chmod 744 /home/vzlogger/zeroinput.py
-chown vzlogger: /home/vzlogger/zeroinput.py
-su vzlogger
-mkdir /tmp/vz
-touch /tmp/vz/soyo.log
-mkfifo /tmp/vz/vzlogger.fifo
-python3 /home/vzlogger/zeroinput.py -v (mit strg+c beenden)
-oder wer screen kennt (man screen):
-screen -dmS zeroinput nice -1 python3 /home/vzlogger/zeroinput.py -v -web (mit screen -r "öffnen", mit strg-a, dann strg-d "schließen")
-```
-(Natürlich kann man auch **git** benutzen.)
-
-Dann nochmal in einem anderen Terminal - als root - den vzlogger neu starten
-```systemctl restart vzlogger```
-
-Um das Script **automatisch beim Hochfahren des Raspi** zu starten, mittels
-```
-su vzlogger
-crontab -e
-```
-diese Zeile:
-```
-@reboot mkdir /tmp/vz; touch /tmp/vz/soyo.log; mkfifo /tmp/vz/vzlogger.fifo; screen -dmS zeroinput nice -1 python3 /home/vzlogger/zeroinput.py -v -web
-```
-in die crontab eintragen.
-Um später auf die Ausgabe zu kommen, als Benutzer "vzlogger" (```su vzlogger```), ```screen -r``` eingeben. Danach strg-a, dann strg-d zum "Schließen" benutzen.
-
-Wenn dieser Eintrag erfolgt ist, startet die Regelung nach einem Neustart von selbst wieder. 
-Mit ein wenig Verzögerung durch die Wechselrichter selbst und den Startvorgang des Raspi.
-Wird der Lesekopf abgezogen, hört die Einspeisung einfach auf und der Zähler steigt auf den Wert des Verbrauchs.
-Sobald der Lesekopf wieder angebracht wird, beginnt die Einspeisung von selbst.
-Je nach Stromzähler muss nach einem Stromausfall wieder die "erweiterte Datenausgabe" aktiviert werden.
 
 So sieht die [Konfigurationssoftware des Esmart3 für Windows](https://www.solarcontroller-inverter.com/download/20113011263165.html), [alternativer Link](http://www.mediafire.com/file/mt77gai7xxzig1g/install_SolarMate_CS_Windows.exe) aus.
 ![Esmart3 Software](https://user-images.githubusercontent.com/110770475/204106343-8ca03bb5-ca3d-4174-9075-25db632ec087.jpg)
