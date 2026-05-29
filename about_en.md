@@ -142,41 +142,6 @@ The black values show the fluctuations in consumption/feed-in.
 The feed-in - from one inverter - was about 150 W in this section.
 Purple shows the automatic "raising of the zero line" when the feed-in increases due to changing consumption.
 
-**The output of the script**, updated every second:
-```
-port          name        PV W   bat V   bat I   mode  P load  T int  T ext         
-all           combined     842   52.97   15.80            759                       
-/dev/ttyACM0  esmart 60    265   53.10    5.00   MPPT             25      8 out     
-/dev/ttyACM1  esmart 40    311   52.80    5.90   MPPT     253     32     18 bat     
-/dev/ttyACM2  VE 150/35    266   53.00    4.90   BULK                               
-
-timer active: bat discharge 0 %, energy 0/0 Wh, inverter 100 % 
-
-voltage correction 53.3 V, dif -0.3 V
-no saw detected
-input history [782, 775, 768, 759] 	1:2  1.2 %	 3:4  0.9 %
-
-meter  339 W (auto shift 0 W import), interval 1.00 s, 14:22:24
-inverter  759 W limited, PV -94 W, no battery discharge
-
-1:  power request 3 x 253 W
-2:  power request 3 x 253 W
-1:  /dev/ttyACM0 : esmart 60 status request
-1:  /dev/ttyACM1 : esmart 40 status request
-REC /dev/ttyACM2 : VE 150/35 delay 1.00 s
-REC /dev/ttyACM0 : esmart 60 delay 2.93 s
-2:  /dev/ttyACM0 : esmart 60 status request
-REC /dev/ttyACM1 : esmart 40 delay 2.93 s
-2:  /dev/ttyACM1 : esmart 40 status request
-
-```
-The output works both in the terminal (screen, see below) and / or via **web browser**.
-For this, create a link from the htdocs folder of the Volkszähler and start zeroinput.py with the -web parameter.
-The page is then accessible in the browser at http://usual-address-of-the-volkszaehler **/zeroinput.html**
-```
-ln -s /home/vzlogger/zeroinput.html /home/pi/volkszaehler.org/htdocs
-```
-
 ## Measurement accuracy
 As for the accuracy of the data from the esmart3, the author of the [esmart3 library](https://github.com/skagmo/esmart_mppt), which I use modified, [published a review](https://skagmo.com/page.php?p=documents%2F04_esmart3_review).
 According to my observation, the power fed in by the Soyosource Inverter corresponds quite exactly with the requested value.
@@ -192,67 +157,6 @@ With the example data of the days (above) an overall efficiency can be calculate
 
 The more energy goes through the battery, the worse the efficiency of the entire system.
 
-## Building instructions
-- Bring the electricity meter with PIN to (extended) data output if necessary. The PIN is available from the metering point operator or network operator (not electricity provider).
-There is a [practical app](https://play.google.com/store/apps/details?id=de.bloggingwelt.blinkeingabestromzaehler) for PIN entry for the impatient.
-- Get the Volkszähler working. [Instructions](https://wiki.volkszaehler.org/howto/getstarted), [the forum](https://www.photovoltaikforum.com/board/131-volkszaehler-org/) ***Without Volkszähler the script doesn't run!*** So start with that first.
-- It makes a lot of sense to assign a [own, fixed device name](https://wiki.volkszaehler.org/hardware/controllers/ir-schreib-lesekopf-usb-ausgang) to the IR read head and RS485 adapter using a udev rule.
-For my devices there are .rules files in /dev/udev/rules.d/ with these rules:
-```
-SUBSYSTEMS=="usb-serial", DRIVERS=="cp210x", SYMLINK+="lesekopf"
-SUBSYSTEMS=="usb-serial", DRIVERS=="ch341-uart", SYMLINK+="rs485"
-```
-Or with identical devices separated by the connector on the Raspi:
-```
-SUBSYSTEMS=="usb" ATTRS{devpath}=="1.1" SYMLINK+="rs485a"
-SUBSYSTEMS=="usb" ATTRS{devpath}=="1.3" SYMLINK+="rs485b"
-```
-- Assemble all the devices as described above.
-- Connect the RS485 port of the Raspi (usually a USB stick with clamps) to the RS485 ports of Soyo and esmart3: A+ to A+, B- to B-.
-- Modify the Volkszähler for zero feed-in a bit.
-
-If your own Volkszähler runs successfully, then channels can be created according to this [vzlogger.conf](https://github.com/E-t0m/zeroinput/blob/main/vzlogger.conf).
-In any case, ***"identifier": "1-0:16.7.0\*255" and "verbosity": 15*** must be included so that the script can calculate with them.
-The path for the "log" in vzlogger.conf must also be adjusted: "/tmp/vz/vzlogger.fifo"
-Although it is not necessary for operation, the [handling of data quantities](https://wiki.volkszaehler.org/howto/datenmengen) should be observed, otherwise "the database will overflow at some point"!
-
-```
-as root:
-apt install python3-serial
-cd /home/vzlogger
-wget https://raw.githubusercontent.com/E-t0m/zeroinput/main/zeroinput.py
-chmod 744 /home/vzlogger/zeroinput.py
-chown vzlogger: /home/vzlogger/zeroinput.py
-su vzlogger
-mkdir /tmp/vz
-touch /tmp/vz/soyo.log
-mkfifo /tmp/vz/vzlogger.fifo
-python3 /home/vzlogger/zeroinput.py -v (cancel with ctrl+c)
-or if you know screen (man screen):
-screen -dmS zeroinput nice -1 python3 /home/vzlogger/zeroinput.py -v -web (screen -r "to open", ctrl-a and ctrl-d "close")
-```
-(Of course you can also use **git**.)
-
-Then again in another terminal - as root - restart the vzlogger
-```systemctl restart vzlogger```
-
-To start the script **automatically when booting up the Raspi**, use
-```
-su vzlogger
-crontab -e
-```
-this line:
-```
-@reboot mkdir /tmp/vz; touch /tmp/vz/soyo.log; mkfifo /tmp/vz/vzlogger.fifo; screen -dmS zeroinput nice -1 python3 /home/vzlogger/zeroinput.py -v -web
-```
-enter in the crontab.
-To get the output later, as user "vzlogger" (```su vzlogger```), enter ```screen -r```. Then use ctrl-a, then ctrl-d to "close".
-
-Once this entry has been made, the regulation restarts automatically after a reboot of the Raspi.
-With a little delay due to the inverters themselves and the Raspi's startup process.
-If the reading head is removed, the feed-in simply stops and the counter increases to the consumption value.
-As soon as the reading head is attached again, the feeding starts automatically.
-Depending on the electricity meter, the "extended data output" may need to be reactivated after a power failure.
 
 This is what the [Esmart3 configuration software](https://www.solarcontroller-inverter.com/download/20113011263165.html), [alternative link](http://www.mediafire.com/file/mt77gai7xxzig1g/install_SolarMate_CS_Windows.exe) looks like.
 ![Esmart3 Software](https://user-images.githubusercontent.com/110770475/204106343-8ca03bb5-ca3d-4174-9075-25db632ec087.jpg)
