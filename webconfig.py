@@ -89,6 +89,19 @@ class WebconfigHandler(BaseHTTPRequestHandler):
 			self._send_json(200 if content is not None else 500,
 				{'content': content} if content is not None else {'error': 'read failed'})
 
+		elif path == '/api/restart':
+			import subprocess
+			try:
+				r = subprocess.run(['sudo', 'systemctl', 'restart', 'zeroinput'],
+					capture_output=True, text=True, timeout=10)
+				if r.returncode == 0:
+					self._send_json(200, {'ok': True})
+				else:
+					self._send_json(500, {'error': r.stderr.strip() or 'restart failed'})
+			except Exception as e:
+				self._send_json(500, {'error': str(e)})
+			return
+
 		elif path == '/api/timer':
 			content = _read(self._timer_path()) or ''
 			self._send_json(200, {'content': content})
@@ -104,6 +117,20 @@ class WebconfigHandler(BaseHTTPRequestHandler):
 
 	def do_POST(self):
 		path = self.path.split('?')[0]
+
+		if path == '/api/restart':
+			import subprocess
+			try:
+				r = subprocess.run(['sudo', 'systemctl', 'restart', 'zeroinput'],
+					capture_output=True, text=True, timeout=10)
+				if r.returncode == 0:
+					self._send_json(200, {'ok': True})
+				else:
+					self._send_json(500, {'error': r.stderr.strip() or 'restart failed'})
+			except Exception as e:
+				self._send_json(500, {'error': str(e)})
+			return
+
 		length = int(self.headers.get('Content-Length', 0))
 		try:
 			body = json.loads(self.rfile.read(length))
