@@ -75,7 +75,7 @@ Erkennt zyklische Lasten (Waschmaschine, Spülmaschine, Herd) mittels k-Means-Cl
 - Nach Bestätigung (≥ 4 Phasenübergänge) wird ein prädiktiver Offset angewendet, um den Wechselrichter unabhängig von der aktuellen Phase auf LOW-Niveau zu halten — die HIGH-Last bezieht ihre Zusatzleistung direkt aus dem Netz
 - **Spitzenerkennung**: kurze, aber hohe wiederholte `Ls_read`-Lastspitzen lösen `ramp_override` aus, der den Wechselrichter auf LOW hält und die Spitze vollständig ignoriert. Begründung: diese Spitzen steigen und fallen schneller als der Wechselrichter rampen kann — wenn der Zielwert erreicht wäre, ist die Last bereits verschwunden und erzeugt erhebliche Einspeisung. Kein Reagieren ist besser.
 - Setzt automatisch zurück bei anhaltend hoher Last (> `LONG_PEAK_MIN` s über Schwellwert)
-- `STARTUP_S`, `SHORT_PEAK_MAX`, `LOG_FILE` sind Modulkonstanten in `predictor.py`, bei Dateiänderung via `reload_predictor_if_changed` neu geladen
+- `STARTUP_S`, `LONG_PEAK_MIN`, `LOG_FILE` sind Modulkonstanten in `predictor.py`, bei Dateiänderung via `reload_predictor_if_changed` neu geladen
 - `min_spread_w`, `load_prediction` und `predictor_log` sind conf-Keys, ohne Modulneustart hot-reloadable aus `zeroinput.conf`
 
 Das Prediktordesign ist bewusst offen und modular: zeroinput benötigt nur eine `LoadPredictor`-Klasse mit `update(Ls_read, last2_send)`, `reload_conf(conf)`, `status()` und den Attributen `enabled`, `offset` und `ramp_override_by_predictor`. Eigene Vorhersagestrategien können durch Ersetzen von `predictor.py` implementiert werden, ohne zeroinput selbst zu ändern.
@@ -90,6 +90,8 @@ Optionale zeitbasierte Steuerung über `timer.txt`. Jede Regel legt fest:
 - **energy_Wh** — Energiebudget pro Timerperiode; nach Überschreitung stoppt Batterieentladung, nur PV-Durchleitung läuft weiter
 
 Regeln werden der Reihe nach aktiviert; `0000-00-00` als Datum gilt täglich.
+
+`timer.txt` kann von Hand geschrieben oder von einem externen Tool erzeugt werden. Die [Tibber-Tools](https://github.com/E-t0m/zeroinput/tree/main/tibber) (optional, nicht gepflegt) erzeugen eine `timer.txt` aus Tibber-Dynamikpreisdaten und verteilen Wechselrichterleistung, Batterieentladung und Energiemengen in die teuersten Preisslots.
 
 ---
 
@@ -121,7 +123,7 @@ Kopfzeile: `port  name  W PV  %PVp  V bat  I bat  mode  Pload  Iload  age  Tint 
 
 Layout in der Modulkonstante `_MPPT_FMT` definiert (verwendet für Kopfzeile, Datenzeilen und Temperatursensor-Zeilen). REC-Ausgabe über Hilfsfunktion `_drain_rec_msgs()` verzögert.
 
-- `%PVp` — `PPV / pvp × 100`; bei `combined` Summe aller Geräte-`pvp`; leer wenn `pvp` nicht konfiguriert
+- `%PVp` — `PPV / pvp × 100`; bei `combined` Summe aller Geräte-`pvp`; leer wenn `pvp` nicht konfiguriert. Der combined-Wert wird zusätzlich als `mppt_data['combined']['PVperc']` gespeichert und ist als vzlogger-Kanal exportierbar.
 - `Iload` — Victron `LOAD=EIN`: Strom in A; `LOAD=AUS`: `OFF`; eSmart3: Strom wenn `Iload > 0`, sonst leer
 - `mode` — Victron: OFF/FAULT/BULK/ABSORB/FLOAT/EQUAL/START/RECOND/EXTCON; eSmart3: WAIT/MPPT/BULK/FLOAT/PRE; beide: `PORT ERROR` bei `CS='PORT'`
 - Unkonfigurierte AGG-Geräte: `<SER#>  <Port-Name>  UNCONFIGURED`
@@ -131,7 +133,7 @@ Layout in der Modulkonstante `_MPPT_FMT` definiert (verwendet für Kopfzeile, Da
 
 ## Wechselrichter-Fehleralarm
 
-`inverter_fault_alarm: {cmd, interval}` — löst im reinen PV-Modus aus (`bat_discharge == 0`, `pv_power > 100 W`, alle Wechselrichter aktiv), wenn `avg(long_send_history) > pv_power × n/(n-1) × 0,85`. Ein ausgefallener Wechselrichter veranlasst zeroinput, die Anforderung in Richtung `pv_power × n/(n-1)` zu rampen — dieses Verhältnis ist das Erkennungssignal. Gibt verbose-Warnung aus; führt `cmd` maximal alle `interval` Sekunden aus.
+`conf['alarms']['inverter_fault']: {cmd, interval}` — löst im reinen PV-Modus aus (`bat_discharge == 0`, `pv_power > 100 W`, alle Wechselrichter aktiv), wenn `avg(long_send_history) > pv_power × n/(n-1) × 0,85`. Ein ausgefallener Wechselrichter veranlasst zeroinput, die Anforderung in Richtung `pv_power × n/(n-1)` zu rampen — dieses Verhältnis ist das Erkennungssignal. Gibt verbose-Warnung aus; führt `cmd` maximal alle `interval` Sekunden aus.
 
 ---
 
@@ -141,7 +143,13 @@ Layout in der Modulkonstante `_MPPT_FMT` definiert (verwendet für Kopfzeile, Da
 
 `min_spread_w` (conf, hot-reloadable) — Mindestspreizung zwischen LOW- und HIGH-k-Means-Zentroid für die Prediktoraktivierung. Standard: `150` W. Bei zu geringer Lastspreizung deaktiviert sich der Prediktor und zeroinput fällt auf Reaktivregelung zurück.
 
-`_kmeans2` lehnt unimodale Verteilungen ab: beide Gruppen müssen ≥ 15 % der History-Werte enthalten, sonst wird `None, None` zurückgegeben und der Prediktor deaktiviert sich. Verhindert fehlerhafte Offsets während Lastübergängen.
+`_kmeans2` lehnt unimodale Verteilungen ab: beide Gruppen müssen ≥ 15 % der History-Werte enthalten, sonst wird `None, None` zurückgegeben. Während des Anlernens (`transition_cnt < TRANSITIONS_MIN`) werden die gelernten Levels zurückgesetzt; bei stabilem Prediktor bleiben sie erhalten um kurze unimodale Phasen durch gute Regelung zu überstehen.
+
+Ein Toleranzzähler `UNIMODAL_TOLERANCE = 5` erfordert mehrere aufeinanderfolgende schlechte k-Means-Ergebnisse bevor das Anlernen neu beginnt — einzelne Ausreißer verwerfen keinen Lernfortschritt.
+
+`transition_cnt` wird bei `TRANSITIONS_MIN` gedeckelt — höhere Werte tragen keine Information und würden sonst über Tage unbegrenzt wachsen.
+
+Eine einzige Peak-Schwelle: Peaks `< LONG_PEAK_MIN` sind kurz (zählen zur Override-Aktivierung), Peaks `>= LONG_PEAK_MIN` sind lang (leeren Peak-Historie, stornieren Override). Die frühere Konstante `SHORT_PEAK_MAX` wurde entfernt — kein Graubereich mehr.
 
 `MAX_HIST = 60` und `TRANSITIONS_MIN = 4` sind Modulkonstanten in `predictor.py`.
 
@@ -149,11 +157,15 @@ Layout in der Modulkonstante `_MPPT_FMT` definiert (verwendet für Kopfzeile, Da
 
 ## Temperaturalarme
 
-Pro eSmart3-Gerät, unabhängig für internen und externen Sensor:
-- Schwellwert (°C) und Shell-Befehl pro Alarm konfigurierbar
-- Alarm wird ausgelöst, wenn die Temperatur den Schwellwert überschreitet **und** ein Befehl gesetzt ist
-- Individuelles Wiederholungsintervall pro Alarm (`int_interval`, `ext_interval`)
-- Kein globaler Aktivierungsschalter — ein Alarm ist aktiv, wenn er konfiguriert ist
+Konfiguriert im conf-Block `alarms` (getrennt von `rs485`), als Schlüssel der Gerätename. Gilt für eSmart3-Geräte (interner + externer Sensor) und AGG-`temp_sensor`-Geräte (nur externer Sensor).
+
+Jeder Sensor unterstützt zwei unabhängige Alarme:
+- **`int_hi` / `ext_hi`** — löst aus wenn `temp > Schwellwert`
+- **`int_lo` / `ext_lo`** — löst aus wenn `temp < Schwellwert`
+
+Jeder Alarm hat einen `_cmd` (Shell-Befehl) und ein `_interval` (Wiederholungsintervall in Sekunden, Standard 300). Ein Alarm ist nur aktiv wenn Schwellwert und Befehl gesetzt sind. Schwellwerte dürfen negativ oder null sein.
+
+Der Wechselrichter-Fehleralarm wird ebenfalls in `conf['alarms']['inverter_fault']` gespeichert (`cmd`, `interval`).
 
 ---
 
