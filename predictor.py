@@ -12,11 +12,10 @@ def avg(lst):
 # ---------------------------------------------------------------------------
 # Predictor configuration – edit here, not in zeroinput.conf
 # ---------------------------------------------------------------------------
-VERSION			= 10
+VERSION			= 14
 LOG_FILE		= '/tmp/predictor.log'	# '' = no log
 MIN_SPREAD_W	= 150	# W: minimum spread between LOW and HIGH centroid
 STARTUP_S		= 10	# s: observation time after start before offset becomes active
-SHORT_PEAK_MAX	= 8		# s: peaks longer than this are not counted as short cyclic peaks
 MAX_HIST		= 60	# history buffer size (samples)
 TRANSITIONS_MIN	= 4		# phase transitions required before offset becomes active
 # ---------------------------------------------------------------------------
@@ -53,7 +52,7 @@ class LoadPredictor:
 	In LOW-phase: Ls_read ≈ 0W.
 	In HIGH-phase: load draws the difference from the grid.
 	Disabled automatically when load is unimodal (spread < MIN_SPREAD_W).
-	Module-level configuration (LOG_FILE, MIN_SPREAD_W, STARTUP_S, SHORT_PEAK_MAX)
+	Module-level configuration (LOG_FILE, MIN_SPREAD_W, STARTUP_S, LONG_PEAK_MIN)
 	is defined at the top of this file.
 	Only one key is read from zeroinput.conf:
 		load_prediction : true / false  (default true)
@@ -70,6 +69,8 @@ class LoadPredictor:
 		self.low_level		= None
 		self.high_level		= None
 		self.transition_cnt	= 0
+		self._unimodal_cnt	= 0			# consecutive unimodal k-means results during learning
+		self.UNIMODAL_TOLERANCE	= 5		# bad results tolerated before learning restarts
 		self.current_phase	= None
 		self.offset			= 0
 		# ramp override via peak detection
@@ -83,7 +84,6 @@ class LoadPredictor:
 		self.PAUSE_AFTER	= 2			# short peaks required to activate override
 		self.PAUSE_DURATION	= 120		# s: override duration (extended on each new peak)
 		self.LONG_PEAK_MIN	= 10		# s: peak longer than this cancels override
-		self.SHORT_PEAK_MAX	= SHORT_PEAK_MAX
 		self.pause_until	= 0			# timestamp until override active
 		self._inter_peak_buf= []		# last2_send samples between peaks for override target
 		self._override_target= None		# mean inter-peak baseline used when low_level unknown
@@ -160,13 +160,13 @@ class LoadPredictor:
 
 	def reload_conf(self, conf):
 		"""Called when zeroinput.conf changes.
-		STARTUP_S, SHORT_PEAK_MAX and LOG_FILE are defined in predictor.py and
+		STARTUP_S, LONG_PEAK_MIN and LOG_FILE are defined in predictor.py and
 		only change via module reload (reload_predictor_if_changed).
 		load_prediction and min_spread_w are hot-reloadable from conf."""
 		self.enabled    = bool(conf.get('load_prediction', True))
 		self.MIN_SPREAD = int(conf.get('min_spread_w', MIN_SPREAD_W))
-		if self.verbose: print('predictor v%i reloaded: enabled=%s min_spread=%i SHORT_PEAK_MAX=%is' % (
-			VERSION, self.enabled, self.MIN_SPREAD, self.SHORT_PEAK_MAX))
+		if self.verbose: print('predictor v%i reloaded: enabled=%s min_spread=%i LONG_PEAK_MIN=%is' % (
+			VERSION, self.enabled, self.MIN_SPREAD, self.LONG_PEAK_MIN))
 
 	def _reset(self):
 		"""Full reset – clears history and learning state, starts cool-down."""
@@ -179,6 +179,7 @@ class LoadPredictor:
 		self.low_level					= None
 		self.high_level					= None
 		self.transition_cnt				= 0
+		self._unimodal_cnt				= 0
 		self.current_phase				= None
 		self.offset						= 0
 		self.peak_dur_hist				= []
@@ -206,13 +207,13 @@ class LoadPredictor:
 			dur = now - self.peak_start
 			self.peak_start = None
 			if dur >= self.LONG_PEAK_MIN:
-				# long peak: not a cycling load, clear peak history
+				# long peak (>= LONG_PEAK_MIN): sustained load, not cycling — clear peak history
 				self.peak_dur_hist = []
 				if self.ramp_override_by_predictor:
 					self.ramp_override_by_predictor = False
 					if self.verbose: print('predictor: long peak %.0fs → ramp_override OFF' % dur)
 			else:
-				# short peak: add to history, check for override activation
+				# short peak (< LONG_PEAK_MIN): add to history, check for override activation
 				self.peak_dur_hist.append((now, dur))
 				self.peak_dur_hist = self.peak_dur_hist[-10:]
 				if self.ramp_override_by_predictor:
@@ -220,7 +221,7 @@ class LoadPredictor:
 					if self.verbose: print('predictor: short peak %.0fs → ramp_override extended' % dur)
 				else:
 					recent = [(ts, d) for ts, d in self.peak_dur_hist[-self.PAUSE_AFTER:]
-						if d < self.SHORT_PEAK_MAX and now - ts <= self.PEAK_WINDOW]
+						if now - ts <= self.PEAK_WINDOW]
 					if (len(recent) >= self.PAUSE_AFTER
 							and now - recent[0][0] >= self.OVERRIDE_DELAY):
 						self._override_target = int(sum(self._inter_peak_buf) / len(self._inter_peak_buf)) \
@@ -325,35 +326,36 @@ class LoadPredictor:
 		self.offset = 0
 		if len(self.history) >= 10:
 			low, high = self._kmeans2(self.history)
-			if low is not None:
+			if low is not None and (high - low) >= self.MIN_SPREAD:
+				self._unimodal_cnt	= 0			# valid bimodal result resets tolerance
 				spread = high - low
-				if spread >= self.MIN_SPREAD:
-					self.low_level		= int(low)
-					self.high_level		= int(high)
-					midpoint			= (self.low_level + self.high_level) / 2
-					new_phase			= 'low' if est_load < midpoint else 'high'
-					if new_phase != self.current_phase:
-						self.transition_cnt += 1
-						self.current_phase	= new_phase
-						self.peak_dur_hist	= []	# peaks from prior phase are irrelevant
-						if self.verbose: print('predictor: phase -> %s  transitions %i/%i' % (
-							new_phase, self.transition_cnt, TRANSITIONS_MIN))
-					if self.transition_cnt >= TRANSITIONS_MIN:
-						self.offset = self.low_level - est_load
-					else:
-						self.offset = 0
-						if self.verbose: print('predictor: learning  transitions %i/%i  spread %i W  low %i W  high %i W' % (
-							self.transition_cnt, TRANSITIONS_MIN, int(spread), self.low_level, self.high_level))
+				self.low_level		= int(low)
+				self.high_level		= int(high)
+				midpoint			= (self.low_level + self.high_level) / 2
+				new_phase			= 'low' if est_load < midpoint else 'high'
+				if new_phase != self.current_phase:
+					if self.transition_cnt < TRANSITIONS_MIN:
+						self.transition_cnt += 1		# cap at TRANSITIONS_MIN — higher values carry no meaning
+					self.current_phase	= new_phase
+					self.peak_dur_hist	= []	# peaks from prior phase are irrelevant
+					if self.verbose: print('predictor: phase -> %s  transitions %i/%i' % (
+						new_phase, self.transition_cnt, TRANSITIONS_MIN))
+				if self.transition_cnt >= TRANSITIONS_MIN:
+					self.offset = self.low_level - est_load
 				else:
+					self.offset = 0
+					if self.verbose: print('predictor: learning  transitions %i/%i  spread %i W  low %i W  high %i W' % (
+						self.transition_cnt, TRANSITIONS_MIN, int(spread), self.low_level, self.high_level))
+			elif self.transition_cnt < TRANSITIONS_MIN:
+				# unimodal or spread too small during learning — tolerate brief lapses,
+				# only reset after UNIMODAL_TOLERANCE consecutive bad results so a
+				# fluctuating load profile does not restart learning from scratch
+				self._unimodal_cnt += 1
+				if self._unimodal_cnt >= self.UNIMODAL_TOLERANCE:
 					self.low_level		= None
 					self.high_level		= None
 					self.current_phase	= None
 					self.transition_cnt	= 0
-			else:
-				# unimodal distribution — clear levels so stale low_level doesn't persist
-				self.low_level		= None
-				self.high_level		= None
-				self.current_phase	= None
-				self.transition_cnt	= 0
+					self._unimodal_cnt	= 0
 		self._log(now, Ls_read, last2_send, est_load)
 		return self.offset
