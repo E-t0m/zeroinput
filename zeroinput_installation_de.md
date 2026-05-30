@@ -157,6 +157,7 @@ Wichtige Einstellungen:
 | `webconfig_port` | Webserver-Port (0 = deaktiviert) |
 | `vz_channels` | Volkszähler-Kanalzuordnung (in Weboberfläche editierbar) |
 | `min_spread_w` | Mindestspreizung LOW/HIGH für Prediktor-Aktivierung (W, Standard: 150). Hot-reloadbar. |
+| `alarms` | Temperaturalarme pro Gerät und Wechselrichter-Fehleralarm (konfiguriert im **Alarme**-Tab). |
 | `predictor_log` | Prediktor-Log nach `/tmp/predictor.log` schreiben (true/false). Hot-reloadbar. |
 
 > **Wichtig:** Gerätenamen (`name`) müssen eindeutig sein – zeroinput beendet sich beim Start bei Duplikaten.
@@ -281,9 +282,11 @@ http://<hostname>:8081/
 
 Tabs:
 - **zeroinput.conf** – Konfiguration live bearbeiten (gesperrte Felder erfordern Neustart)
-- **RS485** – RS485-Port- und Gerätekonfiguration einschließlich Victron-AGG (SER#-Zuordnung, pvp, Temperatursensoren) und eSmart3-Alarme (erfordert Neustart nach dem Speichern)
+- **RS485** – RS485-Port- und Gerätekonfiguration einschließlich Victron-AGG (SER#-Zuordnung, pvp, Temperatursensoren). Neustart nach dem Speichern erforderlich.
+- **Alarme** – Temperaturalarme pro Gerät (eSmart3: int_hi/int_lo/ext_hi/ext_lo; Temp-Sensor: ext_hi/ext_lo) und Wechselrichter-Fehleralarm. Alarm-Labels nutzen den `temp_display`-Namen.
 - **VZ-Kanäle** – Volkszähler-Kanalzuordnung als editierbare Tabelle
 - **timer.txt** – Entladetimer bearbeiten
+- **Neustart** – sendet `sudo systemctl restart zeroinput`; zeigt Warnung über Wechselrichter-Unterbrechung
 - **Status** – Live-Statusseite (nur mit `-web`)
 
 ### Hot-Reload
@@ -321,7 +324,7 @@ Prediktor-Einstellungen werden teils in `predictor.py` als Modulkonstanten am Da
 | Variable | Beschreibung |
 |---|---|
 | `STARTUP_S` | Beobachtungszeit vor erster Aktion (Standard: 10 s) |
-| `SHORT_PEAK_MAX` | Maximaldauer einer kurzen zyklischen Spitze in s (Standard: 8) |
+| `LONG_PEAK_MIN` | Mindestdauer damit ein Peak als Dauerlast gilt (s, Standard: 10). Peaks darunter zählen zur Override-Aktivierung; Peaks ab diesem Wert stornieren Override und leeren die Peak-Historie. |
 | `LOG_FILE` | Pfad zur Prediktor-Logdatei (`''` = deaktiviert) |
 
 Diese Einstellungen sind aus `zeroinput.conf` hot-reloadbar (kein Modulneustart nötig):
@@ -360,6 +363,7 @@ Format pro Eintrag: `[Gerät, Schlüssel, vz_kanal, Faktor]`
 | Schlüssel | Beschreibung |
 |---|---|
 | `PPV` | Gesamt-PV-Leistung (W) |
+| `PVperc` | PV-Ausgabe als % der konfigurierten Gesamtspitzenleistung |
 | `Vbat` | Mittlere Batteriespannung (V) |
 | `Ibat` | Gesamt-Batteriestrom (A) |
 | `Pload` | Gesamt-Lastleistung (W) |
