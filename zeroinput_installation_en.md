@@ -108,6 +108,13 @@ sudo systemctl daemon-reload
 sudo systemctl restart vzlogger
 ```
 
+To enable the **Restart** button in the web interface, add a sudoers entry:
+
+```bash
+sudo sh -c 'echo "vzlogger ALL=(root) NOPASSWD: /bin/systemctl restart zeroinput" > /etc/sudoers.d/zeroinput'
+sudo chmod 440 /etc/sudoers.d/zeroinput
+```
+
 This ensures vzlogger creates the FIFO on startup and zeroinput finds it ready.
 
 ### 4. Configure vzlogger
@@ -319,7 +326,7 @@ Predictor settings are configured directly in `predictor.py` as module-level var
 |---|---|
 | `MIN_SPREAD_W` | Minimum spread LOW/HIGH in W (default: 150) |
 | `STARTUP_S` | Observation time before first action (default: 10 s) |
-| `SHORT_PEAK_MAX` | Maximum duration of a short cyclic peak in s (default: 8) |
+| `LONG_PEAK_MIN` | Minimum duration for a peak to be considered a sustained load and not a short cycle (s, default: 10). Peaks below this threshold count toward override activation; peaks at or above cancel it. |
 | `LOG_FILE` | Path to predictor log file (`''` = disabled) |
 
 ---
@@ -350,6 +357,7 @@ Format per entry: `[device, key, vz_channel, factor]`
 | Key | Description |
 |---|---|
 | `PPV` | Total PV power (W) |
+| `PVperc` | PV output as % of total configured peak power |
 | `Vbat` | Average battery voltage (V) |
 | `Ibat` | Total battery current (A) |
 | `Pload` | Total load power (W) |
