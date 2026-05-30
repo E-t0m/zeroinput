@@ -5,13 +5,13 @@
 
 from serial import Serial, SerialException
 from json import load as json_load
-from os.path import abspath, join, dirname
 from time import strftime, time, sleep
 from datetime import timedelta, datetime
 from threading import Thread, Event
 from queue import Queue, Empty
 from traceback import print_exc
-from os import path as os_path, system
+from os.path import abspath, join, dirname, getmtime, exists
+from os import system
 import sys
 
 if '-h' in sys.argv or '--help' in sys.argv:
@@ -26,7 +26,7 @@ except Exception as e:
 	print('error reading config file')
 	exit(1)
 
-mppt_data = {'combined':{}}; victron_devs = []; esmart3_devs = []; soyosource_devs= []
+mppt_data = {'combined':{}}; victron_devs = []; esmart3_devs = []; soyosource_devs= []; temp_sensor_devs = []
 
 def _expand_victron_agg(conf):
 	"""Expand victron_agg ports into synthetic per-device entries in conf['rs485'].
@@ -79,12 +79,19 @@ for dev in conf['rs485']:
 	if 'mppt_type' in conf['rs485'][dev] and conf['rs485'][dev]['mppt_type'] == 'eSmart3':
 										esmart3_devs.append(dev)
 										mppt_data[dev] = {}
+	if 'mppt_type' in conf['rs485'][dev] and conf['rs485'][dev]['mppt_type'] == 'temp_sensor':
+										temp_sensor_devs.append(dev)
+										mppt_data[dev] = {}
 	if 'inverter' in conf['rs485'][dev] and conf['rs485'][dev]['inverter'] == 'soyosource':
 										soyosource_devs.append(dev)
 
 if '-test-alarm' in sys.argv:
 	print('test alarm command:')
-	system(conf['rs485']['/dev/ttyACM0']['alarm']['int_cmd'])	# change this to your needs
+	_alarms = conf.get('alarms', {})
+	_first  = next((a for a in _alarms.values() if a.get('int_hi_cmd') or a.get('ext_hi_cmd')), {})
+	_cmd    = _first.get('int_hi_cmd') or _first.get('ext_hi_cmd')
+	if _cmd: system(_cmd)
+	else:    print('no alarm command configured')
 	exit(0)
 
 no_input	= True if '-no-input' in sys.argv else False
@@ -217,7 +224,16 @@ def combine_charger_data():			# combine all mppt charger data to a summary
 			d[name] += dev_data[name]
 		if name == 'Vbat'	and valcnt > 0: d[name] /= valcnt	# the average
 		if name == 'Pload'	and valcnt > 0: d[name] = d[name] * n_active_inverters		# project one eSmart3 reading to all inverters
-	
+
+	# PVp: total PV power as percentage of sum of all configured peak powers
+	pvp_sum = sum(
+		dev.get('pvp', 0) or dev.get('_pvp', 0)
+		for dev in conf['rs485'].values()
+		if dev.get('mppt_type') in ('victron', 'eSmart3')
+	)
+	if pvp_sum > 0:
+		d['PVperc'] = int(d['PPV'] / pvp_sum * 100)
+
 	mppt_data['combined'] = d
 	return(0)
 
@@ -381,7 +397,7 @@ def reload_conf_if_changed(conf, conf_path, conf_mtime, predictor):
 	"""Check if conf file changed, reload whitelisted keys and log_to_vz module.
 	Returns (conf, conf_mtime)."""
 	try:
-		new_mtime = os_path.getmtime(conf_path)
+		new_mtime = getmtime(conf_path)
 		if new_mtime == conf_mtime:
 			return conf, conf_mtime
 	except Exception as e:
@@ -422,10 +438,10 @@ def reload_conf_if_changed(conf, conf_path, conf_mtime, predictor):
 def reload_predictor_if_changed(predictor, conf, predictor_mtime, verbose):
 	"""Hotplug predictor.py if file changed. Returns (predictor, predictor_mtime)."""
 	_pred_path = join(dirname(abspath(__file__)), 'predictor.py')
-	if not os_path.exists(_pred_path):
+	if not exists(_pred_path):
 		return predictor, predictor_mtime
 	try:
-		new_mtime = os_path.getmtime(_pred_path)
+		new_mtime = getmtime(_pred_path)
 		if new_mtime == predictor_mtime:
 			return predictor, predictor_mtime
 		import importlib
@@ -526,28 +542,39 @@ def poll_chargers(esmart_handles, timeout_repeat, pv_cont):
 
 
 def check_temp_alarms(alarm_last):
-	"""Check and trigger temperature alarms.
-	alarm_last: {port: {'int': datetime, 'ext': datetime}}
-	An alarm is active when both threshold and command are configured for it.
-	Each alarm uses its own interval from conf['rs485'][port]['alarm']['int_interval']
-	/ 'ext_interval'. Defaults to 300 s if not set."""
-	for port in esmart3_devs:
-		a     = conf['rs485'][port].get('alarm', {})
-		times = alarm_last.setdefault(port, {'int': datetime.min, 'ext': datetime.min})
-		if 'int_temp' in mppt_data[port].keys():
-			if a.get('temp_int') and a.get('int_cmd') and mppt_data[port]['int_temp'] > a['temp_int']:
-				if verbose: print('\nTEMPERATURE ALARM internal temp', conf['rs485'][port]['name'], ':', mppt_data[port]['int_temp'],'°C\n')
-				interval = a.get('int_interval', 300)
-				if times['int'] + timedelta(seconds=interval) < datetime.now():
-					times['int'] = datetime.now()
-					system(a['int_cmd'])
-		if 'ext_temp' in mppt_data[port].keys():
-			if a.get('temp_ext') and a.get('ext_cmd') and mppt_data[port]['ext_temp'] > a['temp_ext']:
-				if verbose: print('\nTEMPERATURE ALARM external temp', conf['rs485'][port]['name'], ':', conf['rs485'][port].get('temp_display','') ,':', mppt_data[port]['ext_temp'],'°C\n')
-				interval = a.get('ext_interval', 300)
-				if times['ext'] + timedelta(seconds=interval) < datetime.now():
-					times['ext'] = datetime.now()
-					system(a['ext_cmd'])
+	"""Check and trigger temperature alarms for eSmart3 and AGG temp_sensor devices.
+	Alarm thresholds are read from conf['alarms'][device_name]. Each sensor (int/ext)
+	supports an independent high and low alarm: it fires when its threshold AND command
+	are configured and the temperature crosses it (temp > hi  or  temp < lo). Thresholds
+	may be negative or zero; only a missing key disables that alarm. Each alarm has its
+	own interval (default 300 s). eSmart3 devices expose int_temp + ext_temp; temp_sensor
+	devices expose ext_temp only.
+	alarm_last: {device_name: {'int_hi','int_lo','ext_hi','ext_lo': datetime}}"""
+	def fire(a, data, key, sub, label, name, times):
+		if key not in data: return
+		temp = data[key]
+		for bound, cmp in (('hi', temp.__gt__), ('lo', temp.__lt__)):
+			thr_key = '%s_%s' % (sub, bound)			# e.g. int_hi
+			cmd_key = '%s_%s_cmd' % (sub, bound)
+			if thr_key in a and a.get(cmd_key) and cmp(a[thr_key]):
+				if verbose: print('\nTEMPERATURE ALARM %s %s %s : %s °C (%s %i)\n' % (
+					label, name, bound, temp, bound, a[thr_key]))
+				tkey     = '%s_%s' % (sub, bound)
+				interval = a.get('%s_%s_interval' % (sub, bound), 300)
+				if times[tkey] + timedelta(seconds=interval) < datetime.now():
+					times[tkey] = datetime.now()
+					system(a[cmd_key])
+
+	alarms = conf.get('alarms', {})
+	for port in esmart3_devs + temp_sensor_devs:
+		name = conf['rs485'][port].get('name')
+		a    = alarms.get(name, {})
+		if not a or port not in mppt_data: continue
+		times = alarm_last.setdefault(name, {
+			'int_hi': datetime.min, 'int_lo': datetime.min,
+			'ext_hi': datetime.min, 'ext_lo': datetime.min})
+		fire(a, mppt_data[port], 'int_temp', 'int', 'internal', name, times)
+		fire(a, mppt_data[port], 'ext_temp', 'ext', 'external', name, times)
 	return alarm_last
 
 
@@ -1035,9 +1062,9 @@ if __name__ =="__main__":
 				conf['load_prediction'] = False
 				predictor = type('P', (), {'update': lambda *a,**k: 0, 'reload_conf': lambda *a,**k: None, 'status': lambda *a,**k: '', 'enabled': False, 'offset': 0, 'ramp_override_by_predictor': False})()
 		conf_path	= join(dirname(__file__), 'zeroinput.conf')
-		conf_mtime		= os_path.getmtime(conf_path)
+		conf_mtime		= getmtime(conf_path)
 		_pred_path		= join(dirname(__file__), 'predictor.py')
-		predictor_mtime	= os_path.getmtime(_pred_path) if os_path.exists(_pred_path) else 0
+		predictor_mtime	= getmtime(_pred_path) if exists(_pred_path) else 0
 		if verbose: print('zeroinput starts\n')
 		write_vzlogger_conf_example(conf)												# write vzlogger.conf.example on startup
 		
@@ -1222,7 +1249,7 @@ if __name__ =="__main__":
 					if verbose:
 						print('possible inverter fault: avg demand %iW pv %iW threshold %iW' % (
 							int(_avg_demand), pv_power, int(_threshold)))
-					a = conf.get('inverter_fault_alarm', {})
+					a = conf.get('alarms', {}).get('inverter_fault', {})
 					if a.get('cmd'):
 						interval = a.get('interval', 300)
 						last     = alarm_last.get('inverter_fault', datetime.min)
