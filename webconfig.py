@@ -76,6 +76,14 @@ class WebconfigHandler(BaseHTTPRequestHandler):
 			except Exception as e:
 				self._send_json(500, {'error': str(e)})
 
+		elif path == '/zeroinput.html':
+			try:
+				with open(join(BASE_DIR, 'zeroinput.html'), 'rb') as f:
+					body = f.read()
+				self._send_html(body)
+			except Exception as e:
+				self._send_json(500, {'error': str(e)})
+
 		elif path == '/api/conf':
 			content = _read(join(BASE_DIR, 'zeroinput.conf'))
 			self._send_json(200 if content else 500,
