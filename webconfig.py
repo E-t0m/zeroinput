@@ -68,12 +68,9 @@ class WebconfigHandler(BaseHTTPRequestHandler):
 	def do_GET(self):
 		path = self.path.split('?')[0]
 
-		if path in ('/', '/zeroinput_webconfig.html', '/zeroinput.html', '/zeroinput_rs485config.html'):
-			filename = 'zeroinput.html' if path == '/zeroinput.html' else \
-				'zeroinput_rs485config.html' if path == '/zeroinput_rs485config.html' else \
-				'zeroinput_webconfig.html'
+		if path in ('/', '/zeroinput_webconfig.html'):
 			try:
-				with open(join(BASE_DIR, filename), 'rb') as f:
+				with open(join(BASE_DIR, 'zeroinput_webconfig.html'), 'rb') as f:
 					body = f.read()
 				self._send_html(body)
 			except Exception as e:
