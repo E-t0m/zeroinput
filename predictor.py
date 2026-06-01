@@ -12,9 +12,19 @@ def avg(lst):
 # ---------------------------------------------------------------------------
 # Predictor configuration – edit here, not in zeroinput.conf
 # ---------------------------------------------------------------------------
-VERSION			= 14
+VERSION			= 21
 LOG_FILE		= '/tmp/predictor.log'	# '' = no log
 MIN_SPREAD_W	= 150	# W: minimum spread between LOW and HIGH centroid
+MAX_SPREAD_W	= 800	# W: maximum spread for a cyclic load. a larger spread means the two
+						#    clusters are different operating points (continuous load vs. send
+						#    pause), NOT a small cyclic appliance — k-means stays out then so the
+						#    load is fully matched. a small spread on ANY level is cyclic and held.
+						#    override (large short peaks) is unaffected either way.
+LEVEL_EXIT_W	= 150	# W: if est_load drops this far below the learned LOW, the load has left
+						#    the learned cycle (a large consumer switched off, leaving a lower base).
+						#    the levels are then stale — drop them and re-learn. without this the
+						#    predictor holds the inverter up at the old LOW and exports the
+						#    difference. a LOW phase sits AT low, never persistently below it.
 STARTUP_S		= 10	# s: observation time after start before offset becomes active
 MAX_HIST		= 60	# history buffer size (samples)
 TRANSITIONS_MIN	= 4		# phase transitions required before offset becomes active
@@ -63,6 +73,8 @@ class LoadPredictor:
 		self.verbose		= verbose
 		self.enabled		= bool(conf.get('load_prediction', True))
 		self.MIN_SPREAD		= int(conf.get('min_spread_w', MIN_SPREAD_W))
+		self.MAX_SPREAD		= int(conf.get('max_spread_w', MAX_SPREAD_W))
+		self.LEVEL_EXIT		= int(conf.get('level_exit_w', LEVEL_EXIT_W))
 		self.startup_end	= time() + STARTUP_S
 		self.history		= []
 		self.MAX_HIST		= MAX_HIST
@@ -91,6 +103,7 @@ class LoadPredictor:
 		self.high_ls_since	= None		# time() when Ls_read first exceeded threshold
 		self.LS_OVERRIDE_THR= 200		# W: Ls_read threshold to cancel override
 		self._ls_hi_dip_cnt	= 0			# consecutive cycles below LS_OVERRIDE_THR during override
+		self._out_of_band_cnt	= 0			# consecutive cycles est_load outside learned LOW..HIGH band
 		# logging
 		self._log_path		= LOG_FILE
 		self._log_fh		= None
@@ -165,6 +178,8 @@ class LoadPredictor:
 		load_prediction and min_spread_w are hot-reloadable from conf."""
 		self.enabled    = bool(conf.get('load_prediction', True))
 		self.MIN_SPREAD = int(conf.get('min_spread_w', MIN_SPREAD_W))
+		self.MAX_SPREAD = int(conf.get('max_spread_w', MAX_SPREAD_W))
+		self.LEVEL_EXIT = int(conf.get('level_exit_w', LEVEL_EXIT_W))
 		if self.verbose: print('predictor v%i reloaded: enabled=%s min_spread=%i LONG_PEAK_MIN=%is' % (
 			VERSION, self.enabled, self.MIN_SPREAD, self.LONG_PEAK_MIN))
 
@@ -190,6 +205,7 @@ class LoadPredictor:
 		self._override_target			= None
 		self.high_ls_since				= None
 		self._ls_hi_dip_cnt				= 0
+		self._out_of_band_cnt			= 0
 		self.startup_end				= time() + self.MAX_HIST	# cool-down
 		if self.verbose: print('predictor v%i reset — re-learning' % VERSION)
 
@@ -286,6 +302,34 @@ class LoadPredictor:
 		# peak tracking
 		self._track_peak(Ls_read)
 
+		# the load may leave the learned cycle entirely — either a large consumer switches
+		# off (est_load drops below LOW) or a large continuous load switches on (est_load
+		# rises above HIGH). the learned levels are then stale: holding the inverter at the
+		# old LOW would export or starve. detect this directly against est_load — independent
+		# of the (possibly frozen) history and of peak/override state. require a few
+		# consecutive cycles outside the band so a single dip/spike does not trigger it.
+		# this runs BEFORE the override and transient-skip blocks: a continuous load keeps
+		# Ls_read high every cycle, which would otherwise skip this check forever.
+		if self.low_level is not None and (
+				est_load < self.low_level - self.LEVEL_EXIT
+				or est_load > self.high_level + self.LEVEL_EXIT):
+			self._out_of_band_cnt += 1
+		else:
+			self._out_of_band_cnt = 0
+		if self._out_of_band_cnt >= 3:
+			if self.verbose: print('predictor: load left learned cycle (est %i, band %i..%i) → drop levels' % (
+				int(est_load), self.low_level, self.high_level))
+			self.low_level		= None
+			self.high_level		= None
+			self.current_phase	= None
+			self.transition_cnt	= 0
+			self._unimodal_cnt	= 0
+			self._out_of_band_cnt	= 0
+			self.history		= []
+			self.offset			= 0
+			self._log(now, Ls_read, last2_send, est_load)
+			return self.offset
+
 		# override active: hold at low_level if known, otherwise hold inter-peak mean
 		if self.ramp_override_by_predictor:
 			if Ls_read > self.LS_OVERRIDE_THR:
@@ -309,8 +353,13 @@ class LoadPredictor:
 			self._log(now, Ls_read, last2_send, est_load)
 			return self.offset
 
-		if Ls_read > 400:
-			# skip peak samples — transient values distort LOW/HIGH k-means clustering
+		# remember whether the previous cycle clamped the setpoint — if so, last2_send
+		# reflects the predictor's own output, not the free load, and must not be learned
+		prev_offset = self.offset
+
+		if abs(Ls_read) > 400:
+			# skip transient samples (peaks AND feed-in spikes after load drops):
+			# est_load would not reflect the steady background load and distorts k-means
 			self._log(now, Ls_read, last2_send, est_load)
 			return self.offset
 
@@ -319,37 +368,45 @@ class LoadPredictor:
 		if len(self._inter_peak_buf) > 30:
 			self._inter_peak_buf = self._inter_peak_buf[-30:]
 
-		self.history.append(est_load)
-		if len(self.history) > self.MAX_HIST:
-			self.history = self.history[-self.MAX_HIST:]
+		# only learn the load when the predictor did NOT meaningfully clamp the setpoint
+		# last cycle. otherwise est_load = Ls_read + last2_send mirrors the predictor's
+		# own offset (self-reference) and the centroids drift toward whatever it forced.
+		# a small offset (predictor sitting at low_level in the low phase) is harmless.
+		if abs(prev_offset) <= 50:
+			self.history.append(est_load)
+			if len(self.history) > self.MAX_HIST:
+				self.history = self.history[-self.MAX_HIST:]
 
 		self.offset = 0
+
+		# --- k-means: maintain the learned levels -------------------------------------
+		# k-means only UPDATES low_level/high_level when it produces a valid bimodal result.
+		# the phase decision and the offset are derived separately (below) from the stored
+		# levels, so a temporarily skewed history (e.g. a long LOW phase pushing the HIGH
+		# samples below the unimodal threshold) no longer delays the phase switch.
 		if len(self.history) >= 10:
 			low, high = self._kmeans2(self.history)
-			if low is not None and (high - low) >= self.MIN_SPREAD:
+			spread = (high - low) if low is not None else 0
+			valid = (low is not None and self.MIN_SPREAD <= spread <= self.MAX_SPREAD)
+			if valid:
 				self._unimodal_cnt	= 0			# valid bimodal result resets tolerance
-				spread = high - low
 				self.low_level		= int(low)
 				self.high_level		= int(high)
-				midpoint			= (self.low_level + self.high_level) / 2
-				new_phase			= 'low' if est_load < midpoint else 'high'
-				if new_phase != self.current_phase:
-					if self.transition_cnt < TRANSITIONS_MIN:
-						self.transition_cnt += 1		# cap at TRANSITIONS_MIN — higher values carry no meaning
-					self.current_phase	= new_phase
-					self.peak_dur_hist	= []	# peaks from prior phase are irrelevant
-					if self.verbose: print('predictor: phase -> %s  transitions %i/%i' % (
-						new_phase, self.transition_cnt, TRANSITIONS_MIN))
-				if self.transition_cnt >= TRANSITIONS_MIN:
-					self.offset = self.low_level - est_load
-				else:
-					self.offset = 0
-					if self.verbose: print('predictor: learning  transitions %i/%i  spread %i W  low %i W  high %i W' % (
-						self.transition_cnt, TRANSITIONS_MIN, int(spread), self.low_level, self.high_level))
+			elif low is not None and spread > self.MAX_SPREAD:
+				# bimodal, but the spread is too large — the two clusters are different
+				# operating points (continuous load vs. send pause), not one cyclic load.
+				# drop learned levels so we never hold the inverter down against a large
+				# continuous load. it is matched fully; override handles short peaks.
+				self.low_level		= None
+				self.high_level		= None
+				self.current_phase	= None
+				self.transition_cnt	= 0
+				self._unimodal_cnt	= 0
 			elif self.transition_cnt < TRANSITIONS_MIN:
-				# unimodal or spread too small during learning — tolerate brief lapses,
+				# unimodal or spread too small DURING LEARNING — tolerate brief lapses,
 				# only reset after UNIMODAL_TOLERANCE consecutive bad results so a
-				# fluctuating load profile does not restart learning from scratch
+				# fluctuating load profile does not restart learning from scratch.
+				# once learned, a skewed history is expected and must NOT reset.
 				self._unimodal_cnt += 1
 				if self._unimodal_cnt >= self.UNIMODAL_TOLERANCE:
 					self.low_level		= None
@@ -357,5 +414,23 @@ class LoadPredictor:
 					self.current_phase	= None
 					self.transition_cnt	= 0
 					self._unimodal_cnt	= 0
+
+		# --- phase + offset: derived directly from the stored levels ------------------
+		# independent of whether this cycle's k-means was bimodal. this is what removes the
+		# one-cycle phase-switch lag (and its export spike) on a long LOW phase.
+		if self.low_level is not None:
+			midpoint	= (self.low_level + self.high_level) / 2
+			new_phase	= 'low' if est_load < midpoint else 'high'
+			if new_phase != self.current_phase:
+				if self.transition_cnt < TRANSITIONS_MIN:
+					self.transition_cnt += 1		# cap at TRANSITIONS_MIN — higher values carry no meaning
+				self.current_phase	= new_phase
+				self.peak_dur_hist	= []	# peaks from prior phase are irrelevant
+				if self.verbose: print('predictor: phase -> %s  transitions %i/%i' % (
+					new_phase, self.transition_cnt, TRANSITIONS_MIN))
+			if self.transition_cnt >= TRANSITIONS_MIN:
+				self.offset = self.low_level - est_load
+			else:
+				self.offset = 0
 		self._log(now, Ls_read, last2_send, est_load)
 		return self.offset
