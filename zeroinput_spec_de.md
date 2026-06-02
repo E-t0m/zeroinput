@@ -69,16 +69,20 @@ Große plötzliche Zähleränderungen (> 400 W) lösen einen Rampenmodus aus: di
 
 ## Lastprediktor (`predictor.py`)
 
-Erkennt zyklische Lasten (Waschmaschine, Spülmaschine, Herd) mittels k-Means-Clustering auf der geschätzten Lasthistorie:
+Der Lastprediktor erkennt zyklische Lasten (Waschmaschine, Spülmaschine, Herd) und
+wiederkehrende kurze Hochlast-Spitzen und beugt der Einspeisung vor, die sie sonst verursachen
+würden. Er betreibt zwei Mechanismen: k-Means-Pegelstabilisierung für zyklische Lasten und
+einen Peak-/Override-Mechanismus für wiederkehrende kurze Spitzen.
 
-- Identifiziert zwei stabile Lastniveaus: **LOW** und **HIGH**
-- Nach Bestätigung (≥ 4 Phasenübergänge) wird ein prädiktiver Offset angewendet, um den Wechselrichter unabhängig von der aktuellen Phase auf LOW-Niveau zu halten — die HIGH-Last bezieht ihre Zusatzleistung direkt aus dem Netz
-- **Spitzenerkennung**: kurze, aber hohe wiederholte `Ls_read`-Lastspitzen lösen `ramp_override` aus, der den Wechselrichter auf LOW hält und die Spitze vollständig ignoriert. Begründung: diese Spitzen steigen und fallen schneller als der Wechselrichter rampen kann — wenn der Zielwert erreicht wäre, ist die Last bereits verschwunden und erzeugt erhebliche Einspeisung. Kein Reagieren ist besser.
-- Setzt automatisch zurück bei anhaltend hoher Last (> `LONG_PEAK_MIN` s über Schwellwert)
-- `STARTUP_S`, `LONG_PEAK_MIN`, `LOG_FILE` sind Modulkonstanten in `predictor.py`, bei Dateiänderung via `reload_predictor_if_changed` neu geladen
-- `min_spread_w`, `load_prediction` und `predictor_log` sind conf-Keys, ohne Modulneustart hot-reloadable aus `zeroinput.conf`
+Er ist ein optionales, austauschbares Modul. zeroinput benötigt nur eine `LoadPredictor`-Klasse
+mit `update(Ls_read, last2_send)`, `reload_conf(conf)`, `status()` und den Attributen `enabled`,
+`offset` und `ramp_override_by_predictor`. Eigene Strategien können durch Ersetzen von
+`predictor.py` implementiert werden, ohne zeroinput selbst zu ändern.
 
-Das Prediktordesign ist bewusst offen und modular: zeroinput benötigt nur eine `LoadPredictor`-Klasse mit `update(Ls_read, last2_send)`, `reload_conf(conf)`, `status()` und den Attributen `enabled`, `offset` und `ramp_override_by_predictor`. Eigene Vorhersagestrategien können durch Ersetzen von `predictor.py` implementiert werden, ohne zeroinput selbst zu ändern.
+Die vollständige Beschreibung — beide Mechanismen, das Spreizungsfenster, das zyklenbasierte
+Zeitmodell und alle Konstanten — steht in
+**[predictor_spec_de.md](predictor_spec_de.md)**.
+
 
 ---
 
@@ -139,19 +143,9 @@ Layout in der Modulkonstante `_MPPT_FMT` definiert (verwendet für Kopfzeile, Da
 
 ## Prediktor
 
-`predictor_log: true/false` (conf, hot-reloadable) — steuert `/tmp/predictor.log` und die Ausgabe der Spaltenköpfe beim Start. Standard: `true`.
-
-`min_spread_w` (conf, hot-reloadable) — Mindestspreizung zwischen LOW- und HIGH-k-Means-Zentroid für die Prediktoraktivierung. Standard: `150` W. Bei zu geringer Lastspreizung deaktiviert sich der Prediktor und zeroinput fällt auf Reaktivregelung zurück.
-
-`_kmeans2` lehnt unimodale Verteilungen ab: beide Gruppen müssen ≥ 15 % der History-Werte enthalten, sonst wird `None, None` zurückgegeben. Während des Anlernens (`transition_cnt < TRANSITIONS_MIN`) werden die gelernten Levels zurückgesetzt; bei stabilem Prediktor bleiben sie erhalten um kurze unimodale Phasen durch gute Regelung zu überstehen.
-
-Ein Toleranzzähler `UNIMODAL_TOLERANCE = 5` erfordert mehrere aufeinanderfolgende schlechte k-Means-Ergebnisse bevor das Anlernen neu beginnt — einzelne Ausreißer verwerfen keinen Lernfortschritt.
-
-`transition_cnt` wird bei `TRANSITIONS_MIN` gedeckelt — höhere Werte tragen keine Information und würden sonst über Tage unbegrenzt wachsen.
-
-Eine einzige Peak-Schwelle: Peaks `< LONG_PEAK_MIN` sind kurz (zählen zur Override-Aktivierung), Peaks `>= LONG_PEAK_MIN` sind lang (leeren Peak-Historie, stornieren Override). Die frühere Konstante `SHORT_PEAK_MAX` wurde entfernt — kein Graubereich mehr.
-
-`MAX_HIST = 60` und `TRANSITIONS_MIN = 4` sind Modulkonstanten in `predictor.py`.
+Die Konfigurationsschlüssel des Prediktors (`load_prediction`, `min_spread_w`,
+`predictor_log`) und sein internes Verhalten sind vollständig in
+**[predictor_spec_de.md](predictor_spec_de.md)** dokumentiert.
 
 ---
 
