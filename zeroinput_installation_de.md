@@ -317,23 +317,22 @@ Ausnahmen (erfordern Neustart):
 
 ## Lastprediktor
 
-Der Lastprediktor (`load_prediction: true` in conf, Standard: false) erkennt zyklische Lasten (Waschmaschine, Herd usw.) per k-Means und stabilisiert die Einspeisung auf LOW-Niveau. Der Motor bezieht seine Zusatzleistung direkt aus dem Netz – ohne Übereinspeisung.
+Der Lastprediktor (`load_prediction: true` in conf, Standard: false) erkennt zyklische Lasten
+(Waschmaschine, Herd usw.) und kurze hohe Lastspitzen und stabilisiert die Einspeisung gegen
+Übereinspeisung. Die gängigsten Einstellungen:
 
-Prediktor-Einstellungen werden teils in `predictor.py` als Modulkonstanten am Dateianfang konfiguriert – kein Neustart nötig, Änderungen werden bei Dateiänderung automatisch übernommen:
+| Einstellung | Ort | Beschreibung |
+|---|---|---|
+| `load_prediction` | conf | Hauptschalter (Standard: false) |
+| `min_spread_w` | conf | Mindestspreizung LOW/HIGH damit k-Means greift (Standard: 150 W) |
+| `predictor_log` | conf | `/tmp/predictor.log` schreiben (Standard: true) |
+| `MAX_SPREAD_W` | `predictor.py` | maximale Spreizung; darüber gilt die Last nicht als zyklisch (Standard: 400 W) |
+| `PEAK_SHORT_MAX_N` | `predictor.py` | Grenze kurzer/langer Peak in Zyklen (Standard: 13) |
+| `LOG_FILE` | `predictor.py` | Log-Pfad (`''` = deaktiviert) |
 
-| Variable | Beschreibung |
-|---|---|
-| `STARTUP_S` | Beobachtungszeit vor erster Aktion (Standard: 10 s) |
-| `LONG_PEAK_MIN` | Mindestdauer damit ein Peak als Dauerlast gilt (s, Standard: 10). Peaks darunter zählen zur Override-Aktivierung; Peaks ab diesem Wert stornieren Override und leeren die Peak-Historie. |
-| `LOG_FILE` | Pfad zur Prediktor-Logdatei (`''` = deaktiviert) |
-
-Diese Einstellungen sind aus `zeroinput.conf` hot-reloadbar (kein Modulneustart nötig):
-
-| Schlüssel | Beschreibung |
-|---|---|
-| `load_prediction` | Lastprediktor aktivieren (true/false) |
-| `min_spread_w` | Mindestspreizung LOW/HIGH in W (Standard: 150) |
-| `predictor_log` | Log-Ausgabe und Spaltenköpfe beim Start (true/false, Standard: true) |
+conf-Schlüssel sind hot-reloadbar; Konstanten in `predictor.py` werden bei Dateiänderung
+automatisch übernommen. Das vollständige Verhalten und alle Konstanten sind in
+**[predictor_spec_de.md](predictor_spec_de.md)** dokumentiert.
 
 ---
 
