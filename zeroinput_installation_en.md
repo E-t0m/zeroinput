@@ -318,16 +318,22 @@ Exceptions (require restart):
 
 ## Load predictor
 
-The load predictor (`load_prediction: true` in conf, default: false) detects cyclic loads (washing machine, oven etc.) using k-means and stabilises feed-in at the LOW level. The motor draws its additional power directly from the grid – without over-feeding.
+The load predictor (`load_prediction: true` in conf, default: false) detects cyclic loads
+(washing machine, oven etc.) and short high surges, and stabilises feed-in to avoid
+over-feeding. The most common settings:
 
-Predictor settings are configured directly in `predictor.py` as module-level variables at the top of the file – no restart required, changes are picked up automatically on file save:
+| Setting | Where | Description |
+|---|---|---|
+| `load_prediction` | conf | master enable (default: false) |
+| `min_spread_w` | conf | minimum LOW/HIGH spread for k-means to engage (default: 150 W) |
+| `predictor_log` | conf | write `/tmp/predictor.log` (default: true) |
+| `MAX_SPREAD_W` | `predictor.py` | maximum spread; above this the load is not treated as cyclic (default: 400 W) |
+| `PEAK_SHORT_MAX_N` | `predictor.py` | short/long peak boundary in cycles (default: 13) |
+| `LOG_FILE` | `predictor.py` | log path (`''` = disabled) |
 
-| Variable | Description |
-|---|---|
-| `MIN_SPREAD_W` | Minimum spread LOW/HIGH in W (default: 150) |
-| `STARTUP_S` | Observation time before first action (default: 10 s) |
-| `LONG_PEAK_MIN` | Minimum duration for a peak to be considered a sustained load and not a short cycle (s, default: 10). Peaks below this threshold count toward override activation; peaks at or above cancel it. |
-| `LOG_FILE` | Path to predictor log file (`''` = disabled) |
+conf keys are hot-reloadable; constants in `predictor.py` are applied automatically on file
+save. The complete behaviour and all constants are documented in
+**[predictor_spec_en.md](predictor_spec_en.md)**.
 
 ---
 
