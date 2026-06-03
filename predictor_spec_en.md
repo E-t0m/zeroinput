@@ -57,6 +57,7 @@ k-means:
 | `min_spread_w` | config | minimum spread between LOW and HIGH |
 | `MAX_SPREAD_W` | 400 | maximum spread for a valid cyclic pattern |
 | `TRANSITIONS_MIN` | 4 | phase transitions before the offset activates |
+| `MIN_HIST` | 10 | samples before k-means computes at all |
 | `MAX_HIST` | 60 | history buffer length (samples) |
 | `KMEANS_TIMEOUT_N` | 120 | cycles without a real transition → drop learned levels |
 | `JUMP_W` | 400 | `Ls_read` below −this (without a preceding peak) = load dropped |
@@ -74,12 +75,17 @@ peaks & override:
 
 ## Mechanism 1: k-means (cyclic load)
 
-The reliable base. k-means clusters the load history into two levels, LOW and HIGH. A result
-is valid only if the spread (`HIGH − LOW`) lies in `[min_spread_w, MAX_SPREAD_W]`.
+The reliable base. k-means clusters the load history into two levels, LOW and HIGH. It only
+computes once at least `MIN_HIST` (10) samples are available. A result is valid only if the
+spread (`HIGH − LOW`) lies in `[min_spread_w, MAX_SPREAD_W]` **and** the distribution is
+genuinely two-level: if either cluster group holds less than 15 % (or more than 85 %) of the
+values, it is treated as unimodal and rejected — there are then no valid levels.
 
-A **transition** is a detected change between the LOW and HIGH phase. After
-`TRANSITIONS_MIN` (4) transitions the offset activates and holds the inverter at LOW
-(`offset = LOW − est_load`). There is no startup delay; the history fills immediately.
+The current phase follows from the midpoint of the two levels: if `est_load` is below
+`(LOW + HIGH) / 2` the phase is LOW, otherwise HIGH. A **transition** is a change of this
+assignment between LOW and HIGH. After `TRANSITIONS_MIN` (4) transitions the offset activates
+and holds the inverter at LOW (`offset = LOW − est_load`). There is no startup delay; the
+history fills immediately.
 
 ### down-abort
 
