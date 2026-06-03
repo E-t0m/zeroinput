@@ -58,6 +58,7 @@ k-Means:
 | `min_spread_w` | config | minimaler Spread zwischen LOW und HIGH |
 | `MAX_SPREAD_W` | 400 | maximaler Spread für ein gültiges zyklisches Muster |
 | `TRANSITIONS_MIN` | 4 | Phasenwechsel, bevor der offset aktiv wird |
+| `MIN_HIST` | 10 | Samples, bevor k-Means überhaupt rechnet |
 | `MAX_HIST` | 60 | Länge des History-Puffers (Samples) |
 | `KMEANS_TIMEOUT_N` | 120 | Zyklen ohne echte Transition → gelernte Niveaus verwerfen |
 | `JUMP_W` | 400 | `Ls_read` unter −dieser Wert (ohne vorausgehenden Peak) = Last weg |
@@ -75,14 +76,18 @@ Peaks & Override:
 
 ## Mechanismus 1: k-Means (zyklische Last)
 
-Die verlässliche Basis. k-Means clustert die Lasthistorie in zwei Niveaus, LOW und HIGH. Ein
-Ergebnis ist nur gültig, wenn der Spread (`HIGH − LOW`) im Bereich
-`[min_spread_w, MAX_SPREAD_W]` liegt.
+Die verlässliche Basis. k-Means clustert die Lasthistorie in zwei Niveaus, LOW und HIGH. Es
+rechnet erst, sobald mindestens `MIN_HIST` (10) Samples vorliegen. Ein Ergebnis ist nur
+gültig, wenn der Spread (`HIGH − LOW`) im Bereich `[min_spread_w, MAX_SPREAD_W]` liegt **und**
+die Verteilung wirklich zweistufig ist: enthält eine der beiden Cluster-Gruppen weniger als
+15 % (oder mehr als 85 %) der Werte, gilt sie als unimodal und wird verworfen — dann gibt es
+keine gültigen Niveaus.
 
-Eine **Transition** ist ein erkannter Wechsel zwischen LOW- und HIGH-Phase. Nach
-`TRANSITIONS_MIN` (4) Transitionen wird der offset aktiv und hält den Wechselrichter auf LOW
-(`offset = LOW − est_load`). Es gibt keine Anlaufverzögerung; die History baut sich sofort
-auf.
+Die aktuelle Phase ergibt sich aus dem Mittelpunkt der beiden Niveaus: liegt `est_load` unter
+`(LOW + HIGH) / 2`, ist die Phase LOW, sonst HIGH. Ein **Transition** ist ein Wechsel dieser
+Zuordnung zwischen LOW und HIGH. Nach `TRANSITIONS_MIN` (4) Transitionen wird der offset aktiv
+und hält den Wechselrichter auf LOW (`offset = LOW − est_load`). Es gibt keine
+Anlaufverzögerung; die History baut sich sofort auf.
 
 ### down-Abbruch
 
