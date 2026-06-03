@@ -1,6 +1,6 @@
 # zeroinput Lastprediktor — Spezifikation
 
-Funktionsspezifikation des zeroinput-Lastprediktors (`predictor.py`, VERSION 102). Dies ist
+Funktionsspezifikation des zeroinput-Lastprediktors (`predictor.py`, VERSION 104). Dies ist
 die maßgebliche Beschreibung des Soll-Verhaltens. Die englische Fassung ist
 `predictor_spec_en.md`.
 
@@ -72,7 +72,7 @@ Peaks & Override:
 | `PEAK_WINDOW_N` | 120 | Fenster für die zwei Peaks; auch Override-Timeout |
 | `PEAK_LIFETIME_N` | 120 | wie lange ein beendeter kurzer Peak gezählt wird |
 | `OVERRIDE_DELAY_N` | 15 | Zyklen nach Ende des 2. Peaks bis Override aktiv |
-| `QUIET_CYCLES` | 10 | ruhige Zyklen für die Mittelung des Halteziels |
+| `BASE_CYCLES` | 10 | Nicht-Peak-Zyklen für die Mittelung des Halteziels |
 
 ## Mechanismus 1: k-Means (zyklische Last)
 
@@ -103,7 +103,7 @@ Vergehen `KMEANS_TIMEOUT_N` (120) Zyklen ohne echte LOW↔HIGH-Transition, werde
 gelernten Niveaus verworfen (die zyklische Last ist offenbar vorbei). Ein Peak zählt **nicht**
 als Transition und setzt diesen Timer nicht zurück — nur ein echter Phasenwechsel tut das.
 Der Timeout verwirft **nur** die Niveaus; läuft ein Override, bleibt dieser bestehen (er
-fällt dann auf das Halteziel aus dem Ruhepuffer zurück).
+fällt dann auf das Halteziel aus dem Grundlast-Mittel zurück).
 
 ## Mechanismus 2: Peaks & Override
 
@@ -142,10 +142,12 @@ Während der Override aktiv ist, hält der offset:
 
 - auf dem k-Means-LOW, falls eines bekannt ist (`offset = LOW − est_load`, identisch zum
   normalen k-Means-offset — der Override ändert nur das Peak-Verhalten, nicht die Formel);
-- sonst auf dem Mittelwert von `(last2_send + Ls_read)` über die letzten `QUIET_CYCLES` (10)
-  ruhigen Zyklen (`|Ls_read|` ≤ `NEAR_ZERO_W`). In einem ruhigen Zyklus ist
-  `last2_send + Ls_read` die gemessene Gesamtlast, mit `Ls_read` als gemessener Korrektur —
-  keine Selbstreferenz.
+- sonst auf dem gleitenden Mittelwert von `est_load` über die letzten `BASE_CYCLES` (10)
+  Nicht-Peak-Zyklen (die Grundlast). `est_load` ist die gemessene Gesamtlast; das Mittel
+  wird in jedem Nicht-Peak-Zyklus fortgeschrieben, unabhängig davon, ob `Ls_read` schon nahe
+  null ist. So folgt das Halteziel einer veränderten Grundlast (neuen „Nulllinie"), statt auf
+  einem alten Wert einzufrieren, solange der offset `Ls_read` noch nicht auf null gefahren
+  hat.
 
 ### Override-Ende
 
@@ -155,11 +157,13 @@ ohne jeden Peak; danach fällt der Prediktor in den normalen k-Means-Betrieb zur
 ## Reset-Semantik
 
 Ein k-Means-Reset löscht die gelernten Niveaus, die History, die Phase und den
-Transition-Zähler. Standardmäßig beendet ein Reset **auch** den Override (löscht das
-Override-Flag, die ausstehende Vorbereitung und den Ruhepuffer) — ein vollständiger Neustart.
-Das gilt für den Reset durch langen Peak und für den down-Abbruch. Die einzige Ausnahme ist
-der k-Means-Timeout, der nur die Niveaus verwirft und einen laufenden Override fortsetzen
-lässt.
+Transition-Zähler. Standardmäßig beendet ein Reset **auch** den Override: er löscht das
+Override-Flag, die ausstehende Vorbereitung, den Grundlast-Puffer, die Liste der kurzen Peaks
+(`short_peaks`) und den laufenden Peak-Zustand — ein vollständiger Neustart. So kann eine alte
+Peak-Historie nach dem Reset keine ungewollte erneute Override-Aktivierung auslösen. Das gilt
+für den Reset durch langen Peak und für den down-Abbruch. Die einzige Ausnahme ist der
+k-Means-Timeout, der nur die Niveaus verwirft und Override, Grundlast-Puffer und Peak-Historie
+unangetastet lässt (ein laufender Override wird fortgesetzt).
 
 Die down-Abbruch-Aussetzung (`peak_after`) ist bedingungs- und nicht zeitbasiert: nach einem
 Peak-Ende bleibt sie wirksam, bis `Ls_read` wieder nahe null ist, damit die
