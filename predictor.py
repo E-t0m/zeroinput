@@ -21,7 +21,7 @@ def avg(xs):
 
 
 # --- module constants --------------------------------------------------------------------
-VERSION			= 102		# rectangle-signal rewrite, cycle-based timing
+VERSION			= 103		# rectangle-signal rewrite, cycle-based timing
 LOG_FILE		= '/tmp/predictor.log'	# '' = no log
 
 NEAR_ZERO_W		= 50		# W: |Ls_read| <= this counts as "near zero" (quiet)
@@ -204,7 +204,12 @@ class LoadPredictor:
 		if end_override:
 			self.ramp_override_by_predictor	= False
 			self.override_arm_cycle			= None
+			self.override_until_cycle		= 0
 			self.quiet_buf					= []
+			self.short_peaks				= []
+			self.in_peak					= False
+			self.peak_is_long				= False
+			self.peak_after					= False
 		if self._log_fh:
 			try:
 				self._log_fh.write('# RESET %s%s\n' % (
@@ -312,7 +317,9 @@ class LoadPredictor:
 			if self.ramp_override_by_predictor:
 				self.offset = self._hold_offset(est_load)
 			elif self.low_level is None:
-				self._reset_kmeans(end_override=True)
+				# no levels to protect yet — nothing to reset; the peak is simply
+				# observed (kept out of history above) and counted on its end.
+				self.offset = 0
 			else:
 				# phase A: keep levels, pause offset, relearn transitions
 				self.transition_cnt	= 0
