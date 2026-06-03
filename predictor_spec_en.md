@@ -1,6 +1,6 @@
 # zeroinput Load Predictor — Specification
 
-Functional specification of the zeroinput load predictor (`predictor.py`, VERSION 102).
+Functional specification of the zeroinput load predictor (`predictor.py`, VERSION 104).
 This is the authoritative description of the intended behaviour. The German translation is
 `predictor_spec_de.md`.
 
@@ -71,7 +71,7 @@ peaks & override:
 | `PEAK_WINDOW_N` | 120 | window for the two peaks; also override timeout |
 | `PEAK_LIFETIME_N` | 120 | how long a finished short peak is counted |
 | `OVERRIDE_DELAY_N` | 15 | cycles after the 2nd peak ends before override activates |
-| `QUIET_CYCLES` | 10 | quiet cycles averaged for the hold target |
+| `BASE_CYCLES` | 10 | non-peak cycles averaged for the hold target |
 
 ## Mechanism 1: k-means (cyclic load)
 
@@ -101,7 +101,7 @@ If `KMEANS_TIMEOUT_N` (120) cycles pass without a real LOW↔HIGH transition, th
 levels are dropped (the cyclic load is evidently over). A peak does **not** count as a
 transition and does not reset this timer — only a genuine phase change does. The timeout
 drops the levels **only**; if an override is running it keeps going (it then falls back to
-the quiet-buffer hold target).
+the base-load hold target).
 
 ## Mechanism 2: peaks & override
 
@@ -140,9 +140,11 @@ While the override is active the offset holds:
 
 - on the k-means LOW if one is known (`offset = LOW − est_load`, identical to the normal
   k-means offset — the override changes only the peak behaviour, not the formula);
-- otherwise on the mean of `(last2_send + Ls_read)` over the last `QUIET_CYCLES` (10) quiet
-  cycles (`|Ls_read|` ≤ `NEAR_ZERO_W`). In a quiet cycle `last2_send + Ls_read` is the
-  measured total load, with `Ls_read` as the metered correction — no self-reference.
+- otherwise on the running mean of `est_load` over the last `BASE_CYCLES` (10) non-peak
+  cycles (the base load). `est_load` is the measured total load; the mean is advanced every
+  non-peak cycle regardless of whether `Ls_read` is already near zero. The hold target thus
+  follows a changed base load (a new "zero") instead of freezing on a stale value while the
+  offset has not yet driven `Ls_read` to zero.
 
 ### Override end
 
@@ -152,10 +154,12 @@ any peak, then the predictor falls back to normal k-means operation.
 ## Reset semantics
 
 A k-means reset clears the learned levels, history, phase and transition counter. By default
-a reset **also** ends the override (clears the override flag, pending arm, and quiet buffer)
-— a full restart. This applies to the long-peak reset and the down-abort. The single
-exception is the k-means timeout, which drops the levels only and lets a running override
-continue.
+a reset **also** ends the override: it clears the override flag, the pending arm, the
+base-load buffer, the short-peak list (`short_peaks`) and the running peak state — a full
+restart. A stale peak history therefore cannot trigger an unwanted re-activation of the
+override after the reset. This applies to the long-peak reset and the down-abort. The single
+exception is the k-means timeout, which drops the levels only and leaves the override,
+base-load buffer and peak history untouched (a running override continues).
 
 The down-abort suspension (`peak_after`) is condition-based, not timed: after a peak ends it
 stays in effect until `Ls_read` is near zero again, so the peak's inertia feed-in spike does
