@@ -21,7 +21,7 @@ def avg(xs):
 
 
 # --- module constants --------------------------------------------------------------------
-VERSION			= 103		# rectangle-signal rewrite, cycle-based timing
+VERSION			= 104		# rectangle-signal rewrite, cycle-based timing
 LOG_FILE		= '/tmp/predictor.log'	# '' = no log
 
 NEAR_ZERO_W		= 50		# W: |Ls_read| <= this counts as "near zero" (quiet)
@@ -42,7 +42,7 @@ PEAK_SHORT_MAX_N	= 13	# cycles: < this = short peak; >= this = long peak
 PEAK_WINDOW_N	= 120		# cycles: window in which two short peaks must fall to arm override
 PEAK_LIFETIME_N	= 120		# cycles: how long a finished short peak is counted (display + arming)
 OVERRIDE_DELAY_N	= 15	# cycles: wait after 2nd peak ends (Ls<400) before override active
-QUIET_CYCLES	= 10		# quiet cycles averaged for the hold target when no k-means low
+BASE_CYCLES		= 10		# non-peak cycles averaged for the hold target when no k-means low
 # -----------------------------------------------------------------------------------------
 
 # Log columns: name -> description. Order determines column order in the log file.
@@ -104,7 +104,7 @@ class LoadPredictor:
 		self.ramp_override_by_predictor	= False
 		self.override_until_cycle		= 0		# cycle until which override stays active
 		self.override_arm_cycle			= None	# cycle when override should go active
-		self.quiet_buf					= []	# (last2_send+Ls_read) of recent quiet cycles
+		self.base_buf					= []	# est_load of recent non-peak cycles (base load)
 
 	# --- logging -------------------------------------------------------------------------
 	def _log_open(self):
@@ -205,7 +205,7 @@ class LoadPredictor:
 			self.ramp_override_by_predictor	= False
 			self.override_arm_cycle			= None
 			self.override_until_cycle		= 0
-			self.quiet_buf					= []
+			self.base_buf					= []
 			self.short_peaks				= []
 			self.in_peak					= False
 			self.peak_is_long				= False
@@ -327,11 +327,11 @@ class LoadPredictor:
 			self._log(Ls_read, last2_send, est_load)
 			return self.offset
 
-		# -------- quiet cycle: feed quiet buffer & k-means -------------------------------
-		if abs(Ls_read) <= NEAR_ZERO_W:
-			self.quiet_buf.append(last2_send + Ls_read)
-			if len(self.quiet_buf) > QUIET_CYCLES:
-				self.quiet_buf = self.quiet_buf[-QUIET_CYCLES:]
+		# -------- non-peak cycle: feed base-load buffer & k-means ------------------------
+		# (reached only when no peak is running — the peak block above returns early)
+		self.base_buf.append(est_load)
+		if len(self.base_buf) > BASE_CYCLES:
+			self.base_buf = self.base_buf[-BASE_CYCLES:]
 
 		self.history.append(est_load)
 		if len(self.history) > MAX_HIST:
@@ -376,11 +376,14 @@ class LoadPredictor:
 		return self.offset
 
 	def _hold_offset(self, est_load):
-		"""Override hold target: k-means low if known, else mean of quiet (last2+Ls)."""
+		"""Override hold target: k-means low if known, else the running mean of the base
+		load (est_load of recent non-peak cycles). The base mean follows the base load
+		even while the offset has not yet driven Ls_read to zero, so a changed base line
+		(new 'zero') is tracked instead of frozen."""
 		if self.low_level is not None:
 			return self.low_level - est_load
-		if self.quiet_buf:
-			return int(avg(self.quiet_buf)) - est_load
+		if self.base_buf:
+			return int(avg(self.base_buf)) - est_load
 		return 0
 
 	# --- status --------------------------------------------------------------------------
