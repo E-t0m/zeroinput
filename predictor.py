@@ -21,7 +21,7 @@ def avg(xs):
 
 
 # --- module constants --------------------------------------------------------------------
-VERSION			= 105		# rectangle-signal rewrite, cycle-based timing
+VERSION			= 106		# rectangle-signal rewrite, cycle-based timing
 LOG_FILE		= '/tmp/predictor.log'	# '' = no log
 
 NEAR_ZERO_W		= 50		# W: |Ls_read| <= this counts as "near zero" (quiet)
@@ -338,13 +338,20 @@ class LoadPredictor:
 		if len(self.history) > MAX_HIST:
 			self.history = self.history[-MAX_HIST:]
 
-		# k-means: maintain levels
+		# k-means: maintain levels. A valid bimodal result with an in-range spread updates
+		# the levels; otherwise (unimodal history, or spread out of range) the levels are
+		# dropped — stale levels must not linger once the cyclic pattern is gone. The
+		# history is kept, so the moment the load pings between two levels again a fresh
+		# result is learned without a relearning delay.
 		low, high = self._kmeans2(self.history)
-		if low is not None:
-			spread = high - low
-			if self.MIN_SPREAD <= spread <= MAX_SPREAD_W:
-				self.low_level	= int(low)
-				self.high_level	= int(high)
+		if low is not None and self.MIN_SPREAD <= (high - low) <= MAX_SPREAD_W:
+			self.low_level	= int(low)
+			self.high_level	= int(high)
+		else:
+			self.low_level	= None
+			self.high_level	= None
+			self.current_phase	= None
+			self.transition_cnt	= 0
 
 		# k-means timeout: no real transition for KMEANS_TIMEOUT_N -> drop levels only
 		# (override, if running, keeps going and falls back to the quiet-buffer target)
