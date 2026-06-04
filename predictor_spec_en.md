@@ -1,6 +1,6 @@
 # zeroinput Load Predictor — Specification
 
-Functional specification of the zeroinput load predictor (`predictor.py`, VERSION 105). This is the authoritative description of the intended behaviour. The German translation is `predictor_spec_de.md`.
+Functional specification of the zeroinput load predictor (`predictor.py`, VERSION 106). This is the authoritative description of the intended behaviour. The German translation is `predictor_spec_de.md`.
 
 ## Purpose
 
@@ -65,6 +65,8 @@ peaks & override:
 ## Mechanism 1: k-means (cyclic load)
 
 The reliable base. k-means clusters the load history into two levels, LOW and HIGH. It only computes once at least `MIN_HIST` (10) samples are available. A result is valid only if the spread (`HIGH − LOW`) lies in `[min_spread_w, MAX_SPREAD_W]` **and** the distribution is genuinely two-level: if either cluster group holds less than 15 % (or more than 85 %) of the values, it is treated as unimodal and rejected — there are then no valid levels.
+
+When k-means yields no valid result (unimodal history, or spread out of range), the stored levels are dropped at once (LOW/HIGH, phase and transition counter reset). Stale levels must not linger once the cyclic pattern is gone — otherwise the offset would keep holding on a LOW that no longer exists and cause continuous grid draw. The history is kept, so the moment the load pings between two levels again a fresh result is learned without delay.
 
 The current phase follows from the midpoint of the two levels: if `est_load` is below `(LOW + HIGH) / 2` the phase is LOW, otherwise HIGH. A **transition** is a change of this assignment between LOW and HIGH. After `TRANSITIONS_MIN` (4) transitions the offset activates and holds the inverter at LOW (`offset = LOW − est_load`). There is no startup delay; the history fills immediately.
 
