@@ -1,6 +1,6 @@
 # zeroinput Lastprediktor — Spezifikation
 
-Funktionsspezifikation des zeroinput-Lastprediktors (`predictor.py`, VERSION 105). Dies ist die maßgebliche Beschreibung des Soll-Verhaltens. Die englische Fassung ist `predictor_spec_en.md`.
+Funktionsspezifikation des zeroinput-Lastprediktors (`predictor.py`, VERSION 106). Dies ist die maßgebliche Beschreibung des Soll-Verhaltens. Die englische Fassung ist `predictor_spec_en.md`.
 
 ## Zweck
 
@@ -65,6 +65,8 @@ Peaks & Override:
 ## Mechanismus 1: k-Means (zyklische Last)
 
 Die verlässliche Basis. k-Means clustert die Lasthistorie in zwei Niveaus, LOW und HIGH. Es rechnet erst, sobald mindestens `MIN_HIST` (10) Samples vorliegen. Ein Ergebnis ist nur gültig, wenn der Spread (`HIGH − LOW`) im Bereich `[min_spread_w, MAX_SPREAD_W]` liegt **und** die Verteilung wirklich zweistufig ist: enthält eine der beiden Cluster-Gruppen weniger als 15 % (oder mehr als 85 %) der Werte, gilt sie als unimodal und wird verworfen — dann gibt es keine gültigen Niveaus.
+
+Liefert k-Means kein gültiges Ergebnis (unimodale History oder Spread außerhalb der Grenzen), werden die gespeicherten Niveaus sofort verworfen (LOW/HIGH, Phase und Transition-Zähler zurückgesetzt). Veraltete Niveaus dürfen nicht bestehen bleiben, sobald das zyklische Muster verschwunden ist — sonst hielte der offset weiter auf einem nicht mehr existierenden LOW und erzeugte dauerhaften Netzbezug. Die History bleibt dabei erhalten, sodass beim Wiederkehren des Pendelns ohne Verzögerung neu gelernt wird.
 
 Die aktuelle Phase ergibt sich aus dem Mittelpunkt der beiden Niveaus: liegt `est_load` unter `(LOW + HIGH) / 2`, ist die Phase LOW, sonst HIGH. Ein **Transition** ist ein Wechsel dieser Zuordnung zwischen LOW und HIGH. Nach `TRANSITIONS_MIN` (4) Transitionen wird der offset aktiv und hält den Wechselrichter auf LOW (`offset = LOW − est_load`). Es gibt keine Anlaufverzögerung; die History baut sich sofort auf.
 
