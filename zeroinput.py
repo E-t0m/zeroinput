@@ -393,6 +393,11 @@ RUNTIME_NO_RELOAD = {
 	# and zeroinput reads it directly from conf each cycle.
 }
 
+# default predictor log path; overwritten at predictor init with predictor.LOG_FILE.
+# defined here at module level so reload_conf_if_changed() can reference it even when
+# load_prediction is off (the import below is local to the init block).
+PREDICTOR_LOG_FILE = '/tmp/predictor.log'
+
 def reload_conf_if_changed(conf, conf_path, conf_mtime, predictor):
 	"""Check if conf file changed, reload whitelisted keys and log_to_vz module.
 	Returns (conf, conf_mtime)."""
