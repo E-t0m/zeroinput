@@ -21,7 +21,7 @@ def avg(xs):
 
 
 # --- module constants --------------------------------------------------------------------
-VERSION			= 104		# rectangle-signal rewrite, cycle-based timing
+VERSION			= 105		# rectangle-signal rewrite, cycle-based timing
 LOG_FILE		= '/tmp/predictor.log'	# '' = no log
 
 NEAR_ZERO_W		= 50		# W: |Ls_read| <= this counts as "near zero" (quiet)
@@ -38,10 +38,10 @@ JUMP_W			= 400		# W: Ls_read below -JUMP_W (without a preceding peak) = load dro
 
 # peaks & override
 MIN_PEAK_W		= 400		# W: Ls_read above this = peak; at/below = peak ended
-PEAK_SHORT_MAX_N	= 13	# cycles: < this = short peak; >= this = long peak
+PEAK_SHORT_MAX_N	= 10	# cycles: < this = short peak; >= this = long peak
 PEAK_WINDOW_N	= 120		# cycles: window in which two short peaks must fall to arm override
 PEAK_LIFETIME_N	= 120		# cycles: how long a finished short peak is counted (display + arming)
-OVERRIDE_DELAY_N	= 15	# cycles: wait after 2nd peak ends (Ls<400) before override active
+OVERRIDE_DELAY_N	= 12	# cycles: wait after 2nd peak ends (Ls<400) before override active
 BASE_CYCLES		= 10		# non-peak cycles averaged for the hold target when no k-means low
 # -----------------------------------------------------------------------------------------
 
@@ -212,7 +212,8 @@ class LoadPredictor:
 			self.peak_after					= False
 		if self._log_fh:
 			try:
-				self._log_fh.write('# RESET %s%s\n' % (
+				self._log_fh.write('# RESET v%i %s%s\n' % (
+					VERSION,
 					strftime('%Y-%m-%d %H:%M:%S'),
 					'' if end_override else ' (levels only)'))
 				self._log_fh.flush()
