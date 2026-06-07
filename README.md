@@ -1,13 +1,13 @@
-# zeroinput v2
+# zeroinput v2.1
 set power demand to zero
 with (multiple) soyosource gti inverters and
 (multiple) victron and / or eSmart3 MPPT charge controllers
 
-### [Vorstellung in deutscher Sprache](about_de.md)
+#### teilweise veraltet: [Vorstellung in deutscher Sprache](about_de.md)
 - [Installationsanleitung](zeroinput_installation_de.md)
 - [Spezifikationen](zeroinput_spec_de.md)
 
-#### [Introduction in english language](about_en.md)
+#### partly outdated: [Introduction in english language](about_en.md)
 - [Installation manual](zeroinput_installation_en.md)
 - [Specifications](zeroinput_spec_en.md)
 
