@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>zeroinput v2.0</title>
+<title>zeroinput v2.1</title>
 <style>
 	:root {
 		--bg:      #0f1117; --surface: #1a1d27; --border: #2a2d3e;
@@ -49,16 +49,18 @@
 	button.sec:hover { color: var(--text); border-color: var(--text); opacity: 1; }
 	button.danger { background: var(--err); }
 
-	/* ── rs485 tab ── */
+	/* ── chargers / inverters tabs ── */
 	.rs-toolbar { display: flex; gap: 10px; margin-bottom: 16px; }
 	.rs-toolbar button { background: transparent; border: 1px solid var(--accent); color: var(--accent); font-family: var(--font); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; padding: 7px 14px; border-radius: var(--radius); cursor: pointer; }
 	.rs-toolbar button:hover { background: var(--accent); color: #fff; opacity: 1; }
-	#port-list, #alarms-list { display: flex; flex-direction: column; gap: 10px; }
+	#ch-list, #inv-list, #alarms-list { display: flex; flex-direction: column; gap: 10px; }
 	.port-card { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--border); border-radius: var(--radius); overflow: hidden; }
 	.port-card.type-victron  { border-left-color: var(--victron); }
 	.port-card.type-victron_agg { border-left-color: var(--vagg); }
 	.port-card.type-esmart3  { border-left-color: var(--esmart); }
 	.port-card.type-inverter { border-left-color: var(--inv); }
+	.port-card.type-soyosource { border-left-color: var(--inv); }
+	.port-card.type-victron_mk3 { border-left-color: var(--victron); }
 	.card-header { display: flex; align-items: center; gap: 8px; padding: 10px 12px; background: #13151f; border-bottom: 1px solid var(--border); cursor: pointer; user-select: none; }
 	.card-header:hover { background: #1a1d2a; }
 	.type-badge { font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; padding: 2px 7px; border-radius: 2px; white-space: nowrap; }
@@ -66,6 +68,8 @@
 	.type-badge.victron_agg  { background: #0e2a3a; color: #3aabdf; }
 	.type-badge.esmart3      { background: #1a3a2a; color: #5aba8a; }
 	.type-badge.inverter     { background: #2a1a3a; color: #9a6aca; }
+	.type-badge.soyosource   { background: #2a1a3a; color: #9a6aca; }
+	.type-badge.victron_mk3  { background: #1a3a54; color: #5aabdf; }
 	.devices-table { width: 100%; border-collapse: collapse; margin-top: 4px; }
 	.devices-table th { font-size: 10px; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; padding: 0 4px 4px; text-align: left; }
 	.devices-table td { padding: 3px 4px; }
@@ -116,14 +120,15 @@
 </style>
 </head>
 <body>
-<header><h1>zeroinput v2.0</h1><span id="api_status" style="color:var(--muted);font-size:11px;">connecting...</span></header>
+<header><h1>zeroinput v2.1</h1><span id="api_status" style="color:var(--muted);font-size:11px;">connecting...</span></header>
 <nav>
-	<a onclick="tab('conf')"    id="tab_conf"    class="active">zeroinput.conf</a>
-	<a onclick="tab('rs485')"   id="tab_rs485">rs485</a>
-	<a onclick="tab('alarms')"  id="tab_alarms">alarms</a>
-	<a onclick="tab('vz_conf')" id="tab_vz_conf">vz channels</a>
-	<a onclick="tab('timer')"   id="tab_timer">timer.txt</a>
-	<a onclick="tab('restart')" id="tab_restart">restart</a>
+	<a onclick="tab('conf')"      id="tab_conf"      class="active">zeroinput.conf</a>
+	<a onclick="tab('chargers')"  id="tab_chargers">chargers</a>
+	<a onclick="tab('inverters')" id="tab_inverters">inverters</a>
+	<a onclick="tab('alarms')"    id="tab_alarms">alarms</a>
+	<a onclick="tab('vz_conf')"   id="tab_vz_conf">vz channels</a>
+	<a onclick="tab('timer')"     id="tab_timer">timer.txt</a>
+	<a onclick="tab('restart')"   id="tab_restart">restart</a>
 	<a onclick="location.reload()" id="tab_status" style="display:none">status</a>
 </nav>
 <div id="msg" class="msg"></div>
@@ -147,25 +152,45 @@
 	</div>
 </div>
 
-<!-- rs485 tab -->
-<div id="pane_rs485" class="container">
+<!-- chargers tab -->
+<div id="pane_chargers" class="container">
+	<p style="font-size:13px;color:var(--muted);margin-bottom:12px;">
+		MPPT chargers and temperature sensors (read side). A line physically shared with an
+		inverter is configured here as a charger <em>and</em> separately in the inverters tab with the same port.
+	</p>
 	<div class="rs-toolbar">
-		<button onclick="rsAddPort()">+ Add port</button>
+		<button onclick="chAddPort()">+ Add charger</button>
 	</div>
-	<div id="port-list"></div>
+	<div id="ch-list"></div>
 	<div class="btn-row" style="margin-top:18px;margin-bottom:40px;">
-		<button onclick="rsConfirmSave()">Save rs485</button>
-		<button class="sec" onclick="rsRender()">Reset</button>
+		<button onclick="chConfirmSave()">Save chargers</button>
+		<button class="sec" onclick="chRender()">Reset</button>
+	</div>
+</div>
+
+<!-- inverters tab -->
+<div id="pane_inverters" class="container">
+	<p style="font-size:13px;color:var(--muted);margin-bottom:12px;">
+		Feed-in units (write side). One sender per port; multiple identical units share a port via <code>count</code>.
+		<code>max/min power</code> are per single unit. Stage selects which power stage the group runs in — leave both unchecked to disable a unit without removing it.
+	</p>
+	<div class="rs-toolbar">
+		<button onclick="invAddInverter()">+ Add inverter</button>
+	</div>
+	<div id="inv-list"></div>
+	<div class="btn-row" style="margin-top:18px;margin-bottom:40px;">
+		<button onclick="invConfirmSave()">Save inverters</button>
+		<button class="sec" onclick="invRender()">Reset</button>
 	</div>
 </div>
 
 <!-- alarms tab -->
 <div id="pane_alarms" class="container">
 	<p style="font-size:13px;color:var(--muted);margin-bottom:12px;">
-		Temperature alarms for eSmart3 and AGG temperature sensors, plus the inverter-fault alarm.
+		Temperature alarms for eSmart3 and AGG temperature sensors.
 		Each alarm fires when the temperature crosses its threshold and a command is set.
 		Thresholds may be negative; an empty threshold or command disables that alarm.
-		Device list is read from the saved configuration — add devices in the rs485 tab first.
+		Device list is read from the saved configuration — add devices in the chargers tab first.
 	</p>
 	<div id="alarms-list"></div>
 	<div class="btn-row" style="margin-top:18px;margin-bottom:40px;">
@@ -195,7 +220,7 @@
 			<p style="font-size:13px;color:var(--text);line-height:1.6;margin:0;">
 				This will stop and restart the zeroinput service via systemd.<br>
 				All current inverter output stops for a few seconds.<br>
-				Required after changes to rs485 configuration or port settings.<br><br>
+				Required after changes to chargers or inverters configuration.<br><br>
 				If Volkszähler data stops updating after the restart, restart vzlogger as well:<br>
 				<code style="font-size:12px;color:var(--muted)">sudo systemctl restart vzlogger</code>
 			</p>
@@ -217,13 +242,13 @@
 	<div class="modal">
 		<h2>⚠ Restart required</h2>
 		<p>
-			RS485 port configuration is read once at startup and cannot be reloaded at runtime.<br><br>
+			The chargers and inverters configuration is read once at startup and cannot be reloaded at runtime.<br><br>
 			After saving, <strong>zeroinput must be restarted</strong> for changes to take effect:<br><br>
 			<code>sudo systemctl restart zeroinput</code>
 		</p>
 		<div class="btn-row">
 			<button class="sec" onclick="rsCloseModal()">Cancel</button>
-			<button class="danger" onclick="rsSave()">Save anyway</button>
+			<button class="danger" onclick="rsModalConfirm()">Save anyway</button>
 		</div>
 	</div>
 </div>
@@ -242,11 +267,11 @@ const DEVICE_KEYS = {
 let deviceList = [];
 
 const LOCKED = [
-	'rs485'
+	'chargers', 'inverters'
 ];
 const SECTIONS = {
-	'Paths & hardware':  ['vzlogger_log_file','persistent_vz_file','rs485','basic_load_inverter_port','webconfig_port'],
-	'Inverters':         ['total_number_of_inverters','max_input_power','max_bat_discharge','single_inverter_threshold','multi_inverter_wait'],
+	'Paths & hardware':  ['vzlogger_log_file','persistent_vz_file','chargers','inverters','webconfig_port'],
+	'Inverters':         ['max_input_power','max_bat_discharge','single_inverter_threshold','multi_inverter_wait'],
 	'PV & battery':      ['PV_to_AC_efficiency','bat_voltage_const','free_power_export'],
 	'Zero shift':        ['zero_shifting'],
 	'Prediction':        ['load_prediction', 'predictor_log', 'min_spread_w'],
@@ -265,11 +290,13 @@ function msg(text, type) {
 }
 
 function tab(name) {
-	['conf','rs485','alarms','vz_conf','timer','restart','status'].forEach(t => {
+	['conf','chargers','inverters','alarms','vz_conf','timer','restart','status'].forEach(t => {
 		document.getElementById('tab_' + t).classList.toggle('active', t === name);
 		document.getElementById('pane_' + t).classList.toggle('active', t === name);
 	});
-	if (name === 'alarms') renderAlarms();
+	if (name === 'alarms')    renderAlarms();
+	if (name === 'chargers')  chRender();
+	if (name === 'inverters') invRender();
 }
 
 function parseHelp(data) {
@@ -290,7 +317,7 @@ async function loadConf() {
 		confData = JSON.parse(d.content);
 		helpMap  = parseHelp(confData);
 		deviceList = [{name:'', type:null}, {name:'combined', type:'combined'}];
-		if (confData.rs485) Object.values(confData.rs485).forEach(d => {
+		if (confData.chargers) Object.values(confData.chargers).forEach(d => {
 			if (!d.name && d.mppt_type !== 'victron_agg') return;
 			if (d.mppt_type === 'victron_agg') {
 				// expand individual devices from victron_agg
@@ -306,8 +333,10 @@ async function loadConf() {
 		renderConf();
 		loadVzChannels();
 		loadTimer();
-		rsPorts = rsConfToPortList(confData.rs485 || {});
-		rsRender();
+		chPorts = chConfToPortList(confData.chargers || {});
+		invItems = invConfToList(confData.inverters || {});
+		chRender();
+		invRender();
 		} catch(e) { msg('Error: ' + e, 'err'); }
 }
 
@@ -330,7 +359,7 @@ function renderConf() {
 		const ic = document.createElement('div'); ic.className = 'cell';
 		if (locked) {
 			const s = document.createElement('span'); s.className = 'locked-val';
-			s.textContent = 'edit in rs485 tab';
+			s.textContent = 'edit in ' + k + ' tab';
 			ic.appendChild(s);
 			cc.textContent = JSON.stringify(v);
 		} else if (typeof v === 'object' && v !== null && !Array.isArray(v)) {
@@ -374,7 +403,7 @@ function renderConf() {
 		keys.forEach(k => { if (k in confData && !_skip(k)) row(k, confData[k]); });
 	});
 	const rem = Object.keys(confData).filter(k =>
-		!shown.has(k) && !_skip(k) && k !== 'vz_channels' && k !== 'rs485' && k !== 'alarms'
+		!shown.has(k) && !_skip(k) && k !== 'vz_channels' && k !== 'chargers' && k !== 'inverters' && k !== 'alarms'
 	);
 	if (rem.length) {
 		const sh = document.createElement('div'); sh.className = 'section-header'; sh.textContent = 'other';
@@ -560,7 +589,7 @@ function almEsc(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').rep
 // collect alarm-capable devices from saved config: eSmart3 (int+ext) and AGG temp sensors (ext only)
 function almDevices() {
 	const out = [];
-	const rs = confData.rs485 || {};
+	const rs = confData.chargers || {};
 	for (const dev of Object.values(rs)) {
 		if (dev.mppt_type === 'eSmart3' && dev.name) {
 			out.push({name: dev.name, sensors: ['int','ext'], tempDisplay: dev.temp_display || ''});
@@ -621,27 +650,7 @@ function renderAlarms() {
 		html += `</div></div>`;
 	}
 
-	// inverter-fault alarm (global)
-	const ifa = (confData.alarms && confData.alarms.inverter_fault) || {};
-	html += `<div class="port-card type-inverter collapsed" id="almcard-inverter_fault">`;
-	html += `<div class="card-header" onclick="this.closest('.port-card').classList.toggle('collapsed')">`;
-	html += `<span class="chevron">&#8250;</span><strong>Inverter fault</strong></div>`;
-	html += `<div class="card-body">`;
-	html += `<p class="rs-hint">Fires when one of multiple inverters appears to have failed (PV-only mode, demand stuck above the level a single inverter could supply).</p>`;
-	html += `<div class="alarm-header"><span></span><span></span><span>command</span><span>repeat interval</span></div>`;
-	html += `
-<div class="alarm-row">
-	<label>fault</label>
-	<span></span>
-	<input type="text" data-alm="inverter_fault|cmd" data-fld="cmd" value="${almEsc(ifa.cmd || '')}"
-		placeholder="shell command on trigger">
-	<div class="interval-wrap">
-		<input type="number" class="narrow" data-alm="inverter_fault|itv" data-fld="itv" value="${ifa.interval == null ? 300 : ifa.interval}">
-		<span>s</span>
-	</div>
-</div></div></div>`;
-
-	if (!devs.length) html = `<p class="rs-hint">No eSmart3 or temperature-sensor devices configured. Add them in the rs485 tab.</p>` + html;
+	if (!devs.length) html = `<p class="rs-hint">No eSmart3 or temperature-sensor devices configured. Add them in the chargers tab.</p>` + html;
 	wrap.innerHTML = html;
 }
 
@@ -650,13 +659,6 @@ function almCollect() {
 	document.querySelectorAll('#alarms-list [data-alm]').forEach(el => {
 		const parts = el.getAttribute('data-alm').split('|');
 		const fld   = el.getAttribute('data-fld');
-
-		if (parts[0] === 'inverter_fault') {
-			const o = alarms.inverter_fault = alarms.inverter_fault || {cmd:'', interval:300};
-			if (parts[1] === 'cmd') o.cmd      = el.value;
-			if (parts[1] === 'itv') o.interval = parseInt(el.value) || 300;
-			return;
-		}
 
 		const [dev, sensor, bound] = parts;
 		const o = alarms[dev] = alarms[dev] || {};
@@ -684,214 +686,198 @@ async function saveAlarms() {
 
 
 
-const RS_VICTRON     = 'victron';
-const RS_VICTRON_AGG = 'victron_agg';
-const RS_ESMART      = 'esmart3';
-const RS_INVERTER    = 'inverter';
+// ── chargers tab ──────────────────────────────────────────────────────────────
 
-let rsPorts = [];
-let rsNextId = 0;
+const CH_VICTRON     = 'victron';
+const CH_VICTRON_AGG = 'victron_agg';
+const CH_ESMART      = 'esmart3';
 
-function rsConfToPortList(rs485) {
-	return Object.entries(rs485).map(([path, dev]) => {
-		let type = RS_INVERTER;
-		if (dev.mppt_type === 'victron')     type = RS_VICTRON;
-		if (dev.mppt_type === 'victron_agg') type = RS_VICTRON_AGG;
-		if (dev.mppt_type === 'eSmart3')     type = RS_ESMART;
+let chPorts = [];
+let chNextId = 0;
+
+function chConfToPortList(chargers) {
+	return Object.entries(chargers).map(([path, dev]) => {
+		let type = CH_ESMART;
+		if (dev.mppt_type === 'victron')     type = CH_VICTRON;
+		if (dev.mppt_type === 'victron_agg') type = CH_VICTRON_AGG;
+		if (dev.mppt_type === 'eSmart3')     type = CH_ESMART;
 		return {
-			id:           rsNextId++,
+			id:           chNextId++,
 			path:         path,
 			name:         dev.name         || '',
 			type:         type,
-			inverter:     dev.inverter === 'soyosource',
 			temp_display: dev.temp_display  || '',
 			pvp:          dev.pvp           || 0,
-			devices:      dev.devices       || {},	// SER# → name map for victron_agg
+			devices:      dev.devices       || {},	// SER# → {name,pvp,type} for victron_agg
 		};
 	});
 }
 
-function rsPortListToConf(ports) {
-	const rs485 = {};
+function chPortListToConf(ports) {
+	const chargers = {};
 	for (const p of ports) {
 		if (!p.path) continue;
 		const dev = {name: p.name};
-		if (p.type === RS_VICTRON) {
+		if (p.type === CH_VICTRON) {
 			dev.mppt_type = 'victron';
 			if (p.pvp) dev.pvp = parseInt(p.pvp);
-		} else if (p.type === RS_VICTRON_AGG) {
+		} else if (p.type === CH_VICTRON_AGG) {
 			dev.mppt_type = 'victron_agg';
 			if (p.name) dev.name = p.name;
 			dev.devices   = p.devices;
-		} else if (p.type === RS_ESMART) {
+		} else if (p.type === CH_ESMART) {
 			dev.mppt_type = 'eSmart3';
-			if (p.pvp)           dev.pvp          = parseInt(p.pvp);
-			if (p.inverter)      dev.inverter     = 'soyosource';
-			if (p.temp_display)  dev.temp_display  = p.temp_display;
-		} else {
-			dev.inverter = 'soyosource';
+			if (p.pvp)          dev.pvp          = parseInt(p.pvp);
+			if (p.temp_display) dev.temp_display = p.temp_display;
 		}
-		rs485[p.path] = dev;
+		chargers[p.path] = dev;
 	}
-	return rs485;
+	return chargers;
 }
 
-
-function rsRender() {
-	const list = document.getElementById('port-list');
+function chRender() {
+	const list = document.getElementById('ch-list');
 	list.innerHTML = '';
-	rsPorts.forEach(p => list.appendChild(rsMakeCard(p)));
+	chPorts.forEach(p => list.appendChild(chMakeCard(p)));
 }
 
-function rsEsc(s) {
+function chEsc(s) {
 	return (s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
 }
 
-function rsMakeCard(p) {
+function chMakeCard(p) {
 	const card = document.createElement('div');
 	card.className = 'port-card type-' + p.type + ' collapsed';
-	card.id = 'rscard-' + p.id;
-	const typeName  = {victron:'Victron', victron_agg:'Victron AGG', esmart3:'eSmart3', inverter:'Inverter only'};
-	const badgeCls  = {victron:'victron', victron_agg:'victron_agg', esmart3:'esmart3', inverter:'inverter'};
+	card.id = 'chcard-' + p.id;
+	const typeName = {victron:'Victron', victron_agg:'Victron AGG', esmart3:'eSmart3'};
+	const badgeCls = {victron:'victron', victron_agg:'victron_agg', esmart3:'esmart3'};
 	card.innerHTML = `
-<div class="card-header" onclick="rsToggleCard(${p.id})">
+<div class="card-header" onclick="chToggleCard(${p.id})">
 	<span class="type-badge ${badgeCls[p.type]}">${typeName[p.type]}</span>
-	<span class="card-path${p.path?'':' empty'}" id="rshdr-path-${p.id}">${p.path || 'new port'}</span>
-	<span class="card-name" id="rshdr-name-${p.id}">${p.name ? '· '+p.name : ''}</span>
-	<button class="rs-remove-btn" onclick="rsRemovePort(event,${p.id})">✕ remove</button>
+	<span class="card-path${p.path?'':' empty'}" id="chhdr-path-${p.id}">${p.path || 'new port'}</span>
+	<span class="card-name" id="chhdr-name-${p.id}">${p.name ? '· '+p.name : ''}</span>
+	<button class="rs-remove-btn" onclick="chRemovePort(event,${p.id})">✕ remove</button>
 	<span class="chevron">▼</span>
 </div>
 <div class="card-body">
 	<div class="field-row">
 		<label>Device path</label>
 		<div>
-			<input type="text" id="rspath-${p.id}" value="${rsEsc(p.path)}"
-				placeholder="/dev/ttyUSB0"
-				oninput="rsOnPath(${p.id},this.value)">
-			<div class="val-err" id="rspatherr-${p.id}">path already used</div>
+			<input type="text" id="chpath-${p.id}" value="${chEsc(p.path)}"
+				placeholder="/dev/ttyACM0"
+				oninput="chOnPath(${p.id},this.value)">
+			<div class="val-err" id="chpatherr-${p.id}">path already used</div>
 		</div>
 	</div>
 	<div class="field-row">
 		<label>Name</label>
-		<input type="text" id="rsname-${p.id}" value="${rsEsc(p.name)}"
+		<input type="text" id="chname-${p.id}" value="${chEsc(p.name)}"
 			placeholder="solar1"
-			oninput="rsOnField(${p.id},'name',this.value)">
+			oninput="chOnField(${p.id},'name',this.value)">
 	</div>
 	<div class="field-row">
 		<label>Type</label>
-		<select id="rstype-${p.id}" onchange="rsOnType(${p.id},this.value)">
-			<option value="${RS_VICTRON}"     ${p.type===RS_VICTRON    ?'selected':''}>Victron MPPT (single)</option>
-			<option value="${RS_VICTRON_AGG}" ${p.type===RS_VICTRON_AGG?'selected':''}>Victron AGG (aggregator)</option>
-			<option value="${RS_ESMART}"      ${p.type===RS_ESMART     ?'selected':''}>eSmart3 MPPT</option>
-			<option value="${RS_INVERTER}"    ${p.type===RS_INVERTER   ?'selected':''}>Inverter only (no MPPT)</option>
+		<select id="chtype-${p.id}" onchange="chOnType(${p.id},this.value)">
+			<option value="${CH_VICTRON}"     ${p.type===CH_VICTRON    ?'selected':''}>Victron MPPT (single)</option>
+			<option value="${CH_VICTRON_AGG}" ${p.type===CH_VICTRON_AGG?'selected':''}>Victron AGG (aggregator)</option>
+			<option value="${CH_ESMART}"      ${p.type===CH_ESMART     ?'selected':''}>eSmart3 MPPT</option>
 		</select>
 	</div>
-	${rsMakeTypeFields(p)}
+	${chMakeTypeFields(p)}
 </div>`;
 	return card;
 }
 
-function rsMakeTypeFields(p) {
-	if (p.type === RS_VICTRON) return `
-<p class="rs-hint">Victron devices cannot share a port with an inverter.</p>
+function chMakeTypeFields(p) {
+	if (p.type === CH_VICTRON) return `
 <div class="field-row">
 	<label>PVp W</label>
-	<input type="number" class="narrow" id="rspvp-${p.id}" value="${p.pvp || ''}"
+	<input type="number" class="narrow" id="chpvp-${p.id}" value="${p.pvp || ''}"
 		placeholder="0"
-		oninput="rsOnField(${p.id},'pvp',parseInt(this.value)||0)">
+		oninput="chOnField(${p.id},'pvp',parseInt(this.value)||0)">
 </div>`;
-	if (p.type === RS_VICTRON_AGG) return `
+	if (p.type === CH_VICTRON_AGG) return `
 <p class="rs-hint">Aggregator port — one physical port, multiple Victron MPPTs identified by SER#.</p>
 <div class="rs-section-label">Devices (SER# → Name)</div>
 <table class="devices-table">
 	<thead><tr><th>SER#</th><th>Name</th><th>PVp W</th><th>Type</th><th></th></tr></thead>
-	<tbody id="rsdevices-${p.id}">
-		${Object.entries(p.devices).map(([ser, name]) => rsDeviceRow(p.id, ser, name)).join('')}
+	<tbody id="chdevices-${p.id}">
+		${Object.entries(p.devices).map(([ser, name]) => chDeviceRow(p.id, ser, name)).join('')}
 	</tbody>
 </table>
-<button class="btn-add-device" onclick="rsAddDevice(${p.id})">+ Add device</button>`;
-	if (p.type === RS_ESMART) return `
+<button class="btn-add-device" onclick="chAddDevice(${p.id})">+ Add device</button>`;
+	if (p.type === CH_ESMART) return `
 <div class="field-row">
 	<label>PVp W</label>
-	<input type="number" class="narrow" id="rspvp-${p.id}" value="${p.pvp || ''}"
+	<input type="number" class="narrow" id="chpvp-${p.id}" value="${p.pvp || ''}"
 		placeholder="0"
-		oninput="rsOnField(${p.id},'pvp',parseInt(this.value)||0)">
+		oninput="chOnField(${p.id},'pvp',parseInt(this.value)||0)">
 </div>
-<label class="toggle-row">
-	<input type="checkbox" id="rsinv-${p.id}" ${p.inverter?'checked':''}
-		onchange="rsOnInv(${p.id},this.checked)">
-	<span class="toggle-track"></span>
-	<span class="toggle-label">Soyosource inverter on this port</span>
-</label>
 <div class="field-row">
 	<label>Temp display</label>
-	<input type="text" id="rstempdsp-${p.id}" value="${rsEsc(p.temp_display)}"
+	<input type="text" id="chtempdsp-${p.id}" value="${chEsc(p.temp_display)}"
 		placeholder="battery"
-		oninput="rsOnField(${p.id},'temp_display',this.value)">
+		oninput="chOnField(${p.id},'temp_display',this.value)">
 </div>
-<p class="rs-hint">Configure temperature alarms in the <strong>alarms</strong> tab.</p>`;
-	return `<p class="rs-hint">Soyosource inverter only — no MPPT charger on this port.</p>`;
+<p class="rs-hint">An inverter sharing this line is configured separately in the <strong>inverters</strong> tab with the same port. Temperature alarms in the <strong>alarms</strong> tab.</p>`;
+	return '';
 }
 
-function rsToggleCard(id) {
-	document.getElementById('rscard-'+id).classList.toggle('collapsed');
+function chToggleCard(id) {
+	document.getElementById('chcard-'+id).classList.toggle('collapsed');
 }
 
-function rsOnPath(id, val) {
-	const p = rsPorts.find(x => x.id === id);
+function chOnPath(id, val) {
+	const p = chPorts.find(x => x.id === id);
 	if (!p) return;
-	const dup = rsPorts.some(x => x.id !== id && x.path === val && val !== '');
-	const errEl = document.getElementById('rspatherr-'+id);
-	const inpEl = document.getElementById('rspath-'+id);
-	errEl.classList.toggle('visible', dup);
-	inpEl.classList.toggle('err-field', dup);
+	const dup = chPorts.some(x => x.id !== id && x.path === val && val !== '');
+	document.getElementById('chpatherr-'+id).classList.toggle('visible', dup);
+	document.getElementById('chpath-'+id).classList.toggle('err-field', dup);
 	p.path = val;
-	const hdr = document.getElementById('rshdr-path-'+id);
+	const hdr = document.getElementById('chhdr-path-'+id);
 	hdr.textContent = val || 'new port';
 	hdr.className = 'card-path' + (val?'':' empty');
 }
 
-function rsOnField(id, key, val) {
-	const p = rsPorts.find(x => x.id === id);
+function chOnField(id, key, val) {
+	const p = chPorts.find(x => x.id === id);
 	if (!p) return;
 	p[key] = val;
-	if (key === 'name') {
-		document.getElementById('rshdr-name-'+id).textContent = val ? '· '+val : '';
-	}
+	if (key === 'name') document.getElementById('chhdr-name-'+id).textContent = val ? '· '+val : '';
 }
 
-function rsDeviceRow(pid, ser, dev) {
+function chDeviceRow(pid, ser, dev) {
 	const name  = (typeof dev === 'object') ? (dev.name || '') : (dev || '');
 	const pvp   = (typeof dev === 'object') ? (dev.pvp  || '') : '';
 	const dtype = (typeof dev === 'object') ? (dev.type || 'mppt') : 'mppt';
 	return `<tr>
-		<td><input type="text"   value="${rsEsc(ser)}"  placeholder="HQ12345ABC" style="width:110px"
-			oninput="rsCollectDevices(${pid})"></td>
-		<td><input type="text"   value="${rsEsc(name)}" placeholder="VE 150/35"  style="width:100px"
-			oninput="rsCollectDevices(${pid})"></td>
+		<td><input type="text"   value="${chEsc(ser)}"  placeholder="HQ12345ABC" style="width:110px"
+			oninput="chCollectDevices(${pid})"></td>
+		<td><input type="text"   value="${chEsc(name)}" placeholder="VE 150/35"  style="width:100px"
+			oninput="chCollectDevices(${pid})"></td>
 		<td><input type="number" value="${pvp}" placeholder="0" class="pvp-input"
 			${dtype==='temp'?'style="display:none"':''}
-			oninput="rsCollectDevices(${pid})"></td>
-		<td><select oninput="rsCollectDevices(${pid})">
+			oninput="chCollectDevices(${pid})"></td>
+		<td><select oninput="chCollectDevices(${pid})">
 			<option value="mppt" ${dtype==='mppt'?'selected':''}>MPPT</option>
 			<option value="temp" ${dtype==='temp'?'selected':''}>Temp</option>
 		</select></td>
-		<td><button class="rs-remove-btn" onclick="this.closest('tr').remove();rsCollectDevices(${pid})">✕</button></td>
+		<td><button class="rs-remove-btn" onclick="this.closest('tr').remove();chCollectDevices(${pid})">✕</button></td>
 	</tr>`;
 }
 
-function rsAddDevice(pid) {
-	const tbody = document.getElementById('rsdevices-'+pid);
+function chAddDevice(pid) {
+	const tbody = document.getElementById('chdevices-'+pid);
 	if (!tbody) return;
 	const row = document.createElement('tr');
-	row.innerHTML = rsDeviceRow(pid, '', '').match(/<tr>([\s\S]*)<\/tr>/)[1];
+	row.innerHTML = chDeviceRow(pid, '', '').match(/<tr>([\s\S]*)<\/tr>/)[1];
 	tbody.appendChild(row);
 }
 
-function rsCollectDevices(pid) {
-	const p = rsPorts.find(x => x.id === pid);
+function chCollectDevices(pid) {
+	const p = chPorts.find(x => x.id === pid);
 	if (!p) return;
-	const tbody = document.getElementById('rsdevices-'+pid);
+	const tbody = document.getElementById('chdevices-'+pid);
 	if (!tbody) return;
 	p.devices = {};
 	tbody.querySelectorAll('tr').forEach(row => {
@@ -905,64 +891,48 @@ function rsCollectDevices(pid) {
 	});
 }
 
-function rsOnType(id, val) {
-	const p = rsPorts.find(x => x.id === id);
+function chOnType(id, val) {
+	const p = chPorts.find(x => x.id === id);
 	if (!p) return;
-	if (val === RS_VICTRON || val === RS_VICTRON_AGG) p.inverter = false;
-	if (val === RS_VICTRON_AGG && !p.devices) p.devices = {};
+	if (val === CH_VICTRON_AGG && !p.devices) p.devices = {};
 	p.type = val;
-	const list = document.getElementById('port-list');
-	const old  = document.getElementById('rscard-'+id);
-	list.replaceChild(rsMakeCard(p), old);
+	const list = document.getElementById('ch-list');
+	list.replaceChild(chMakeCard(p), document.getElementById('chcard-'+id));
 }
 
-function rsOnInv(id, checked) {
-	const p = rsPorts.find(x => x.id === id);
-	if (!p) return;
-	p.inverter = checked;
-}
-
-function rsAddPort() {
-	const p = {
-		id: rsNextId++, path:'', name:'', type: RS_ESMART, inverter: false,
-		temp_display:'', pvp: 0, devices: {}
-	};
-	rsPorts.push(p);
-	const list = document.getElementById('port-list');
-	list.appendChild(rsMakeCard(p));
+function chAddPort() {
+	const p = {id: chNextId++, path:'', name:'', type: CH_ESMART, temp_display:'', pvp: 0, devices: {}};
+	chPorts.push(p);
+	document.getElementById('ch-list').appendChild(chMakeCard(p));
 	setTimeout(() => {
-		const el = document.getElementById('rspath-'+p.id);
+		const el = document.getElementById('chpath-'+p.id);
 		if (el) { el.scrollIntoView({behavior:'smooth', block:'center'}); el.focus(); }
 	}, 50);
 }
 
-function rsRemovePort(evt, id) {
+function chRemovePort(evt, id) {
 	evt.stopPropagation();
-	rsPorts = rsPorts.filter(x => x.id !== id);
-	const card = document.getElementById('rscard-'+id);
+	chPorts = chPorts.filter(x => x.id !== id);
+	const card = document.getElementById('chcard-'+id);
 	if (card) card.remove();
 }
 
-
-function rsValidate() {
-	const paths = rsPorts.map(p => p.path).filter(Boolean);
+function chValidate() {
+	const paths = chPorts.map(p => p.path).filter(Boolean);
 	if (new Set(paths).size !== paths.length) {
-		msg('Duplicate port paths — cannot save', 'err');
-		return false;
+		msg('Duplicate charger paths — cannot save', 'err'); return false;
 	}
-	// collect all device names across ports and victron_agg device tables
 	const names = [];
-	for (const p of rsPorts) {
+	for (const p of chPorts) {
 		if (p.name) names.push(p.name);
-		if (p.type === RS_VICTRON_AGG) {
+		if (p.type === CH_VICTRON_AGG) {
 			for (const dev of Object.values(p.devices || {})) {
 				const n = typeof dev === 'object' ? dev.name : dev;
 				if (n) names.push(n);
 			}
 		}
 	}
-	const nameSet = new Set(names);
-	if (nameSet.size !== names.length) {
+	if (new Set(names).size !== names.length) {
 		const dupes = names.filter((n, i) => names.indexOf(n) !== i);
 		msg('Duplicate device names: ' + [...new Set(dupes)].join(', ') + ' — cannot save', 'err');
 		return false;
@@ -970,36 +940,408 @@ function rsValidate() {
 	return true;
 }
 
-function rsConfirmSave() {
-	if (!rsValidate()) return;
+let _saveKind = null;	// 'chargers' | 'inverters' — which block the restart modal will save
+
+function chConfirmSave() {
+	if (!chValidate()) return;
+	_saveKind = 'chargers';
 	document.getElementById('restart-modal').classList.add('visible');
 }
 
-function rsCloseModal() {
-	document.getElementById('restart-modal').classList.remove('visible');
-}
-
-async function rsSave() {
+async function chSave() {
 	rsCloseModal();
 	try {
-		// collect devices from DOM for any victron_agg ports
-		rsPorts.forEach(p => { if (p.type === RS_VICTRON_AGG) rsCollectDevices(p.id); });
-		const rs485     = rsPortListToConf(rsPorts);
-		const updates   = {rs485};
+		chPorts.forEach(p => { if (p.type === CH_VICTRON_AGG) chCollectDevices(p.id); });
+		const chargers = chPortListToConf(chPorts);
+		const updates  = {chargers};
 		const r = await fetch(API + '/api/conf', {
 			method:'POST', headers:{'Content-Type':'application/json'},
 			body: JSON.stringify({updates})
 		});
 		const d = await r.json();
-		if (d.ok) {
-			msg('RS485 config saved — restart zeroinput to apply', 'ok');
-			Object.assign(confData, updates);
-		} else {
-			msg('Error: ' + d.error, 'err');
-		}
-	} catch(e) {
-		msg('Error: ' + e.message, 'err');
+		if (d.ok) { msg('Chargers saved — restart zeroinput to apply', 'ok'); Object.assign(confData, updates); }
+		else      { msg('Error: ' + d.error, 'err'); }
+	} catch(e) { msg('Error: ' + e.message, 'err'); }
+}
+
+// ── inverters tab ─────────────────────────────────────────────────────────────
+
+const INV_TYPES = {soyosource: 'Soyosource', victron_mk3: 'Victron MK3 (MultiPlus)'};
+
+let invItems = [];
+let invNextId = 0;
+
+function invConfToList(inverters) {
+	return Object.entries(inverters).map(([id, dev]) => {
+		let stages = dev.stage;
+		if (typeof stages === 'number') stages = [stages];
+		if (!Array.isArray(stages)) stages = [1];
+		return {
+			uid:        invNextId++,
+			id:         id,
+			name:       dev.name      || '',
+			type:       dev.type      || 'soyosource',
+			port:       dev.port      || '',
+			stage1:     stages.includes(1),
+			stage2:     stages.includes(2),
+			count:      dev.count     || 1,
+			max_power:  dev.max_power || 0,
+			min_power:  dev.min_power || 0,
+			ess_sign:   dev.mk3_ess_sign == null ? 1 : dev.mk3_ess_sign,
+		};
+	});
+}
+
+function invListToConf(items) {
+	const inverters = {};
+	for (const it of items) {
+		if (!it.id) continue;
+		const stage = [];
+		if (it.stage1) stage.push(1);
+		if (it.stage2) stage.push(2);
+		const dev = {
+			name:      it.name,
+			type:      it.type,
+			port:      it.port,
+			stage:     stage,
+			count:     parseInt(it.count)     || 1,
+			max_power: parseInt(it.max_power)  || 0,
+			min_power: parseInt(it.min_power)  || 0,
+		};
+		if (it.type === 'victron_mk3' && parseInt(it.ess_sign) === -1) dev.mk3_ess_sign = -1;
+		inverters[it.id] = dev;
 	}
+	return inverters;
+}
+
+function invRender() {
+	const list = document.getElementById('inv-list');
+	list.innerHTML = '';
+	invItems.forEach(it => list.appendChild(invMakeCard(it)));
+}
+
+function invEsc(s) {
+	return (s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+}
+
+function invMakeCard(it) {
+	const card = document.createElement('div');
+	card.className = 'port-card type-' + it.type + ' collapsed';
+	card.id = 'invcard-' + it.uid;
+	card.innerHTML = `
+<div class="card-header" onclick="invToggleCard(${it.uid})">
+	<span class="type-badge ${it.type}">${INV_TYPES[it.type]||it.type}</span>
+	<span class="card-path${it.id?'':' empty'}" id="invhdr-id-${it.uid}">${invEsc(it.id) || 'new inverter'}</span>
+	<span class="card-name" id="invhdr-name-${it.uid}">${it.name ? '· '+invEsc(it.name) : ''} ${invStageLabel(it)}</span>
+	<button class="rs-remove-btn" onclick="invRemove(event,${it.uid})">✕ remove</button>
+	<span class="chevron">▼</span>
+</div>
+<div class="card-body">
+	<div class="field-row">
+		<label>ID</label>
+		<div>
+			<input type="text" id="invid-${it.uid}" value="${invEsc(it.id)}"
+				placeholder="mp2" oninput="invOnId(${it.uid},this.value)">
+			<div class="val-err" id="inviderr-${it.uid}">id already used</div>
+		</div>
+	</div>
+	<div class="field-row">
+		<label>Name</label>
+		<input type="text" id="invname-${it.uid}" value="${invEsc(it.name)}"
+			placeholder="MultiPlus II" oninput="invOnField(${it.uid},'name',this.value)">
+	</div>
+	<div class="field-row">
+		<label>Type</label>
+		<select id="invtype-${it.uid}" onchange="invOnType(${it.uid},this.value)">
+			<option value="soyosource"  ${it.type==='soyosource' ?'selected':''}>Soyosource</option>
+			<option value="victron_mk3" ${it.type==='victron_mk3'?'selected':''}>Victron MK3 (MultiPlus)</option>
+		</select>
+	</div>
+	<div class="field-row">
+		<label>Port</label>
+		<div>
+			<input type="text" id="invport-${it.uid}" value="${invEsc(it.port)}"
+				placeholder="/dev/ttyUSB0" oninput="invOnPort(${it.uid},this.value)">
+			<div class="val-err" id="invporterr-${it.uid}">port already used by another inverter</div>
+		</div>
+	</div>
+	<div class="field-row">
+		<label>Stage</label>
+		<div style="display:flex;gap:18px;align-items:center;">
+			<label class="toggle-row" style="margin:0;">
+				<input type="checkbox" id="invs1-${it.uid}" ${it.stage1?'checked':''}
+					onchange="invOnStage(${it.uid},1,this.checked)">
+				<span class="toggle-track"></span><span class="toggle-label">Stage 1 (base)</span>
+			</label>
+			<label class="toggle-row" style="margin:0;">
+				<input type="checkbox" id="invs2-${it.uid}" ${it.stage2?'checked':''}
+					onchange="invOnStage(${it.uid},2,this.checked)">
+				<span class="toggle-track"></span><span class="toggle-label">Stage 2</span>
+			</label>
+		</div>
+	</div>
+	<div class="field-row">
+		<label>Count</label>
+		<input type="number" class="narrow" id="invcount-${it.uid}" value="${it.count}"
+			placeholder="1" min="1" oninput="invOnField(${it.uid},'count',parseInt(this.value)||1)">
+	</div>
+	<div class="field-row">
+		<label>Max power W</label>
+		<input type="number" class="narrow" id="invmax-${it.uid}" value="${it.max_power||''}"
+			placeholder="900" oninput="invOnField(${it.uid},'max_power',parseInt(this.value)||0)">
+	</div>
+	<div class="field-row">
+		<label>Min power W</label>
+		<input type="number" class="narrow" id="invmin-${it.uid}" value="${it.min_power||''}"
+			placeholder="10" oninput="invOnField(${it.uid},'min_power',parseInt(this.value)||0)">
+	</div>
+	${invMakeTypeFields(it)}
+</div>`;
+	return card;
+}
+
+function invMakeTypeFields(it) {
+	if (it.type === 'soyosource') return `
+<p class="rs-hint">Per-unit max/min power. Multiple identical units on one port via count — they share one broadcast packet.</p>`;
+	if (it.type === 'victron_mk3') return `
+<div class="field-row">
+	<label>ESS sign</label>
+	<select id="invsign-${it.uid}" onchange="invOnField(${it.uid},'ess_sign',parseInt(this.value))">
+		<option value="1"  ${it.ess_sign!==-1?'selected':''}>1 (normal: positive = feed-in)</option>
+		<option value="-1" ${it.ess_sign===-1?'selected':''}>-1 (flip feed-in direction)</option>
+	</select>
+</div>
+<p class="rs-hint">Needs an MK2/MK3-USB adapter and ESS assistant configured in VEConfigure. No GX required.</p>`;
+	return '';
+}
+
+function invToggleCard(uid) {
+	document.getElementById('invcard-'+uid).classList.toggle('collapsed');
+}
+
+function invOnId(uid, val) {
+	const it = invItems.find(x => x.uid === uid);
+	if (!it) return;
+	const dup = invItems.some(x => x.uid !== uid && x.id === val && val !== '');
+	document.getElementById('inviderr-'+uid).classList.toggle('visible', dup);
+	document.getElementById('invid-'+uid).classList.toggle('err-field', dup);
+	it.id = val;
+	const hdr = document.getElementById('invhdr-id-'+uid);
+	hdr.textContent = val || 'new inverter';
+	hdr.className = 'card-path' + (val?'':' empty');
+}
+
+function invOnPort(uid, val) {
+	const it = invItems.find(x => x.uid === uid);
+	if (!it) return;
+	const dup = invItems.some(x => x.uid !== uid && x.port === val && val !== '');
+	document.getElementById('invporterr-'+uid).classList.toggle('visible', dup);
+	document.getElementById('invport-'+uid).classList.toggle('err-field', dup);
+	it.port = val;
+}
+
+function invOnField(uid, key, val) {
+	const it = invItems.find(x => x.uid === uid);
+	if (!it) return;
+	it[key] = val;
+	if (key === 'name') invUpdateHdr(it);
+}
+
+function invOnStage(uid, stage, checked) {
+	const it = invItems.find(x => x.uid === uid);
+	if (!it) return;
+	it['stage'+stage] = checked;
+	invUpdateHdr(it);
+}
+
+function invStageLabel(it) {
+	if (!it.stage1 && !it.stage2)
+		return '<span style="color:var(--danger,#d9534f)">disabled</span>';
+	const s = (it.stage1?'1':'') + (it.stage1&&it.stage2?',':'') + (it.stage2?'2':'');
+	return '<span style="color:var(--muted)">stage ' + s + '</span>';
+}
+
+function invUpdateHdr(it) {
+	const el = document.getElementById('invhdr-name-'+it.uid);
+	if (el) el.innerHTML = (it.name ? '· '+invEsc(it.name) : '') + ' ' + invStageLabel(it);
+}
+
+function invOnType(uid, val) {
+	const it = invItems.find(x => x.uid === uid);
+	if (!it) return;
+	it.type = val;
+	const list = document.getElementById('inv-list');
+	list.replaceChild(invMakeCard(it), document.getElementById('invcard-'+uid));
+}
+
+function invAddInverter() {
+	const it = {uid: invNextId++, id:'', name:'', type:'soyosource', port:'',
+	            stage1:true, stage2:false, count:1, max_power:0, min_power:0, ess_sign:1};
+	invItems.push(it);
+	document.getElementById('inv-list').appendChild(invMakeCard(it));
+	setTimeout(() => {
+		const el = document.getElementById('invid-'+it.uid);
+		if (el) { el.scrollIntoView({behavior:'smooth', block:'center'}); el.focus(); }
+	}, 50);
+}
+
+function invRemove(evt, uid) {
+	evt.stopPropagation();
+	invItems = invItems.filter(x => x.uid !== uid);
+	const card = document.getElementById('invcard-'+uid);
+	if (card) card.remove();
+}
+
+function invValidate() {
+	const ids = invItems.map(it => it.id).filter(Boolean);
+	if (new Set(ids).size !== ids.length) {
+		msg('Duplicate inverter ids — cannot save', 'err'); return false;
+	}
+	const ports = invItems.map(it => it.port).filter(Boolean);
+	if (new Set(ports).size !== ports.length) {
+		msg('Two inverters share a port — only one sender per port (use count) — cannot save', 'err');
+		return false;
+	}
+	for (const it of invItems) {
+		if (!it.id)   { msg('An inverter has no id — cannot save', 'err'); return false; }
+		// no stage selected is allowed: it deactivates the inverter (kept in config, never fed)
+	}
+	return true;
+}
+
+// coverage-gap check — mirrors input_power_staging.find_coverage_gaps (Python).
+// Returns array of [from_w, to_w] uncovered delivered-power bands.
+function invFindGaps(items, singleThreshold, maxInputPower) {
+	// build lightweight drivers from current editor items (skip disabled = no stage)
+	const drivers = items
+		.filter(it => it.id && (it.stage1 || it.stage2))
+		.map(it => ({
+			id: it.id,
+			stages: [].concat(it.stage1?[1]:[], it.stage2?[2]:[]),
+			count: parseInt(it.count)||1,
+			min_power: parseInt(it.min_power)||0,
+			max_power: parseInt(it.max_power)||0,
+		}));
+	if (!drivers.length || maxInputPower <= 0) return [];
+
+	function activeStage(demand) {
+		return demand <= singleThreshold ? 1 : 2;
+	}
+	// equal-share-with-saturation over a list of unit max_powers -> array of watts
+	function equalShareSat(demand, caps) {
+		const n = caps.length, assigned = new Array(n).fill(0), sat = new Array(n).fill(false);
+		let rem = demand;
+		for (let pass=0; pass<=n; pass++) {
+			const open = []; for (let i=0;i<n;i++) if (!sat[i]) open.push(i);
+			if (!open.length || rem<=1e-9) break;
+			const share = rem/open.length;
+			let newly=[];
+			open.forEach(i => { if (share >= caps[i]) newly.push(i); });
+			if (newly.length) { newly.forEach(i=>{assigned[i]=caps[i]; rem-=caps[i]; sat[i]=true;}); continue; }
+			open.forEach(i => assigned[i]=share); rem=0; break;
+		}
+		return assigned;
+	}
+	// mirrors input_power_staging.distribute(); returns {delivered, active}
+	function deliver(demand) {
+		const stage = activeStage(demand);
+		const elig = drivers.filter(d => d.stages.includes(stage));
+		if (!elig.length || demand <= 0) return {delivered:0, active:0};
+		let units = [];
+		elig.forEach(d => { for (let k=0;k<d.count;k++) units.push(d.max_power); });
+		let assigned = equalShareSat(demand, units);
+		let perDrv = {}, pos=0;
+		elig.forEach(d => {
+			let s=0; for (let k=0;k<d.count;k++) s+=assigned[pos+k]; pos+=d.count;
+			perDrv[d.id] = d.count ? s/d.count : 0;
+		});
+		// min_power sleep with redistribution of freed load to survivors
+		const sleepers = elig.filter(d => perDrv[d.id] > 0 && perDrv[d.id] < d.min_power);
+		if (sleepers.length) {
+			let freed = sleepers.reduce((s,d)=>s+perDrv[d.id]*d.count, 0);
+			const survivors = elig.filter(d => !sleepers.includes(d));
+			sleepers.forEach(d => perDrv[d.id]=0);
+			if (survivors.length && freed > 0) {
+				let units2 = [];
+				survivors.forEach(d => { for (let k=0;k<d.count;k++) units2.push(d.max_power); });
+				let base = survivors.reduce((s,d)=>s+perDrv[d.id]*d.count, 0);
+				let assigned2 = equalShareSat(base+freed, units2);
+				let p2=0;
+				survivors.forEach(d => {
+					let s=0; for (let k=0;k<d.count;k++) s+=assigned2[p2+k]; p2+=d.count;
+					perDrv[d.id] = d.count ? s/d.count : 0;
+				});
+			}
+		}
+		let delivered=0, active=0;
+		elig.forEach(d => {
+			let v = perDrv[d.id];
+			if (v >= d.min_power && v > 0) {
+				v = Math.max(d.min_power, Math.min(Math.round(v), d.max_power));
+				delivered += v*d.count; active += d.count;
+			}
+		});
+		return {delivered, active};
+	}
+
+	const minPowers = drivers.map(d=>d.min_power).filter(m=>m>0);
+	const start = minPowers.length ? Math.min(...minPowers) : 1;
+	const gaps = [];
+	let prevDeliv=0, prevActive=0, firstStep=true;
+	for (let demand=start; demand<=maxInputPower; demand++) {
+		const {delivered, active} = deliver(demand);
+		const allowed = Math.max(prevActive, active) + 1;
+		if (firstStep) { if (delivered>0) firstStep=false; }
+		else if (delivered - prevDeliv > allowed) gaps.push([prevDeliv, delivered]);
+		prevDeliv = delivered; prevActive = active;
+	}
+	return gaps;
+}
+
+function invConfirmSave() {
+	if (!invValidate()) return;
+	// coverage-gap check — block with an unmissable warning, allow override
+	const thr  = parseInt(confData.single_inverter_threshold) || 0;
+	const maxp = parseInt(confData.max_input_power) || 0;
+	const gaps = invFindGaps(invItems, thr, maxp);
+	if (gaps.length) {
+		const lines = gaps.map(([a,b]) => `  ${a} W  …  ${b} W   (${b-a} W uncovered)`).join('\n');
+		const ok = confirm(
+			'⚠ POWER COVERAGE GAP\n\n' +
+			'The inverter configuration cannot deliver these power range(s).\n' +
+			'Regulation will jump across them:\n\n' + lines + '\n\n' +
+			'Fix min_power / max_power / stage so the range is seamless.\n\n' +
+			'Save anyway?');
+		if (!ok) return;
+	}
+	_saveKind = 'inverters';
+	document.getElementById('restart-modal').classList.add('visible');
+}
+
+async function invSave() {
+	rsCloseModal();
+	try {
+		const inverters = invListToConf(invItems);
+		const updates   = {inverters};
+		const r = await fetch(API + '/api/conf', {
+			method:'POST', headers:{'Content-Type':'application/json'},
+			body: JSON.stringify({updates})
+		});
+		const d = await r.json();
+		if (d.ok) { msg('Inverters saved — restart zeroinput to apply', 'ok'); Object.assign(confData, updates); }
+		else      { msg('Error: ' + d.error, 'err'); }
+	} catch(e) { msg('Error: ' + e.message, 'err'); }
+}
+
+// ── restart modal (shared by chargers + inverters) ─────────────────────────────
+
+function rsCloseModal() {
+	document.getElementById('restart-modal').classList.remove('visible');
+}
+
+function rsModalConfirm() {
+	if (_saveKind === 'chargers')  chSave();
+	else if (_saveKind === 'inverters') invSave();
 }
 
 // close modal on overlay click
