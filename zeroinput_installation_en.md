@@ -1,26 +1,30 @@
 # zeroinput – Installation Guide
-*v2.0*
+*v2.1*
 
 ## Overview
 
 zeroinput is a Python script for PV zero feed-in (self-consumption optimisation) on a Raspberry Pi.
-It reads the electricity meter via vzlogger and controls one or more Soyosource Grid-Tie Inverters over RS485 – switching between single-inverter and full operation depending on load.
+It reads the electricity meter via vzlogger and controls one or more battery grid-tie inverters over RS485 or USB — switching between power stages depending on load. Supported inverter types: Soyosource GTN limiter series and Victron MultiPlus (ESS via MK3-USB adapter).
 
 zeroinput relies on **vzlogger** from the [Volkszähler](https://www.volkszaehler.org/) project in two ways:
 - as the **meter data source** — vzlogger reads the electricity meter and streams the active power value (`1-0:16.7.0`) to zeroinput via a FIFO
-- as the **data logger** — zeroinput writes its own values (feed-in power, battery voltage, PV power, …) back to vzlogger, which logs them alongside the other Volkszähler channels already present in your installation
+- as the **data logger** — zeroinput writes its own values (feed-in power, battery voltage, PV power, …) back to vzlogger, which logs them alongside the other Volkszähler channels
 
-zeroinput therefore integrates naturally into an existing Volkszähler setup without replacing or duplicating it.
+zeroinput integrates naturally into an existing Volkszähler setup without replacing or duplicating it.
 
 **Files:**
 
 | File | Description |
 |---|---|
 | `zeroinput.py` | Main script |
+| `input_power_staging.py` | Two-stage power distribution logic |
+| `inverter_drivers.py` | Inverter driver abstraction (Soyosource, Victron MK3) |
+| `vebus.py` | VE.Bus MK2/MK3 protocol driver (only needed for Victron MultiPlus) |
 | `predictor.py` | Load predictor (k-means, optional) |
 | `webconfig.py` | HTTP configuration server (optional, requires `-httpd`) |
-| [`ve_aggregator.py`](https://github.com/E-t0m/ve.direct-aggregator) | [VE.Direct Aggregator](https://github.com/E-t0m/ve.direct-aggregator) client (optional, required for `victron_agg`) |
-| `zeroinput.conf` | Configuration (JSON) |
+| [`ve_aggregator.py`](https://github.com/E-t0m/ve.direct-aggregator) | VE.Direct Aggregator client (optional, only for `victron_agg`) |
+| `zeroinput.conf` | Configuration (JSON) — create from `zeroinput.conf.starter` |
+| `zeroinput.conf.starter` | Reference configuration showing all available device classes |
 | `zeroinput_webconfig.html` | Web interface |
 | `zeroinput.service` | systemd service |
 | `zerooutput.sh` | Live status in terminal (`/usr/local/bin/zerooutput.sh`) |
@@ -33,22 +37,22 @@ zeroinput therefore integrates naturally into an existing Volkszähler setup wit
 ### Hardware
 
 - Raspberry Pi (tested with Pi 3/4)
-- Soyosource GTI inverter(s) with RS485 connection
-- eSmart3 or Victron MPPT charge controller with RS485/VE.Direct
-- RS485 adapter (USB) – wiring: **A+ to A+, B- to B-** on all devices
+- One or more inverters:
+  - **Soyosource GTN limiter** (GTN-1000/1200/2000 with RS485 limiter port) — wired via USB RS485 adapter
+  - **Victron MultiPlus / MultiPlus-II** (VE.Bus, 2nd-gen microprocessor) with MK2-USB or MK3-USB adapter — ESS assistant must be configured in VEConfigure
+- MPPT charge controller: eSmart3 (RS485) or Victron MPPT (VE.Direct or Aggregator)
+- RS485 adapter (USB) — wiring: **A+ to A+, B- to B-** on all devices
 - Electricity meter with extended data output (request PIN from your grid operator)
-  The OBIS dataset `1-0:16.7.0` (net active power) **must** be available – without this value control is not possible!
-- Meter interface – compatible with anything vzlogger can read, e.g.:
-  - IR read head (e.g. Hichi USB)
-  - Shelly 3EM / 3PM
-  - Modbus meter
-  - Any device providing OBIS `1-0:16.7.0` (active power)
+  The OBIS dataset `1-0:16.7.0` (net active power) **must** be available
+- Meter interface compatible with vzlogger (IR read head, Shelly 3EM/3PM, Modbus meter, …)
 
 ### Software
 
 ```bash
 sudo apt install python3 python3-serial vzlogger
 ```
+
+For Victron MultiPlus support, pyserial is already included above. No additional libraries required — `vebus.py` uses only the standard serial port.
 
 ---
 
@@ -58,13 +62,14 @@ sudo apt install python3 python3-serial vzlogger
 
 ```bash
 sudo useradd -m -s /bin/bash vzlogger   # if not already existing
-sudo usermod -aG dialout vzlogger          # RS485 access
-sudo cp zeroinput.py /home/vzlogger/
-sudo cp predictor.py /home/vzlogger/      # optional
-sudo cp webconfig.py /home/vzlogger/      # optional, only for -httpd
-sudo cp ve_aggregator.py /home/vzlogger/  # optional, only for victron_agg
+sudo usermod -aG dialout vzlogger       # RS485 and USB serial access
+sudo cp zeroinput.py input_power_staging.py inverter_drivers.py /home/vzlogger/
+sudo cp vebus.py /home/vzlogger/        # only needed for Victron MultiPlus
+sudo cp predictor.py /home/vzlogger/    # optional
+sudo cp webconfig.py /home/vzlogger/    # optional, only for -httpd
+sudo cp ve_aggregator.py /home/vzlogger/ # optional, only for victron_agg
 sudo cp zeroinput.conf zeroinput_webconfig.html zeroinput.service /home/vzlogger/
-sudo cp timer.txt /home/vzlogger/        # optional
+sudo cp timer.txt /home/vzlogger/       # optional
 sudo chown vzlogger:vzlogger /home/vzlogger/*.py /home/vzlogger/*.conf /home/vzlogger/*.html
 ```
 
@@ -78,6 +83,8 @@ Create `/etc/udev/rules.d/99-zeroinput.rules`:
 SUBSYSTEMS=="usb-serial", DRIVERS=="cp210x", SYMLINK+="lesekopf"
 # RS485 adapter (ch341 chip)
 SUBSYSTEMS=="usb-serial", DRIVERS=="ch341-uart", SYMLINK+="rs485"
+# MK3-USB adapter (FTDI chip)
+SUBSYSTEMS=="usb-serial", DRIVERS=="ftdi_sio", SYMLINK+="mk3usb"
 ```
 
 With multiple identical adapters, distinguish by USB port:
@@ -91,9 +98,7 @@ Then: `sudo udevadm control --reload-rules && sudo udevadm trigger`
 
 ### 3. Create FIFO and directory
 
-The FIFO must exist before both vzlogger **and** zeroinput start. The cleanest solution is to create it in the vzlogger.service unit.
-
-Add the following lines to `/etc/systemd/system/vzlogger.service`:
+The FIFO must exist before both vzlogger **and** zeroinput start. Add the following lines to `/etc/systemd/system/vzlogger.service`:
 
 ```ini
 [Service]
@@ -115,109 +120,94 @@ sudo sh -c 'echo "vzlogger ALL=(root) NOPASSWD: /bin/systemctl restart zeroinput
 sudo chmod 440 /etc/sudoers.d/zeroinput
 ```
 
-This ensures vzlogger creates the FIFO on startup and zeroinput finds it ready.
-
 ### 4. Configure vzlogger
 
-> **Tip:** Once zeroinput is running with `-httpd`, most settings — including RS485 ports, vz channels, and the discharge timer — can be edited comfortably in the browser at `http://<hostname>:8081/`. Direct file editing is only required for the initial setup or for keys that need a restart (see section 5).
-
-zeroinput automatically generates a template `vzlogger.conf.example` in the same directory as `zeroinput.py` on startup, based on the current `zeroinput.conf`. It already contains:
-
-- The mandatory `1-0:16.7.0` channel with UUID placeholder
-- All configured `vz_channels` with their own UUID placeholders
-- The correct FIFO path
+zeroinput generates a template `vzlogger.conf.example` on startup based on the current `zeroinput.conf`. It already contains the mandatory `1-0:16.7.0` channel and all `vz_channels` with UUID placeholders.
 
 **Steps:**
-1. Start zeroinput once – `vzlogger.conf.example` is created in the directory of `zeroinput.py`
-2. Open the file, create a channel in the Volkszähler interface for each entry and insert the UUID
+1. Start zeroinput once — `vzlogger.conf.example` is created in the working directory
+2. Create a channel in the Volkszähler interface for each entry and insert its UUID
 3. Adjust `device` (read head path) and `middleware` URL
-4. Copy as `/etc/vzlogger.conf`: `sudo cp vzlogger.conf.example /etc/vzlogger.conf`
+4. `sudo cp vzlogger.conf.example /etc/vzlogger.conf`
 5. `sudo systemctl restart vzlogger`
 
-> The file is rewritten on every zeroinput start and automatically updated when `vz_channels` are changed in the web interface.
+The `1-0:16.7.0` channel (active power) **must** be present.
 
-The `1-0:16.7.0` channel (active power) **must** be present – without this value control is not possible.
+> **Note:** Depending on channel resolution, vzlogger may write large amounts of data. See [data volume management](https://wiki.volkszaehler.org/howto/datenmengen). zeroinput uses `verbosity: 15` only to receive meter values from the FIFO — surplus log entries are discarded.
 
-> **Note:** Depending on the resolution of configured channels, vzlogger may write large amounts of data to the database. See [data volume management](https://wiki.volkszaehler.org/howto/datenmengen) to avoid database overflow. zeroinput uses `verbosity: 15` only to receive all meter values from the FIFO – surplus log entries are discarded.
+### 5. Create zeroinput.conf
 
-### 5. Adjust zeroinput.conf
+Copy `zeroinput.conf.starter` to `zeroinput.conf` and adapt it to your hardware. The starter file contains all available device classes with comments. **Delete the entries you do not need.**
 
-zeroinput starts even with unconfigured RS485 ports, so the web interface is available immediately after the service starts. **Configure everything in the browser at `http://<hostname>:8081/`** — including RS485 ports, vz channels, and all other settings.
+zeroinput starts even without fully configured ports, so the web interface is available immediately. **Configure everything in the browser at `http://<hostname>:8081/`** — chargers, inverters, vz channels, alarms, and all other settings.
 
-The only key that must be set before the first start is `webconfig_port` (default: `8081`). It is already set in the provided `zeroinput.conf`.
-
-Direct file editing is a fallback if the web interface is not reachable:
-
-```bash
-nano /home/vzlogger/zeroinput.conf
-```
+> **Important:** Edit `chargers` and `inverters` via the dedicated tabs in the web interface or directly in the conf file. These blocks require a restart after saving — use the **restart** tab.
 
 Key settings:
 
 | Key | Description |
 |---|---|
-| `rs485` | RS485 ports and device names |
-| `basic_load_inverter_port` | Port of the base load inverter |
-| `total_number_of_inverters` | Total number of inverters across all ports. In multi-inverter mode, zeroinput divides the demand by this value and sends that fraction to each RS485 port. Multiple inverters wired in parallel on one port all respond to the same packet and each feed that fraction – so they effectively multiply it. **If this value does not match the actual number of physical inverters, the total feed-in power will be wrong.** Hot-reloadable. |
-| `max_input_power` | Maximum total power of all inverters (W) |
+| `chargers` | MPPT chargers and temperature sensors (port → device config). Structural — restart required. |
+| `inverters` | Feed-in inverters (id → device config). Structural — restart required. |
+| `max_input_power` | Maximum total feed-in power of all inverters combined (W). Set to 0 to disable feed-in. |
 | `max_bat_discharge` | Maximum battery discharge power (W) |
-| `webconfig_port` | Web server port (0 = disabled) |
+| `single_inverter_threshold` | Demand level above which stage 2 activates (W) |
+| `multi_inverter_wait` | Seconds before falling back to stage 1 |
+| `webconfig_port` | Web server port (default 8081, 0 = disabled) |
 | `vz_channels` | Volkszähler channel mapping (editable in web interface) |
+| `load_prediction` | Enable load predictor (true/false) |
+| `discharge_timer` | Enable timer-based control (true/false) |
 
-> **Important:** Device names (`name`) must be unique – zeroinput will exit on startup if duplicates are found.
+> **Important:** Device names (`name`) must be unique — zeroinput exits on startup if duplicates are found.
 
-**Example rs485 configuration:**
+**Example chargers block:**
 
 ```json
-"rs485": {
-    "/dev/ttyACM0": {
-        "name": "esmart 60",
-        "mppt_type": "eSmart3",
-        "pvp": 900,
-        "inverter": "soyosource",
-        "temp_display": "out",
-        "alarm": {
-            "temp_int": 45, "int_cmd": "mpg321 /home/vzlogger/voice/alarm.mp3 &", "int_interval": 300,
-            "temp_ext": 35, "ext_cmd": "",                                          "ext_interval": 300
-        }
-    },
-    "/dev/ttyACM1": {
-        "name": "esmart 40",
-        "mppt_type": "eSmart3",
-        "inverter": "soyosource",
-        "temp_display": "bat",
-        "alarm": {
-            "temp_int": 50, "int_cmd": "mpg321 /home/vzlogger/voice/alarm.mp3 &", "int_interval": 300,
-            "temp_ext": 40, "ext_cmd": "./alarm_akku.sh &",                        "ext_interval": 300
-        }
-    },
-    "/dev/ttyACM2": {"name": "VE 150/35", "mppt_type": "victron"},
-    "/dev/ttyACM3": {"name": "soyo",       "inverter": "soyosource"}
+"chargers": {
+    "/dev/ttyACM0": {"name": "esmart 60", "mppt_type": "eSmart3", "pvp": 2350, "temp_display": "out"},
+    "/dev/ttyACM1": {"name": "esmart 40", "mppt_type": "eSmart3", "pvp": 1690, "temp_display": "bat"},
+    "/dev/ttyACM2": {"name": "VE 150/35", "mppt_type": "victron", "pvp": 1720}
 }
 ```
 
-For a single Victron MPPT on its own port:
+**Example inverters block:**
 
 ```json
-"/dev/ttyACM2": {"name": "VE 150/35", "mppt_type": "victron", "pvp": 1500}
+"inverters": {
+    "base":  {"name": "soyo base", "type": "soyosource",  "port": "/dev/ttyACM3",
+              "stage": [1,2], "count": 1, "max_power": 900, "min_power": 10},
+    "mp2":   {"name": "MultiPlus II", "type": "victron_mk3", "port": "/dev/ttyUSB0",
+              "stage": [2], "count": 1, "max_power": 2400, "min_power": 200}
+}
 ```
 
-For multiple Victron MPPTs on a single port via the [VE.Direct Aggregator](https://github.com/E-t0m/ve.direct-aggregator) (`readtext_sendhex` firmware), use `victron_agg` with a `devices` map of SER# → `{name, pvp}`:
+Inverter configuration fields:
+
+| Field | Description |
+|---|---|
+| `type` | `soyosource` or `victron_mk3` |
+| `port` | Serial device path. One sender per port; use `count` for multiple identical units sharing a port. |
+| `stage` | List of stages the unit runs in: `[1,2]` both, `[1]` base only, `[2]` stage 2 only. Empty list `[]` disables the unit without removing it. |
+| `count` | Number of identical units sharing the port (they all receive one broadcast packet). |
+| `max_power` | Maximum power per single unit (W). For GTN-2000 use 1600 W (battery mode). |
+| `min_power` | Minimum useful power per single unit (W). Below this the unit sleeps. |
+| `mk3_ess_sign` | `1` (default) or `-1` to flip feed-in direction (Victron MK3 only). |
+
+A physically shared line (eSmart3 reading + Soyosource sending on the same wire) is expressed as two separate entries: one in `chargers` and one in `inverters` with the same `port`.
+
+For Victron Aggregator (multiple MPPTs on one port):
 
 ```json
-"/dev/ttyACM2": {
-    "mppt_type": "victron_agg",
-    "devices": {
-        "HQ12345ABC": {"name": "VE 150/35", "pvp": 1500, "type": "mppt"},
-                "TEMP-P2-S0":  {"name": "Rack Temp", "type": "temp"},
-        "HQ67890DEF": {"name": "VE 75/15",  "pvp":  800}
+"chargers": {
+    "/tmp/ttyVirtual": {
+        "name": "AGG", "mppt_type": "victron_agg",
+        "devices": {
+            "HQ12345ABC": {"name": "VE 150/35", "pvp": 1500, "type": "mppt"},
+            "TEMP-P2-S0": {"name": "Rack Temp",               "type": "temp"}
+        }
     }
 }
 ```
-
-`pvp` (PV peak power in W) is informational. `ve_aggregator.py` must be present in the same directory as `zeroinput.py`. Requires `readtext_sendhex` firmware on the Arduino/Teensy aggregator ([VE.Direct Aggregator](https://github.com/E-t0m/ve.direct-aggregator)).
-
-An alarm fires only when both threshold and command are set. To disable a single alarm, leave the command empty.
 
 ### 6. Install systemd service
 
@@ -245,8 +235,6 @@ StandardError=journal
 WantedBy=multi-user.target
 ```
 
-> `ExecStartPost` uses `+` to restart vzlogger with root privileges – so vzlogger finds `/tmp/vz/output_to_vz.log` after zeroinput has started.
-
 ```bash
 sudo cp zeroinput.service /etc/systemd/system/
 sudo systemctl daemon-reload
@@ -270,169 +258,122 @@ journalctl -u zeroinput -f
 | Option | Description |
 |---|---|
 | `-v` | Verbose output to console |
-| `-web` | Write HTML status page (`/home/vzlogger/zeroinput.html`) |
+| `-web` | Write HTML status page (`zeroinput.html`) |
 | `-httpd` | Start web configuration server (port from conf) |
 | `-no-input` | Disable power feed-in |
 | `-test-alarm` | Test alarm command and exit |
 
 ### Web interface
 
-With `-httpd`, the web interface is available at:
-
-```
-http://<hostname>:8081/
-```
+With `-httpd`, the web interface is available at `http://<hostname>:8081/`
 
 Tabs:
-- **zeroinput.conf** – Edit configuration live (locked fields require restart)
-- **rs485** – RS485 port and device configuration including Victron AGG (SER# mapping, pvp) and eSmart3 alarms (requires restart after saving)
-- **vz channels** – Volkszähler channel mapping as editable table
-- **timer.txt** – Edit discharge timer
-- **status** – Live status page (only with `-web`)
+- **zeroinput.conf** — Edit all hot-reloadable keys live. Structural keys (`chargers`, `inverters`) show a restart-required notice.
+- **chargers** — Structured editor for MPPT chargers and temperature sensors (eSmart3, Victron, Aggregator with SER# table). Restart required after saving.
+- **inverters** — Structured editor for feed-in inverters (type, port, stage checkboxes, count, max/min power, ESS sign). Validates for power coverage gaps before saving. Restart required.
+- **alarms** — Per-device temperature alarms (eSmart3: int\_hi/int\_lo/ext\_hi/ext\_lo; temp sensor: ext\_hi/ext\_lo). Alarm commands should end with `&` to avoid blocking the control loop.
+- **vz channels** — Volkszähler channel mapping as editable table
+- **timer.txt** — Edit discharge timer rules
+- **restart** — Send `sudo systemctl restart zeroinput`
+- **status** — Live status page (only with `-web`)
 
 ### Hot-reload
 
-Changes to `zeroinput.conf` are applied automatically when the file is saved – no restart required.
+Changes to `zeroinput.conf` are applied automatically when saved. Keys requiring restart:
 
-Exceptions (require restart):
-
-- `rs485`
-- `basic_load_inverter_port`
-- `webconfig_port`
-- `vzlogger_log_file`
-- `persistent_vz_file`
+- `chargers`, `inverters` (structural — drivers and reader threads are built once at startup)
+- `vzlogger_log_file`, `persistent_vz_file`, `webconfig_port`
 
 ---
 
 ## Hardware notes
 
-**Soyosource ramp rate:** The inverter ramps up and down at 400W/s. With 3 inverters that is 1200W/s. Large load steps (oven, washing machine) will therefore cause brief import or export – this is normal.
+**Power stages.** zeroinput distributes feed-in demand across two stages. Stage 1 handles base load up to `single_inverter_threshold` using only stage-1 inverters. Stage 2 adds all stage-2 inverters sharing the load equally per unit — as demand grows, smaller units saturate first and the largest unit (e.g. MultiPlus) takes the remainder automatically. Feed-in is disabled via `max_input_power: 0` or the timer, not by leaving stage gaps.
 
-**Parallel inverters on one port:** Multiple Soyosource inverters can be wired in parallel on a single RS485 port – all receive the same demand packet and each feeds that amount independently. zeroinput sends `power_demand / total_number_of_inverters` to every port. If two inverters share one port, both respond to the same packet and together feed twice the sent value. `total_number_of_inverters` must therefore equal the total number of physical inverter units, regardless of how they are distributed across ports. If the value is wrong, the total feed-in is proportionally wrong. Adjustable live in the web interface without restart.
+**Coverage gap check.** At startup and on saving the inverters config, zeroinput checks that the configured inverters cover the full power range from 0 to `max_input_power` without gaps. A gap (e.g. stage-1 Soyo ending at 900 W while stage-2 MultiPlus has `min_power: 1500`) triggers an unmissable warning.
 
-**RS485 bus:** Connect all devices on the same bus: A+ to A+, B- to B-. Enable termination resistors on the last device if available.
+**Soyosource ramp rate.** The inverter ramps at 400 W/s. Large load steps cause brief import or export — this is normal.
 
-**VE.Direct Aggregator:** Multiple Victron MPPTs can share a single RS485 port via an Arduino Mega 2560 or Teensy 4.1 running the [VE.Direct Aggregator](https://github.com/E-t0m/ve.direct-aggregator) (`readtext_sendhex` firmware). zeroinput uses `ve_aggregator.py` to read data and send charge power limits (`SET <SER#> <watts>`). Each device is identified by its SER# — configure using `mppt_type: victron_agg` in the **rs485** tab of the web interface. Multiple aggregator ports are supported.
+**Soyosource GTN-2000.** Uses the same RS485 limiter protocol as the GTN-1000/1200. Use `max_power: 1600` (battery mode rating, not the higher solar-mode figure).
+
+**Victron MultiPlus.** Requires an MK2-USB or MK3-USB adapter and the ESS assistant configured in VEConfigure (switch fully ON, not charger-only). No GX device required. The ESS power setpoint is written to RAM only — per-second writes are safe by design. If feed-in direction is reversed, set `mk3_ess_sign: -1`.
+
+**RS485 bus.** Connect all devices: A+ to A+, B- to B-. Enable termination resistors on the last device if available.
+
+**VE.Direct Aggregator.** Multiple Victron MPPTs can share a single RS485 port via an Arduino Mega 2560 or Teensy 4.1 running the [VE.Direct Aggregator](https://github.com/E-t0m/ve.direct-aggregator) firmware. `ve_aggregator.py` must be in the same directory as `zeroinput.py`.
 
 ---
 
 ## Load predictor
 
-The load predictor (`load_prediction: true` in conf, default: false) detects cyclic loads
-(washing machine, oven etc.) and short high surges, and stabilises feed-in to avoid
-over-feeding. The most common settings:
+The load predictor (`load_prediction: true`, default: false) detects cyclic loads (washing machine, oven) and short high surges, stabilising feed-in to avoid over-feeding.
 
 | Setting | Where | Description |
 |---|---|---|
-| `load_prediction` | conf | master enable (default: false) |
-| `min_spread_w` | conf | minimum LOW/HIGH spread for k-means to engage (default: 150 W) |
-| `predictor_log` | conf | write `/tmp/predictor.log` (default: true) |
-| `MAX_SPREAD_W` | `predictor.py` | maximum spread; above this the load is not treated as cyclic (default: 400 W) |
-| `PEAK_SHORT_MAX_N` | `predictor.py` | short/long peak boundary in cycles (default: 13) |
-| `LOG_FILE` | `predictor.py` | log path (`''` = disabled) |
+| `load_prediction` | conf | Master enable (default: false) |
+| `min_spread_w` | conf | Minimum LOW/HIGH spread for k-means to engage (default: 150 W) |
+| `predictor_log` | conf | Write `/tmp/predictor.log` (default: true) |
+| `MAX_SPREAD_W` | `predictor.py` | Maximum spread; above this the load is not treated as cyclic |
+| `PEAK_SHORT_MAX_N` | `predictor.py` | Short/long peak boundary in cycles |
+| `LOG_FILE` | `predictor.py` | Log path (`''` = disabled) |
 
-conf keys are hot-reloadable; constants in `predictor.py` are applied automatically on file
-save. The complete behaviour and all constants are documented in
-**[predictor_spec_en.md](predictor_spec_en.md)**.
+conf keys are hot-reloadable; constants in `predictor.py` are applied automatically on file save. Full behaviour documented in **[predictor_spec_en.md](predictor_spec_en.md)**.
 
 ---
 
 ## Volkszähler channels (vz_channels)
 
-The channel mapping is configured in `zeroinput.conf` under `vz_channels` and is editable in the web interface under **vz channels**.
-
 Format per entry: `[device, key, vz_channel, factor]`
 
-- **device** – Device name from `rs485` (e.g. `"esmart 60"`), `"combined"` for total PV, or `null` for direct variables
-- **key** – Data key of the device (see below)
-- **vz_channel** – UUID alias in the Volkszähler configuration
-- **factor** – Multiplier (e.g. `-1` to invert sign)
+- **device** — device name from `chargers`, `"combined"` for total PV, or `null` for direct variables
+- **key** — data key (see below)
+- **vz_channel** — UUID alias in vzlogger configuration
+- **factor** — multiplier (e.g. `-1` to invert sign)
 
-### Available keys
+**Direct variables** (`device: null`): `power_demand`, `zero_shift`, `bat_voltage`
 
-**Direct variables** (`device: null`):
+**combined**: `PPV`, `PVperc`, `Vbat`, `Ibat`, `Pload`
 
-| Key | Description |
-|---|---|
-| `power_demand` | Total feed-in power (W) |
-| `zero_shift` | Zero point offset (W) |
-| `bat_voltage` | Corrected battery voltage (V) |
+**eSmart3**: `PPV`, `VPV`, `Vbat`, `Ibat`, `Pload`, `int_temp`, `ext_temp`
 
-**combined** (sum of all MPPTs):
+**Victron MPPT**: `PPV`, `VPV`, `Vbat`, `Ibat`, `IL`
 
-| Key | Description |
-|---|---|
-| `PPV` | Total PV power (W) |
-| `PVperc` | PV output as % of total configured peak power |
-| `Vbat` | Average battery voltage (V) |
-| `Ibat` | Total battery current (A) |
-| `Pload` | Total load power (W) |
-
-**eSmart3:**
-
-| Key | Description |
-|---|---|
-| `PPV` | PV power (W) |
-| `VPV` | PV voltage (V) |
-| `IPV` | PV current (A) |
-| `Vbat` | Battery voltage (V) |
-| `Ibat` | Battery current (A) |
-| `Pload` | Load power (W) |
-| `int_temp` | Internal temperature (°C) |
-| `ext_temp` | External temperature (°C) |
-
-**Victron MPPT:**
-
-| Key | Description |
-|---|---|
-| `PPV` | PV power (W) |
-| `VPV` | PV voltage (V) |
-| `Vbat` | Battery voltage (V) |
-| `Ibat` | Battery current (A) |
+**Temperature sensor** (AGG, type: temp): `ext_temp`
 
 ---
 
 ## Discharge timer
 
-With `discharge_timer: true` and a `timer.txt`, feed-in can be time-controlled. Format per line:
+With `discharge_timer: true` and a `timer.txt`. Format per line:
 
 ```
 YYYY-MM-DD HH:MM:SS <battery> <inverter> <energy_Wh>
 ```
 
-`0000-00-00` as date is automatically replaced by the current date – the rule is therefore executed daily.
-
-Battery and inverter values are interpreted as:
-- **> 100** → Watts (absolute power)
-- **≤ 100** → Percentage of configured maximum power
+`0000-00-00` as date applies daily. Values > 100 = watts, ≤ 100 = percent of maximum.
 
 Example:
 ```
-# date       time     battery  inverter  energy_Wh
-0000-00-00 22:00:00   50       80        5000
-0000-00-00 06:00:00   100      100       0
+0000-00-00 22:00:00   50   80   5000
+0000-00-00 06:00:00   100  100  0
 ```
-From 22:00: battery max 50%, inverter max 80%, until 5000 Wh discharged.
-From 06:00: full operation.
 
 ---
 
-## Temperature alarm
+## Temperature alarms
 
-Each eSmart3 charge controller can trigger temperature alarms. An alarm is active automatically when both a threshold and a command are configured for it – no global enable flag required. Configure per device in `rs485`:
+Configured in `zeroinput.conf` under `alarms`, keyed by device name. An alarm activates automatically when both threshold and command are set.
 
 ```json
-"alarm": {
-    "temp_int": 45,
-    "int_cmd": "mpg321 /home/vzlogger/voice/regler.mp3 &",
-    "int_interval": 300,
-    "temp_ext": 35,
-    "ext_cmd": "echo heat outside &",
-    "ext_interval": 300
+"alarms": {
+    "esmart 60": {
+        "int_hi": 60, "int_hi_cmd": "your_command &", "int_hi_interval": 300,
+        "ext_hi": 55, "ext_hi_cmd": "your_command &"
+    }
 }
 ```
 
-An alarm is triggered when the measured temperature exceeds the threshold **and** the corresponding command is non-empty. To disable an individual alarm, clear the command or set the threshold to 0.
+eSmart3 supports `int_hi`, `int_lo`, `ext_hi`, `ext_lo`. Temperature sensors support `ext_hi`, `ext_lo`. Commands should end with `&` to avoid blocking the control loop.
 
 ---
 
@@ -440,24 +381,10 @@ An alarm is triggered when the measured temperature exceeds the threshold **and*
 
 **Follow live output:**
 ```bash
+zerooutput.sh
+# or:
 tail -f /home/vzlogger/zeroinput.html
 ```
-
-Or filtered without HTML tags, with automatic clear on each write cycle – available as the convenience script `zerooutput.sh`:
-```bash
-zerooutput.sh
-```
-
-Which runs:
-```bash
-watch -n1 -t 'grep -v "^<!DOCTYPE\|^<html\|^<head\|^<meta\|^<style\|^<body\|^<pre\|^</" /home/vzlogger/zeroinput.html'
-```
-
-Or in the browser via the Volkszähler web server – create a symlink once:
-```bash
-ln -s /home/vzlogger/zeroinput.html /home/pi/volkszaehler.org/htdocs/zeroinput.html
-```
-Then available at `http://<hostname>/zeroinput.html`
 
 **systemd logs:**
 ```bash
@@ -466,29 +393,28 @@ journalctl -u zeroinput -n 100
 ```
 
 **RS485 ports busy (`[Errno 16] Device or resource busy`):**
-An old zeroinput instance is still running (e.g. from a `@reboot` crontab entry).
+An old zeroinput instance is still running.
 ```bash
-ps aux | grep zeroinput        # check running instances
-crontab -u vzlogger -e         # remove @reboot line
+ps aux | grep zeroinput
+crontab -u vzlogger -e   # remove any @reboot line
 sudo reboot
 ```
 
 **zeroinput does not start:**
 ```bash
 journalctl -u zeroinput -n 50
-python3 /home/vzlogger/zeroinput.py -v   # start manually
+python3 /home/vzlogger/zeroinput.py -v
 ```
 
-**No FIFO:**
-```bash
-mkfifo /tmp/vz/vzlogger.fifo
-```
+**No FIFO:** `mkfifo /tmp/vz/vzlogger.fifo`
 
 **No RS485 communication:**
 ```bash
-ls -la /dev/ttyACM*
+ls -la /dev/ttyACM* /dev/ttyUSB*
 sudo usermod -aG dialout vzlogger
 ```
+
+**MultiPlus not responding:** Check that the MK3-USB adapter is connected and the ESS assistant is configured in VEConfigure. zeroinput logs "MK3 inactive" on startup if no response is received — the rest of zeroinput continues running normally.
 
 **Web server not reachable:**
 - Check `webconfig_port` in `zeroinput.conf`
