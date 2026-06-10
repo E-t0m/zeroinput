@@ -1,6 +1,6 @@
 # zeroinput Lastprediktor — Spezifikation
 
-Funktionsspezifikation des zeroinput-Lastprediktors (`predictor.py`, VERSION 106). Dies ist die maßgebliche Beschreibung des Soll-Verhaltens. Die englische Fassung ist `predictor_spec_en.md`.
+Funktionsspezifikation des zeroinput-Lastprediktors (`predictor.py`, VERSION 107). Dies ist die maßgebliche Beschreibung des Soll-Verhaltens. Die englische Fassung ist `predictor_spec_en.md`.
 
 ## Zweck
 
@@ -56,13 +56,15 @@ Peaks & Override:
 | Konstante | Wert | Bedeutung |
 |---|---|---|
 | `MIN_PEAK_W` | 400 | `Ls_read` darüber = Peak; auf/darunter = Peak beendet |
-| `PEAK_SHORT_MAX_N` | 10 | < dieser Wert = kurzer Peak; ≥ = langer Peak |
+| `PEAK_SHORT_MAX_N` | 8 | < dieser Wert = kurzer Peak; ≥ = langer Peak |
 | `PEAK_WINDOW_N` | 120 | Fenster für die zwei Peaks; auch Override-Timeout |
 | `PEAK_LIFETIME_N` | 120 | wie lange ein beendeter kurzer Peak gezählt wird |
 | `OVERRIDE_DELAY_N` | 12 | Zyklen nach Ende des 2. Peaks bis Override aktiv |
 | `BASE_CYCLES` | 10 | Nicht-Peak-Zyklen für die Mittelung des Halteziels |
 
 ## Mechanismus 1: k-Means (zyklische Last)
+
+![Rechtecksignal: k-Means lernt low/high und hält in der HIGH-Phase auf LOW](mechanism_1_kmeans.png)
 
 Die verlässliche Basis. k-Means clustert die Lasthistorie in zwei Niveaus, LOW und HIGH. Es rechnet erst, sobald mindestens `MIN_HIST` (10) Samples vorliegen. Ein Ergebnis ist nur gültig, wenn der Spread (`HIGH − LOW`) im Bereich `[min_spread_w, MAX_SPREAD_W]` liegt **und** die Verteilung wirklich zweistufig ist: enthält eine der beiden Cluster-Gruppen weniger als 15 % (oder mehr als 85 %) der Werte, gilt sie als unimodal und wird verworfen — dann gibt es keine gültigen Niveaus.
 
@@ -80,14 +82,18 @@ Vergehen `KMEANS_TIMEOUT_N` (120) Zyklen ohne echte LOW↔HIGH-Transition, werde
 
 ## Mechanismus 2: Peaks & Override
 
+![Ls_read mit zwei kurzen Peaks, die den Override aktivieren, und einem langen Peak, der ihn beendet](mechanism_2_peaks.png)
+
 Dieser Mechanismus behandelt wiederkehrende kurze Hochlast-Spitzen (Peaks), etwa von einem taktenden Verbraucher. Der **Override** ist ein Signal des Prediktors an zeroinput, dessen Rampenmodus auszusetzen (Flag `ramp_override_by_predictor`): Normalerweise fährt zeroinput große Lastsprünge über eine eigene Rampe ab und überschreibt dabei den Prediktor-Offset. Bei einem erkannten taktenden Verbraucher würde diese Rampe bei jedem Peak den offset verfälschen — der Override unterbindet sie, damit der Prediktor den offset ruhig auf der Grundlast halten und die Peaks aussitzen kann.
 
 ### Peak-Erkennung und -Dauer
 
 Ein Peak läuft, solange `Ls_read > MIN_PEAK_W`, und endet, sobald `Ls_read ≤ MIN_PEAK_W` — dieselbe Regel in allen Fällen. Die Peak-Dauer ist die Anzahl Zyklen von Beginn bis Ende.
 
-- **langer Peak** (≥ `PEAK_SHORT_MAX_N`, 10 Zyklen): wird in Echtzeit klassifiziert, sobald die Schwelle erreicht ist, noch während der Peak läuft. Ein langer Peak löst einen k-Means-Reset aus (und beendet einen aktiven Override).
-- **kurzer Peak** (< 10 Zyklen): erst am Peak-Ende beweisbar. Ein kurzer Peak zählt zur Override-Aktivierung.
+- **langer Peak** (≥ `PEAK_SHORT_MAX_N`, 8 Zyklen): wird in Echtzeit klassifiziert, sobald die Schwelle erreicht ist, noch während der Peak läuft. Ein langer Peak löst einen k-Means-Reset aus (und beendet einen aktiven Override).
+- **kurzer Peak** (< `PEAK_SHORT_MAX_N` Zyklen): erst am Peak-Ende beweisbar. Ein kurzer Peak zählt zur Override-Aktivierung.
+
+Der Wert von `PEAK_SHORT_MAX_N` sollte an die eigene Anlage und die eigenen Erwartungen angepasst werden.
 
 ### Peak-Behandlung gegenüber k-Means
 
