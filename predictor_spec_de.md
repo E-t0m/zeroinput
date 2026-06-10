@@ -64,7 +64,7 @@ Peaks & Override:
 
 ## Mechanismus 1: k-Means (zyklische Last)
 
-![Rechtecksignal: k-Means lernt low/high und hält in der HIGH-Phase auf LOW](mechanism_1_kmeans.png)
+![Rechtecksignal: k-Means lernt low/high und hält in der HIGH-Phase auf LOW](screenshots/mechanism_1_kmeans.png)
 
 Die verlässliche Basis. k-Means clustert die Lasthistorie in zwei Niveaus, LOW und HIGH. Es rechnet erst, sobald mindestens `MIN_HIST` (10) Samples vorliegen. Ein Ergebnis ist nur gültig, wenn der Spread (`HIGH − LOW`) im Bereich `[min_spread_w, MAX_SPREAD_W]` liegt **und** die Verteilung wirklich zweistufig ist: enthält eine der beiden Cluster-Gruppen weniger als 15 % (oder mehr als 85 %) der Werte, gilt sie als unimodal und wird verworfen — dann gibt es keine gültigen Niveaus.
 
@@ -82,7 +82,7 @@ Vergehen `KMEANS_TIMEOUT_N` (120) Zyklen ohne echte LOW↔HIGH-Transition, werde
 
 ## Mechanismus 2: Peaks & Override
 
-![Ls_read mit zwei kurzen Peaks, die den Override aktivieren, und einem langen Peak, der ihn beendet](mechanism_2_peaks.png)
+![Ls_read mit zwei kurzen Peaks, die den Override aktivieren, und einem langen Peak, der ihn beendet](screenshots/mechanism_2_peaks.png)
 
 Dieser Mechanismus behandelt wiederkehrende kurze Hochlast-Spitzen (Peaks), etwa von einem taktenden Verbraucher. Der **Override** ist ein Signal des Prediktors an zeroinput, dessen Rampenmodus auszusetzen (Flag `ramp_override_by_predictor`): Normalerweise fährt zeroinput große Lastsprünge über eine eigene Rampe ab und überschreibt dabei den Prediktor-Offset. Bei einem erkannten taktenden Verbraucher würde diese Rampe bei jedem Peak den offset verfälschen — der Override unterbindet sie, damit der Prediktor den offset ruhig auf der Grundlast halten und die Peaks aussitzen kann.
 
