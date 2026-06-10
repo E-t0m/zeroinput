@@ -64,7 +64,7 @@ peaks & override:
 
 ## Mechanism 1: k-means (cyclic load)
 
-![Rectangle signal: k-means learns low/high and holds on LOW during the HIGH phase](mechanism_1_kmeans.png)
+![Rectangle signal: k-means learns low/high and holds on LOW during the HIGH phase](screenshots/mechanism_1_kmeans.png)
 
 The reliable base. k-means clusters the load history into two levels, LOW and HIGH. It only computes once at least `MIN_HIST` (10) samples are available. A result is valid only if the spread (`HIGH − LOW`) lies in `[min_spread_w, MAX_SPREAD_W]` **and** the distribution is genuinely two-level: if either cluster group holds less than 15 % (or more than 85 %) of the values, it is treated as unimodal and rejected — there are then no valid levels.
 
@@ -82,7 +82,7 @@ If `KMEANS_TIMEOUT_N` (120) cycles pass without a real LOW↔HIGH transition, th
 
 ## Mechanism 2: peaks & override
 
-![Ls_read with two short peaks that activate the override and one long peak that ends it](mechanism_2_peaks.png)
+![Ls_read with two short peaks that activate the override and one long peak that ends it](screenshots/mechanism_2_peaks.png)
 
 This mechanism handles recurring short high-load spikes (peaks), e.g. from a cycling appliance. The **override** is a signal from the predictor to zeroinput to suspend its ramp mode (flag `ramp_override_by_predictor`): normally zeroinput rides out large load steps with a ramp of its own, overriding the predictor offset in the process. For a recognised cycling load this ramp would distort the offset on every peak — the override suppresses it so the predictor can hold the offset steady on the base load and ride the peaks out.
 
