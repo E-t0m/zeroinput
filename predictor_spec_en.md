@@ -1,6 +1,6 @@
 # zeroinput Load Predictor — Specification
 
-Functional specification of the zeroinput load predictor (`predictor.py`, VERSION 106). This is the authoritative description of the intended behaviour. The German translation is `predictor_spec_de.md`.
+Functional specification of the zeroinput load predictor (`predictor.py`, VERSION 107). This is the authoritative description of the intended behaviour. The German translation is `predictor_spec_de.md`.
 
 ## Purpose
 
@@ -56,13 +56,15 @@ peaks & override:
 | Constant | Value | Meaning |
 |---|---|---|
 | `MIN_PEAK_W` | 400 | `Ls_read` above this = peak; at/below = peak ended |
-| `PEAK_SHORT_MAX_N` | 10 | < this = short peak; ≥ this = long peak |
+| `PEAK_SHORT_MAX_N` | 8 | < this = short peak; ≥ this = long peak |
 | `PEAK_WINDOW_N` | 120 | window for the two peaks; also override timeout |
 | `PEAK_LIFETIME_N` | 120 | how long a finished short peak is counted |
 | `OVERRIDE_DELAY_N` | 12 | cycles after the 2nd peak ends before override activates |
 | `BASE_CYCLES` | 10 | non-peak cycles averaged for the hold target |
 
 ## Mechanism 1: k-means (cyclic load)
+
+![Rectangle signal: k-means learns low/high and holds on LOW during the HIGH phase](mechanism_1_kmeans.png)
 
 The reliable base. k-means clusters the load history into two levels, LOW and HIGH. It only computes once at least `MIN_HIST` (10) samples are available. A result is valid only if the spread (`HIGH − LOW`) lies in `[min_spread_w, MAX_SPREAD_W]` **and** the distribution is genuinely two-level: if either cluster group holds less than 15 % (or more than 85 %) of the values, it is treated as unimodal and rejected — there are then no valid levels.
 
@@ -80,14 +82,18 @@ If `KMEANS_TIMEOUT_N` (120) cycles pass without a real LOW↔HIGH transition, th
 
 ## Mechanism 2: peaks & override
 
+![Ls_read with two short peaks that activate the override and one long peak that ends it](mechanism_2_peaks.png)
+
 This mechanism handles recurring short high-load spikes (peaks), e.g. from a cycling appliance. The **override** is a signal from the predictor to zeroinput to suspend its ramp mode (flag `ramp_override_by_predictor`): normally zeroinput rides out large load steps with a ramp of its own, overriding the predictor offset in the process. For a recognised cycling load this ramp would distort the offset on every peak — the override suppresses it so the predictor can hold the offset steady on the base load and ride the peaks out.
 
 ### Peak detection and duration
 
 A peak runs while `Ls_read > MIN_PEAK_W` and ends as soon as `Ls_read ≤ MIN_PEAK_W` — the same rule in all cases. Peak duration is the number of cycles from start to end.
 
-- **long peak** (≥ `PEAK_SHORT_MAX_N`, 10 cycles): classified in real time the moment the threshold is reached, while the peak is still running. A long peak triggers a k-means reset (and ends any active override).
-- **short peak** (< 10 cycles): only provable at the peak's end. A short peak counts toward override activation.
+- **long peak** (≥ `PEAK_SHORT_MAX_N`, 8 cycles): classified in real time the moment the threshold is reached, while the peak is still running. A long peak triggers a k-means reset (and ends any active override).
+- **short peak** (< `PEAK_SHORT_MAX_N` cycles): only provable at the peak's end. A short peak counts toward override activation.
+
+The value of `PEAK_SHORT_MAX_N` should be adapted to one's own plant and expectations.
 
 ### Peak handling vs. k-means
 
