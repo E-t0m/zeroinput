@@ -25,8 +25,11 @@
 
 # Predictor
 ## low phase
-Washing machine: spin cycle, motor on/off/on/off, predictor kicks in
+Washing machine: spin cycle, motor on/off/on/off, predictor holds low level
 ![](screenshots/predictor_low_phase.png)
 ## peak override
 Override is active, short peaks shaved, long peak deactivates override, 2 short peaks re-activate override
 ![](screenshots/predictor_peak_override.png)
+## both together
+Override gets active, predictor holds low level
+![](screenshots/predictor_low_phase_and_peak_override.png)
