@@ -1,5 +1,5 @@
 # zeroinput – Installation Guide
-*v2.1*
+*v2.2*
 
 ## Overview
 
@@ -19,6 +19,7 @@ zeroinput integrates naturally into an existing Volkszähler setup without repla
 | `zeroinput.py` | Main script |
 | `input_power_staging.py` | Two-stage power distribution logic |
 | `inverter_drivers.py` | Inverter driver abstraction (Soyosource, Victron MK3) |
+| `charger_drivers.py` | MPPT charger drivers (eSmart3, Victron, EPever, Renogy, Morningstar) |
 | `vebus.py` | VE.Bus MK2/MK3 protocol driver (only needed for Victron MultiPlus) |
 | `predictor.py` | Load predictor (k-means, optional) |
 | `webconfig.py` | HTTP configuration server (optional, requires `-httpd`) |
@@ -40,7 +41,7 @@ zeroinput integrates naturally into an existing Volkszähler setup without repla
 - One or more inverters:
   - **Soyosource GTN limiter** (GTN-1000/1200/2000 with RS485 limiter port) — wired via USB RS485 adapter
   - **Victron MultiPlus / MultiPlus-II** (VE.Bus, 2nd-gen microprocessor) with MK2-USB or MK3-USB adapter — ESS assistant must be configured in VEConfigure
-- MPPT charge controller: eSmart3 (RS485) or Victron MPPT (VE.Direct or Aggregator)
+- MPPT charge controller: eSmart3 (RS485), Victron MPPT (VE.Direct or Aggregator), EPever Tracer-AN/-BN, Renogy Rover/Elite/Adventurer, or Morningstar TriStar MPPT (all RS485/Modbus RTU)
 - RS485 adapter (USB) — wiring: **A+ to A+, B- to B-** on all devices
 - Electricity meter with extended data output (request PIN from your grid operator)
   The OBIS dataset `1-0:16.7.0` (net active power) **must** be available
@@ -63,7 +64,7 @@ For Victron MultiPlus support, pyserial is already included above. No additional
 ```bash
 sudo useradd -m -s /bin/bash vzlogger   # if not already existing
 sudo usermod -aG dialout vzlogger       # RS485 and USB serial access
-sudo cp zeroinput.py input_power_staging.py inverter_drivers.py /home/vzlogger/
+sudo cp zeroinput.py input_power_staging.py inverter_drivers.py charger_drivers.py /home/vzlogger/
 sudo cp vebus.py /home/vzlogger/        # only needed for Victron MultiPlus
 sudo cp predictor.py /home/vzlogger/    # optional
 sudo cp webconfig.py /home/vzlogger/    # optional, only for -httpd
@@ -113,10 +114,10 @@ sudo systemctl daemon-reload
 sudo systemctl restart vzlogger
 ```
 
-To enable the **Restart** button in the web interface, add a sudoers entry:
+To enable the **Restart** buttons in the web interface, add a sudoers entry. The web interface can restart both zeroinput and vzlogger, so permit both services:
 
 ```bash
-sudo sh -c 'echo "vzlogger ALL=(root) NOPASSWD: /bin/systemctl restart zeroinput" > /etc/sudoers.d/zeroinput'
+sudo sh -c 'printf "vzlogger ALL=(root) NOPASSWD: /bin/systemctl restart zeroinput\nvzlogger ALL=(root) NOPASSWD: /bin/systemctl restart vzlogger\n" > /etc/sudoers.d/zeroinput'
 sudo chmod 440 /etc/sudoers.d/zeroinput
 ```
 
@@ -153,6 +154,11 @@ Key settings:
 | `max_bat_discharge` | Maximum battery discharge power (W) |
 | `single_inverter_threshold` | Demand level above which stage 2 activates (W) |
 | `multi_inverter_wait` | Seconds before falling back to stage 1 |
+| `cell_count` | Number of LiFePO4 cells in series (16 = 51.2 V, 15 = 48 V, 8 = 24/28 V). All battery voltage thresholds scale with this value. |
+| `bat_voltage_const` | Voltage-correction factor under load (V/kW, 0 = disabled) |
+| `free_power_export` | Free export at high battery voltage (true/false) |
+| `heat_temp_low` | Heat protection: below this sensor temperature (°C), full power |
+| `heat_temp_high` | Heat protection: at/above this sensor temperature (°C) the inverter is switched off, linear in between. Trigger sensor via `heat_protect` flag on a charger in the web interface. |
 | `webconfig_port` | Web server port (default 8081, 0 = disabled) |
 | `vz_channels` | Volkszähler channel mapping (editable in web interface) |
 | `load_prediction` | Enable load predictor (true/false) |
@@ -164,11 +170,24 @@ Key settings:
 
 ```json
 "chargers": {
-    "/dev/ttyACM0": {"name": "esmart 60", "mppt_type": "eSmart3", "pvp": 2350, "temp_display": "out"},
-    "/dev/ttyACM1": {"name": "esmart 40", "mppt_type": "eSmart3", "pvp": 1690, "temp_display": "bat"},
-    "/dev/ttyACM2": {"name": "VE 150/35", "mppt_type": "victron", "pvp": 1720}
+    "/dev/ttyACM0": {"name": "esmart 60",   "mppt_type": "eSmart3", "pvp": 2350, "temp_display": "out"},
+    "/dev/ttyACM2": {"name": "VE 150/35",   "mppt_type": "victron", "pvp": 1720},
+    "/dev/ttyACM6": {"name": "Tracer AN",   "mppt_type": "epever", "pvp": 1300, "unit": 1},
+    "/dev/ttyACM7": {"name": "Rover Elite", "mppt_type": "renogy", "pvp": 800,  "unit": 1},
+    "/dev/ttyACM8": {"name": "TriStar 60",  "mppt_type": "morningstar", "pvp": 3000, "unit": 1}
 }
 ```
+
+Charger configuration fields:
+
+| Field | Description |
+|---|---|
+| `mppt_type` | `eSmart3`, `victron`, `victron_agg`, `temp_sensor`, `epever`, `renogy`, or `morningstar` |
+| `pvp` | PV peak power (W) for the `%PVp` display |
+| `unit` | Modbus slave address (epever/renogy/morningstar only, default 1) |
+| `temp_display` | Label for the external temperature reading (eSmart3) |
+
+Modbus charger notes: **epever** (Tracer-AN/-BN) runs at 115200 baud; **renogy** (Rover/Elite/Adventurer) and **morningstar** (TriStar MPPT 45/60) at 9600. The Morningstar **EIA-485 port exists only on the TS-MPPT-60/M** — the TS-MPPT-45 is RS-232 only and cannot share an RS485 bus. One Modbus charger per port: running several on one physical bus (multi-drop with distinct `unit` addresses) is not yet supported by the config — give each its own port/adapter.
 
 **Example inverters block:**
 
@@ -223,7 +242,7 @@ User=vzlogger
 WorkingDirectory=/home/vzlogger
 ExecStartPre=/bin/mkdir -p /tmp/vz
 ExecStartPre=/bin/touch /tmp/vz/output_to_vz.log
-ExecStart=/usr/bin/python3 -u /home/vzlogger/zeroinput.py -v -web -httpd
+ExecStart=/usr/bin/python3 -u /home/vzlogger/zeroinput.py -web -httpd
 ExecStartPost=+/bin/bash -c 'test -f /tmp/vz/vzlogger_restarted || (sleep 3 && /bin/systemctl restart vzlogger.service && touch /tmp/vz/vzlogger_restarted)'
 Restart=on-failure
 RestartSec=15
@@ -249,6 +268,8 @@ sudo systemctl status zeroinput
 journalctl -u zeroinput -f
 ```
 
+> **Note on output (`-v`):** The `ExecStart` line above starts zeroinput **without** `-v`. The `-v` option enables a verbose status output that writes several lines on every control cycle (about once per second). Because `StandardOutput=journal` is set, this output goes to the systemd journal and thus to syslog — in continuous operation this adds up to hundreds of thousands of lines per day and bloats the log. For continuous operation `-v` is therefore omitted; only startup, error and config-reload messages are logged. The live status is still available via the `-web` status page in the browser. `-v` is intended for a manual foreground start (see troubleshooting), when you want to read the output directly. If you do want the verbose output in the journal permanently, add `-v` and either cap the journal via `journald.conf` (e.g. `SystemMaxUse=`) or redirect the output to a separate rotated file with `StandardOutput=append:/var/log/zeroinput.log` plus a logrotate rule.
+
 ---
 
 ## Operation
@@ -257,7 +278,7 @@ journalctl -u zeroinput -f
 
 | Option | Description |
 |---|---|
-| `-v` | Verbose output to console |
+| `-v` | Verbose status output to console (several lines per second). Intended for a manual foreground start; omit it in continuous systemd operation, otherwise the output bloats the journal/syslog. |
 | `-web` | Write HTML status page (`zeroinput.html`) |
 | `-httpd` | Start web configuration server (port from conf) |
 | `-no-input` | Disable power feed-in |
@@ -269,12 +290,12 @@ With `-httpd`, the web interface is available at `http://<hostname>:8081/`
 
 Tabs:
 - **zeroinput.conf** — Edit all hot-reloadable keys live. Structural keys (`chargers`, `inverters`) show a restart-required notice.
-- **chargers** — Structured editor for MPPT chargers and temperature sensors (eSmart3, Victron, Aggregator with SER# table). Restart required after saving.
-- **inverters** — Structured editor for feed-in inverters (type, port, stage checkboxes, count, max/min power, ESS sign). Validates for power coverage gaps before saving. Restart required.
+- **chargers** — Structured editor for MPPT chargers and temperature sensors (eSmart3, Victron, Aggregator with SER# table, EPever, Renogy, Morningstar). Modbus types show a `unit` (slave address) field. Restart required after saving.
+- **inverters** — Structured editor for feed-in inverters (type, port, stage checkboxes, parallel units, max/min power, ESS sign). Validates for power coverage gaps before saving. Restart required.
 - **alarms** — Per-device temperature alarms (eSmart3: int\_hi/int\_lo/ext\_hi/ext\_lo; temp sensor: ext\_hi/ext\_lo). Alarm commands should end with `&` to avoid blocking the control loop.
 - **vz channels** — Volkszähler channel mapping as editable table
 - **timer.txt** — Edit discharge timer rules
-- **restart** — Send `sudo systemctl restart zeroinput`
+- **restart** — Restart zeroinput or vzlogger (`sudo systemctl restart <service>`); one button each. Requires the matching sudoers entries (see Installation).
 - **status** — Live status page (only with `-web`)
 
 ### Hot-reload
@@ -300,7 +321,7 @@ Changes to `zeroinput.conf` are applied automatically when saved. Keys requiring
 
 **RS485 bus.** Connect all devices: A+ to A+, B- to B-. Enable termination resistors on the last device if available.
 
-**VE.Direct Aggregator.** Multiple Victron MPPTs can share a single RS485 port via an Arduino Mega 2560 or Teensy 4.1 running the [VE.Direct Aggregator](https://github.com/E-t0m/ve.direct-aggregator) firmware. `ve_aggregator.py` must be in the same directory as `zeroinput.py`.
+**VE.Direct Aggregator.** Multiple Victron MPPTs can share a single serial port via an Arduino Mega 2560 or Teensy 4.1 running the [VE.Direct Aggregator](https://github.com/E-t0m/ve.direct-aggregator) firmware. VE.Direct is a 3.3 V UART; connection to the Pi is via USB-UART adapter. RS485 level converters can optionally be used on either or both sides for longer cable runs. `ve_aggregator.py` must be in the same directory as `zeroinput.py`.
 
 ---
 
@@ -415,6 +436,8 @@ sudo usermod -aG dialout vzlogger
 ```
 
 **MultiPlus not responding:** Check that the MK3-USB adapter is connected and the ESS assistant is configured in VEConfigure. zeroinput logs "MK3 inactive" on startup if no response is received — the rest of zeroinput continues running normally.
+
+**Modbus charger (EPever / Renogy / Morningstar) shows no data:** Verify the `unit` (Modbus slave address) matches the controller setting, the baud rate is correct (EPever 115200, Renogy/Morningstar 9600), and RS485 A/B are not swapped. The display shows `PORT ERROR` when a port read fails. For Morningstar, confirm the model has an EIA-485 port (TS-MPPT-60/M only).
 
 **Web server not reachable:**
 - Check `webconfig_port` in `zeroinput.conf`
