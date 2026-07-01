@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
-# zeroinput - inverter driver abstraction v2.1
+# zeroinput - inverter driver abstraction v2.2
 #
 # A driver represents ONE entry from conf['inverters'] = ONE group of identical
 # units sharing a single port (count >= 1). The staging logic computes a

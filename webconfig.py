@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
-# zeroinput - webconfig HTTP server v2.0
+# zeroinput - webconfig HTTP server v2.2
 # started as thread in zeroinput.py when conf['webconfig_port'] > 0
 import json
 import subprocess
@@ -65,6 +65,26 @@ class WebconfigHandler(BaseHTTPRequestHandler):
 			return p if p.startswith('/') else join(BASE_DIR, p)
 		except: return join(BASE_DIR, 'timer.txt')
 
+	# services that may be restarted from the web UI. The matching sudoers
+	# entries must already permit `systemctl restart <service>` without a password.
+	_RESTART_SERVICES = ('zeroinput', 'vzlogger')
+
+	def _restart_service(self, service):
+		"""Restart a whitelisted systemd service via sudo and reply with JSON."""
+		if service not in self._RESTART_SERVICES:
+			self._send_json(400, {'error': 'unknown service: %s' % service})
+			return
+		import subprocess
+		try:
+			r = subprocess.run(['sudo', 'systemctl', 'restart', service],
+				capture_output=True, text=True, timeout=10)
+			if r.returncode == 0:
+				self._send_json(200, {'ok': True, 'service': service})
+			else:
+				self._send_json(500, {'error': r.stderr.strip() or 'restart failed'})
+		except Exception as e:
+			self._send_json(500, {'error': str(e)})
+
 	def do_GET(self):
 		path = self.path.split('?')[0]
 
@@ -95,16 +115,9 @@ class WebconfigHandler(BaseHTTPRequestHandler):
 				{'content': content} if content is not None else {'error': 'read failed'})
 
 		elif path == '/api/restart':
-			import subprocess
-			try:
-				r = subprocess.run(['sudo', 'systemctl', 'restart', 'zeroinput'],
-					capture_output=True, text=True, timeout=10)
-				if r.returncode == 0:
-					self._send_json(200, {'ok': True})
-				else:
-					self._send_json(500, {'error': r.stderr.strip() or 'restart failed'})
-			except Exception as e:
-				self._send_json(500, {'error': str(e)})
+			from urllib.parse import urlparse, parse_qs
+			service = parse_qs(urlparse(self.path).query).get('service', ['zeroinput'])[0]
+			self._restart_service(service)
 			return
 
 		elif path == '/api/timer':
@@ -124,16 +137,9 @@ class WebconfigHandler(BaseHTTPRequestHandler):
 		path = self.path.split('?')[0]
 
 		if path == '/api/restart':
-			import subprocess
-			try:
-				r = subprocess.run(['sudo', 'systemctl', 'restart', 'zeroinput'],
-					capture_output=True, text=True, timeout=10)
-				if r.returncode == 0:
-					self._send_json(200, {'ok': True})
-				else:
-					self._send_json(500, {'error': r.stderr.strip() or 'restart failed'})
-			except Exception as e:
-				self._send_json(500, {'error': str(e)})
+			from urllib.parse import urlparse, parse_qs
+			service = parse_qs(urlparse(self.path).query).get('service', ['zeroinput'])[0]
+			self._restart_service(service)
 			return
 
 		length = int(self.headers.get('Content-Length', 0))
@@ -171,8 +177,20 @@ class WebconfigHandler(BaseHTTPRequestHandler):
 									raw = raw[:m.start()] + '"' + k + '": ' + enc + raw[idx+1:]
 									break
 				else:
+					# scalar value (number / string / bool)
 					pat = r'("' + re.escape(k) + r'"\s*:\s*)([^,\n\r\t}]+)'
-					raw = re.sub(pat, lambda m: m.group(1) + enc, raw, count=1)
+					if re.search(pat, raw):
+						raw = re.sub(pat, lambda m: m.group(1) + enc, raw, count=1)
+					else:
+						# key not yet in the file: insert it before the closing brace
+						# (keeps newer conf keys persistable)
+						ci = raw.rstrip().rfind('}')
+						if ci != -1:
+							head = raw[:ci].rstrip()
+							tail = raw[ci:]
+							if not head.endswith(','): head += ','
+							raw = head + '\n"%s": %s\n' % (k, enc) + tail
+
 			try: json.loads(raw)
 			except Exception as e:
 				self._send_json(400, {'error': 'result invalid JSON: %s' % e})

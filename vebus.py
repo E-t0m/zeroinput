@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
-# zeroinput - VE.Bus MK2/MK3 low-level interface v2.1
+# zeroinput - VE.Bus MK2/MK3 low-level interface v2.2
 #
 # Direct control of a Victron MultiPlus-II in ESS mode 3 via an MK2/MK3-USB
 # adapter (no GX device required). Sets the ESS power setpoint over the VE.Bus

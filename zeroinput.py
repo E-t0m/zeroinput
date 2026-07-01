@@ -1,16 +1,18 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
-# zeroinput v2.1
+# zeroinput v2.2
 # indent size 4, mode Tabs
 
-from serial import Serial, SerialException
 import input_power_staging as staging
 from inverter_drivers import build_inverters
+import charger_drivers as cd
+
+# expose mppt_data as a local alias for the many read sites below
+mppt_data = cd.mppt_data
 from json import load as json_load
 from time import strftime, time, sleep
 from datetime import timedelta, datetime
 from threading import Thread, Event
-from queue import Queue, Empty
 from traceback import print_exc
 from os.path import abspath, join, dirname, getmtime, exists
 from os import system
@@ -28,94 +30,22 @@ except Exception as e:
 	print('error reading config file')
 	exit(1)
 
-mppt_data = {'combined':{}}; victron_devs = []; esmart3_devs = []; temp_sensor_devs = []
 inverter_drivers = []		# list of InverterDriver instances, built at startup from conf['inverters']
 
-# v2.1: the former single 'rs485' block is split into two logical blocks:
-#   conf['chargers']  — MPPT chargers + temperature sensors (read side)
-#   conf['inverters'] — inverters / feed-in units (write side)
-# A physically shared line (e.g. an eSmart3 reading while a Soyosource sends on
-# the same wire) is expressed as two separate entries: one charger entry and one
-# inverter entry that carry the same 'port'. This is the historic dual-use, kept
-# intentionally.
+# chargers and inverters are configured in separate conf blocks.
+# charger discovery, device lists and mppt_data are owned by charger_drivers.
 
-def _expand_victron_agg(conf):
-	"""Expand victron_agg ports into synthetic per-device entries in conf['chargers'].
-	Each entry uses SER# as port key and carries _agg_port + _ser for the write path.
-	Devices with type='temp' become mppt_type='temp_sensor'.
-	The original victron_agg entry is removed."""
-	chg = conf['chargers']
-	for port in list(chg.keys()):
-		dev = chg[port]
-		if dev.get('mppt_type') != 'victron_agg': continue
-		port_name = dev.get('name', port)
-		for ser, dev_info in dev.get('devices', {}).items():
-			name      = dev_info['name'] if isinstance(dev_info, dict) else dev_info
-			dev_type  = dev_info.get('type', 'mppt') if isinstance(dev_info, dict) else 'mppt'
-			pvp       = dev_info.get('pvp', 0)       if isinstance(dev_info, dict) else 0
-			if dev_type == 'temp':
-				chg[ser] = {
-					'name':       name,
-					'mppt_type':  'temp_sensor',
-					'_agg_port':  port,
-					'_ser':       ser,
-					'_port_name': port_name,
-				}
-			else:
-				chg[ser] = {
-					'name':       name,
-					'mppt_type':  'victron',
-					'_agg_port':  port,
-					'_ser':       ser,
-					'_pvp':       pvp,
-					'_port_name': port_name,
-				}
-		del chg[port]
-	return conf
-
-# backward-compat shim: accept an old-style conf that still uses 'rs485'.
-# Charger entries are copied to conf['chargers']; the legacy 'inverter' flag is
-# NOT auto-migrated — inverters must be defined in conf['inverters'] (see
-# zeroinput.conf.starter). This only prevents a hard crash on an old file.
-if 'chargers' not in conf and 'rs485' in conf:
-	print('NOTE: legacy rs485 config detected — migrate to chargers + inverters '
-	      '(see zeroinput.conf.starter). Inverters are NOT auto-migrated.')
-	conf['chargers'] = conf.pop('rs485')
-	conf.setdefault('inverters', {})
-
-conf = _expand_victron_agg(conf)
+conf = cd.expand_victron_agg(conf)
 
 # check unique device names across chargers
-_names = [v['name'] for v in conf['chargers'].values() if 'name' in v]
-if len(_names) != len(set(_names)):
-	print('ERROR: duplicate device names in chargers config: %s' % _names)
-	exit(1)
-
-for dev in conf['chargers']:
-	if conf['chargers'][dev].get('mppt_type') == 'victron':
-		# for aggregated devices use the physical port for the thread, not the synthetic SER# key
-		_thread_port = conf['chargers'][dev].get('_agg_port', dev)
-		if _thread_port not in victron_devs:
-			victron_devs.append(_thread_port)
-		mppt_data[dev] = {}
-	if conf['chargers'][dev].get('mppt_type') == 'eSmart3':
-										esmart3_devs.append(dev)
-										mppt_data[dev] = {}
-	if conf['chargers'][dev].get('mppt_type') == 'temp_sensor':
-										temp_sensor_devs.append(dev)
-										mppt_data[dev] = {}
-
-# v2.1: charger keys whose physical line carries a soyosource inverter, used by
-# combine_charger_data to decide which Pload readings count as inverter load.
-# A charger key is a port path (or a SER# for aggregated devices, whose physical
-# port is in _agg_port). We match against the ports of soyosource inverters.
-_soyo_ports = {iv.get('port') for iv in conf.get('inverters', {}).values()
-               if iv.get('type') == 'soyosource' and iv.get('port')}
-_soyo_charger_keys = set()
-for _ck, _cv in conf['chargers'].items():
-	_phys = _cv.get('_agg_port', _ck)
-	if _phys in _soyo_ports or _ck in _soyo_ports:
-		_soyo_charger_keys.add(_ck)
+# charger device lists are built at startup in __main__ via cd.build_chargers().
+# esmart3_devs, victron_devs, temp_sensor_devs, esmart_handles and modbus_handles
+# are populated there and used throughout this file.
+esmart3_devs     = []
+victron_devs     = []
+temp_sensor_devs = []
+esmart_handles   = []
+modbus_handles   = []
 
 if '-test-alarm' in sys.argv:
 	print('test alarm command:')
@@ -144,146 +74,18 @@ if web_stats:
 	sys.stdout = output_buffer		# comment here for DEBUGGING
 
 
-_MPPT_FMT = '{:<12s}  {:<10s}  {:>4s}  {:>4s}  {:>5s}  {:>5s}  {:<4s}  {:>5s}  {:>5s}  {:>3s}  {:>4s}  {:>4s}  {:<8s}'	# display_mppt_data column layout
+# ── charger functions delegated to charger_drivers module ─────────────────────
+# Thin wrappers over the charger_drivers API that supply conf and verbose.
 
 def _drain_rec_msgs():
-	"""Print all deferred REC messages queued by reader threads."""
-	while not _rec_msgs.empty():
-		try: print(_rec_msgs.get_nowait())
-		except Empty: break
+	cd.drain_rec_msgs()
 
-def display_mppt_data():			# display the mppt charger data
-	if not verbose: return
-	global mppt_data
-	print(_MPPT_FMT.format('port','name','W PV','%PVp','V bat','I bat','mode','Pload','Iload','age','Tint','Text',''))	# header line
-	
-	for port in list(mppt_data.keys()):		# snapshot keys to avoid race during iteration
-		port_data = mppt_data.get(port, {})	# snapshot reference — atomic under GIL
-		if port != 'combined' and conf['chargers'].get(port, {}).get('mppt_type') == 'temp_sensor':
-			continue						# displayed separately below
-		if 'CS' in port_data:
-			cs = port_data['CS']
-			# CS from VEDirect stream arrives as string — cast to int if possible
-			if isinstance(cs, str) and cs.lstrip('-').isdigit(): cs = int(cs)
-			if port != 'combined' and conf['chargers'][port].get('mppt_type') == 'victron':
-				if   cs == 'PORT':                             mppt_dev_mode = 'PORT ERROR'
-				elif isinstance(cs, int) and cs <= 14:         mppt_dev_mode = ['OFF','','FAULT','BULK','ABSORB','FLOAT','','EQUAL','','','START','','RECOND','','EXTCON'][cs]
-				else:                                          mppt_dev_mode = ''
-			elif port != 'combined' and conf['chargers'][port].get('mppt_type') == 'eSmart3':
-				if   cs == 'PORT':                             mppt_dev_mode = 'PORT ERROR'
-				elif isinstance(cs, int) and cs <= 4:          mppt_dev_mode = ['WAIT','MPPT','BULK','FLOAT','PRE'][cs]
-				else:                                          mppt_dev_mode = ''
-			else: mppt_dev_mode = ''
-		else: mppt_dev_mode = ''
+def display_mppt_data():
+	cd.display_mppt_data(conf, verbose)
 
-		# load string: ON shows current, OFF shows 'OFF', eSmart3 derives from Iload
-		load_str = ''
-		if 'LOAD' in port_data:					# Victron: explicit ON/OFF + IL
-			on = port_data['LOAD'] == 'ON'
-			load_str = ('%.1f' % port_data.get('IL', 0)) if on else 'OFF'
-		elif 'Iload' in port_data:				# eSmart3: derive from Iload
-			il = port_data['Iload']
-			load_str = ('%.1f' % il) if il > 0 else ''
-
-		# %PVp: PPV as percentage of configured pvp
-		# for combined: use sum of all configured pvp values across all devices
-		if port == 'combined':
-			pvp_val = sum(
-				d.get('pvp', 0) or d.get('_pvp', 0)
-				for d in conf['chargers'].values()
-				if d.get('mppt_type') in ('victron', 'eSmart3')
-			) or None
-		else:
-			pvp_val = conf['chargers'][port].get('pvp') or conf['chargers'][port].get('_pvp') or None
-		ppv     = port_data.get('PPV')
-		pvp_str = ('%i%%' % int(ppv / pvp_val * 100)) if (pvp_val and ppv is not None and pvp_val > 0) else ''
-
-		# all numeric values passed without padding — the format string handles alignment
-		print(_MPPT_FMT.format(
-			'all' if port == 'combined' else port,
-			'combined' if port == 'combined' else conf['chargers'][port]['name'],
-			'%i'   % ppv				if ppv  is not None else '',
-			pvp_str,
-			'%.2f' % port_data['Vbat']		if 'Vbat' in port_data else '',
-			'%.2f' % port_data['Ibat']		if 'Ibat' in port_data else '',
-			mppt_dev_mode,
-			('%i' % port_data['Pload']) if ('Pload' in port_data and port_data['Pload'] > 0) else '',
-			load_str,
-			('%.0fs' % (time() - port_data['ts'])) if 'ts' in port_data else '',
-			str(port_data['int_temp'])	if 'int_temp' in port_data else '',
-			str(port_data['ext_temp'])	if 'ext_temp' in port_data else '',
-			str(conf['chargers'][port]['temp_display']) if (port != 'combined' and 'temp_display' in conf['chargers'][port]) else '') )
-
-	# show unconfigured devices seen on AGG ports
-	for bridge in _vedirect_instances.values():
-		known     = set(bridge._ser_to_key.keys())
-		# get display name of the AGG port from any of its configured devices
-		_any_key  = next(iter(bridge._ser_to_key.values()), None)
-		port_name = conf['chargers'][_any_key]['_port_name'] if _any_key else bridge._physical
-		for ser in bridge._vd.get_all().keys():
-			if ser not in known:
-				print('{:12s}  {:10s}  UNCONFIGURED'.format(ser[:12], port_name[:10]))
-
-	# show AGG temperature sensors
-	for port in list(mppt_data.keys()):
-		if port == 'combined': continue
-		if conf['chargers'].get(port, {}).get('mppt_type') != 'temp_sensor': continue
-		port_data = mppt_data.get(port, {})
-		temp = port_data.get('ext_temp')
-		age  = ('%.0fs' % (time() - port_data['ts'])) if 'ts' in port_data else ''
-		print(_MPPT_FMT.format(
-			conf['chargers'][port].get('_port_name', port)[:12],
-			conf['chargers'][port]['name'],
-			'', '', '', '', 'TEMP', '', '', age, '',
-			('%.1f' % temp) if temp is not None else '', ''))
-
-def combine_charger_data():			# combine all mppt charger data to a summary
-	global mppt_data
-	d = {'PPV':0,'Vbat':0,'Ibat':0,'Pload':0}
-	
-	for name in d.keys():
-		valcnt = 0
-		for dev in list(mppt_data.keys()):		# snapshot keys to avoid race during iteration
-			if dev == 'combined': continue
-			dev_data = mppt_data.get(dev, {})	# snapshot reference — atomic under GIL
-			if name not in dev_data: continue
-			# Pload projection assumes load = one inverter per port;
-			# only include ports that share their line with a soyosource inverter —
-			# a Victron load port Pload (IL*Vbat) without an inverter is a DC load.
-			# v2.1: the inverter flag moved from the charger entry to conf['inverters'];
-			# _soyo_charger_keys holds charger keys whose physical port carries one.
-			if name == 'Pload' and dev not in _soyo_charger_keys:
-				continue
-			valcnt += 1
-			d[name] += dev_data[name]
-		if name == 'Vbat'	and valcnt > 0: d[name] /= valcnt	# the average
-		if name == 'Pload'	and valcnt > 0: d[name] = d[name] * n_active_inverters		# project one eSmart3 reading to all inverters | HINT (v2.1): approximate with mixed power classes — assumes all active units draw the measured per-unit load
-
-	# PVp: total PV power as percentage of sum of all configured peak powers
-	pvp_sum = sum(
-		dev.get('pvp', 0) or dev.get('_pvp', 0)
-		for dev in conf['chargers'].values()
-		if dev.get('mppt_type') in ('victron', 'eSmart3')
-	)
-	if pvp_sum > 0:
-		d['PVperc'] = int(d['PPV'] / pvp_sum * 100)
-
-	mppt_data['combined'] = d
-	return(0)
-
-
-def set_soyo_demand(ser,power):		# create and send the packet for soyosource gti
-	pu = power >> 8
-	pl = power & 0xFF
-	cs = 264 - pu - pl
-	if cs > 255: 
-		if power > 250:	cs -= 256
-		else:			cs -= 255
-	
-	ser.write( bytearray([0x24,0x56,0x00,0x21,pu,pl,0x80,cs]) )
-	ser.flush()
-	return(0)
-
+def combine_charger_data():
+	cd.combine_charger_data(conf, verbose)
+	# mppt_data is already a reference to cd.mppt_data
 
 def close_values(a,b,tol):			# check if values a and b are within tolerance
 	if a > b * (1 - 0.01*tol) and a < b *(1 + 0.01*tol): return(1)
@@ -318,7 +120,6 @@ def display_stats(in_pc, timer):
 
 def read_meter(vz_in):
 	"""Read Ls_read and Ls_ts from vzlogger fifo. Returns (Ls_read, Ls_ts)."""
-	global verbose
 	Ls_read = 99999; Ls_ts = 99999
 	main_log = False
 	while True:
@@ -421,11 +222,38 @@ def write_vzlogger_conf_example(conf):
 
 
 RUNTIME_NO_RELOAD = {
-	'chargers', 'inverters', 'rs485', 'vzlogger_log_file',
+	'chargers', 'inverters', 'vzlogger_log_file',
 	'persistent_vz_file', 'webconfig_port',
 	# chargers/inverters are structural: drivers and reader threads are built
 	# once at startup, so changes require a restart (use /api/restart).
 }
+
+STAGE_FADE_CYCLES = 5		# cross-fade stage2->stage1 over this many cycles (~5 s)
+STAGE2_FADE_OUT_DELAY = 2	# stage-2 fade-out lags the stage-1 fade-in by this many cycles
+HEAT_FAIL_FRACTION = 0.5	# heat-protect cap fraction of max_input_power when the selected sensor has no reading
+
+# battery voltage thresholds, expressed PER CELL so they scale with conf['cell_count'].
+# The original code was hard-wired to 16S LiFePO4 (51.2 V nominal); the 16S value is
+# noted next to each constant. cell_voltage(x) below multiplies by the configured cell
+# count, so at cell_count == 16 every threshold equals the original 16S figure exactly.
+VC_DERATE_LO   = 48.0  / 16		# 16S original: 48.0 V  (discharge derating lower bound, 0%)
+VC_DERATE_HI   = 51.0  / 16		# 16S original: 51.0 V  (discharge derating upper bound, 100%)
+VC_DERATE_OFF  = 46.93 / 16		# 16S original: 46.93 V (derating power-curve offset)
+VC_RAMP_OK     = 51.0  / 16		# 16S original: 51.0 V  (ramp: enough voltage for an up-ramp)
+VC_EXPORT      = 54.5  / 16		# 16S original: 54.5 V  (free-power-export threshold)
+VC_SATURATION  = 57.0  / 16		# 16S original: 57.0 V  (MPPT saturation / full-charge voltage)
+VC_INV_BASELOAD = 49.0 / 16		# 16S original: 49.0 V  (below this, subtract inverter base load by voltage)
+DERATE_EXP     = 3.281			# power-curve exponent (acts on total pack voltage, unchanged)
+
+def cell_voltage(per_cell):
+	"""Scale a per-cell threshold to the configured pack size. cell_count defaults
+	to 16, so an unconfigured (16S) system behaves exactly as the original code."""
+	return per_cell * conf.get('cell_count', 16)
+
+# stage cross-fade state (owned by send_to_inverters)
+_fade_cnt        = 0		# remaining fade cycles (0 = no fade in progress)
+_fade_from_alloc = {}		# stage-2 allocation captured at fade start
+_last_stage      = 1		# stage used on the previous cycle
 
 def reload_conf_if_changed(conf, conf_path, conf_mtime, predictor):
 	"""Check if conf file changed, reload whitelisted keys and log_to_vz module.
@@ -503,6 +331,47 @@ def check_saw(power_demand, send_history, block_saw_detection):
 	return power_demand
 
 
+def heat_protect_cap(mppt_data, max_input_power):
+	"""Heat protection: linear power cap driven by one selected temperature sensor.
+	Below conf['heat_temp_low'] the full max_input_power is allowed; at/above
+	conf['heat_temp_high'] the cap is zero (inverter off, so it does not keep
+	running pointlessly while overheating); linear in between. The sensor is the
+	charger whose config has heat_protect: true (exactly one valid) — any charger
+	that carries a temperature (temp_sensor, eSmart3, Modbus, AGG sub-sensor) is
+	eligible. The reading is ext_temp, falling back to int_temp. With none selected
+	the protection is off (returns max_input_power). If the selected sensor has no
+	fresh reading, the cap defaults to HEAT_FAIL_FRACTION * max_input_power as a
+	safe fallback. Returns (cap_W, status_text or '')."""
+	port = None
+	for p, c in conf.get('chargers', {}).items():
+		if c.get('heat_protect'):
+			port = p
+			break
+	if port is None:
+		return max_input_power, ''							# protection disabled (no sensor selected)
+
+	t_lo = conf.get('heat_temp_low', 60)
+	t_hi = conf.get('heat_temp_high', 80)
+
+	pd = mppt_data.get(port, {})
+	temp = pd.get('ext_temp', pd.get('int_temp'))		# ext preferred, int as fallback
+
+	if temp is None:
+		# No reading available. Charger aggregation already holds a failed sensor's
+		# last temperature for a short while (see port_error in charger_drivers);
+		# once that hold expires the value is gone and this safe fallback applies.
+		cap = int(HEAT_FAIL_FRACTION * max_input_power)
+		return cap, ', heat protect: no sensor reading, cap %i W' % cap
+
+	if temp <= t_lo:
+		return max_input_power, ''							# no derating
+	if temp >= t_hi:
+		return 0, ', heat protect %.1f°C: inverter off' % temp	# fully off when too hot
+	frac = (temp - t_lo) / (t_hi - t_lo) if t_hi > t_lo else 1.0	# 0 at t_lo, 1 at t_hi
+	cap = int(max_input_power * (1.0 - frac))			# linear down to 0 at t_hi
+	return cap, ', heat protect %.1f°C: cap %i W' % (temp, cap)
+
+
 def update_battery(bat_history, send_history):
 	"""Update battery voltage history with optional correction. Returns (bat_history, bat_voltage)."""
 	if conf['bat_voltage_const'] != 0:
@@ -530,7 +399,7 @@ def update_zero_shift(zero_shift, long_meter_history, adjusted_power):
 	return conf['zero_shifting']
 
 
-def send_to_inverters(power_demand, long_send_history, n_active_inverters):
+def send_to_inverters(power_demand, long_send_history, n_active_inverters, ramp_active=False):
 	"""Distribute power_demand across the configured inverter groups and send.
 
 	Two stages (see input_power_staging.py):
@@ -541,18 +410,58 @@ def send_to_inverters(power_demand, long_send_history, n_active_inverters):
 	           rises last.
 	Each group is one driver instance that sends exactly one command per cycle
 	(a Soyosource group broadcasts one packet to all its identical units; an
-	MK3 group writes one ESS setpoint). Returns the number of active units."""
+	MK3 group writes one ESS setpoint). Returns the number of active units.
+
+	Stage 2->1 cross-fade: when the stage drops from 2 to 1, the single stage-1
+	unit must jump from its small equal-share value to (almost) the whole demand.
+	Instead of one hard step, the per-unit allocation is linearly blended from
+	the stage-2 split to the stage-1 split over STAGE_FADE_CYCLES cycles, keeping
+	the summed feed-in constant throughout. The fade is aborted (and the demand
+	distributed normally) if a ramp is running or if the load rises enough to pull
+	active_stage back to 2 — stage-up is immediate, so this catches both a
+	ramp-sized jump and a gradual rise that never triggered a ramp."""
+	global _fade_cnt, _fade_from_alloc, _last_stage
 	if power_demand == 0:
 		for drv in inverter_drivers:
 			drv.sleep()
 		if verbose:
 			print('. power request')
 			_drain_rec_msgs()
+		_fade_cnt = 0
+		_last_stage = 1
 		return 0
 
 	stage = staging.active_stage(long_send_history, conf['single_inverter_threshold'])
-	alloc = staging.distribute(power_demand, inverter_drivers, stage,
-	                           conf['single_inverter_threshold'])
+
+	# detect a stage 2->1 transition and arm the cross-fade. The fade runs
+	# STAGE2_FADE_OUT_DELAY cycles longer than the fade-in span so the delayed
+	# fade-out of the stage-2 units also reaches completion.
+	if stage == 1 and _last_stage == 2 and not ramp_active:
+		_fade_from_alloc = staging.distribute(power_demand, inverter_drivers, 2,
+		                                       conf['single_inverter_threshold'])
+		_fade_cnt = STAGE_FADE_CYCLES + STAGE2_FADE_OUT_DELAY
+
+	# abort a fade in progress on a running ramp or if the load rose enough to
+	# pull active_stage back to 2 (stage-up is immediate, so this catches both a
+	# sudden ramp-sized jump and a gradual rise that never triggered a ramp)
+	if ramp_active or stage != 1:
+		_fade_cnt = 0
+
+	if _fade_cnt > 0:
+		stage1_alloc = staging.distribute(power_demand, inverter_drivers, 1,
+		                                   conf['single_inverter_threshold'])
+		total = STAGE_FADE_CYCLES + STAGE2_FADE_OUT_DELAY
+		done  = total - _fade_cnt + 1								# 1..total
+		t     = min(1.0, done / float(STAGE_FADE_CYCLES))			# fade-in (stage-1 unit), done early
+		t_out = max(0, done - STAGE2_FADE_OUT_DELAY) / float(STAGE_FADE_CYCLES)	# fade-out lags behind
+		alloc = staging.fade_blend(_fade_from_alloc, stage1_alloc, t, inverter_drivers, t_out)
+		_fade_cnt -= 1
+		if verbose: print('stage fade %i  t=%.2f t_out=%.2f' % (_fade_cnt, t, t_out))
+	else:
+		alloc = staging.distribute(power_demand, inverter_drivers, stage,
+		                           conf['single_inverter_threshold'])
+
+	_last_stage = stage
 
 	for drv in inverter_drivers:
 		w = alloc.get(drv.id, 0)
@@ -563,60 +472,20 @@ def send_to_inverters(power_demand, long_send_history, n_active_inverters):
 	if verbose:
 		parts = ['%s=%iW' % (d.id, alloc.get(d.id, 0))
 		         for d in inverter_drivers if alloc.get(d.id, 0) > 0]
-		print('power request stage %i  %s  (%i units)' % (
-			stage, ' '.join(parts) if parts else 'none', n_active_inverters))
+		countdown = staging.cycles_until_stage1(long_send_history, conf['single_inverter_threshold'])
+		cd_str = '' if countdown is None else ', %ic' % countdown
+		print('power request stage %i  %s  (%i units%s)' % (
+			stage, ' '.join(parts) if parts else 'none', n_active_inverters, cd_str))
 		_drain_rec_msgs()
 	return n_active_inverters
 
 
 def poll_chargers(esmart_handles, timeout_repeat, pv_cont):
-	"""Poll all esmart3 chargers."""
-	for charger in esmart_handles: charger['obj'].open()
-	for i in [1,2]:
-		if datetime.now() > timeout_repeat or pv_cont != 0:
-			for charger in esmart_handles:
-				charger['obj'].esmart_status_request()
-				if verbose: print('%i:  %s : %s status request' % (i, charger['obj'].port, conf['chargers'][charger['obj'].port]['name']))
-		elif verbose: print('. eSmart3 status')
-		sleep(0.22)
-	for charger in esmart_handles: charger['obj'].close()
+	cd.poll_chargers(esmart_handles, conf, timeout_repeat, pv_cont, verbose, modbus_handles)
 
 
 def check_temp_alarms(alarm_last):
-	"""Check and trigger temperature alarms for eSmart3 and AGG temp_sensor devices.
-	Alarm thresholds are read from conf['alarms'][device_name]. Each sensor (int/ext)
-	supports an independent high and low alarm: it fires when its threshold AND command
-	are configured and the temperature crosses it (temp > hi  or  temp < lo). Thresholds
-	may be negative or zero; only a missing key disables that alarm. Each alarm has its
-	own interval (default 300 s). eSmart3 devices expose int_temp + ext_temp; temp_sensor
-	devices expose ext_temp only.
-	alarm_last: {device_name: {'int_hi','int_lo','ext_hi','ext_lo': datetime}}"""
-	def fire(a, data, key, sub, label, name, times):
-		if key not in data: return
-		temp = data[key]
-		for bound, cmp in (('hi', temp.__gt__), ('lo', temp.__lt__)):
-			thr_key = '%s_%s' % (sub, bound)			# e.g. int_hi
-			cmd_key = '%s_%s_cmd' % (sub, bound)
-			if thr_key in a and a.get(cmd_key) and cmp(a[thr_key]):
-				if verbose: print('\nTEMPERATURE ALARM %s %s %s : %s °C (%s %i)\n' % (
-					label, name, bound, temp, bound, a[thr_key]))
-				tkey     = '%s_%s' % (sub, bound)
-				interval = a.get('%s_%s_interval' % (sub, bound), 300)
-				if times[tkey] + timedelta(seconds=interval) < datetime.now():
-					times[tkey] = datetime.now()
-					system(a[cmd_key])
-
-	alarms = conf.get('alarms', {})
-	for port in esmart3_devs + temp_sensor_devs:
-		name = conf['chargers'][port].get('name')
-		a    = alarms.get(name, {})
-		if not a or port not in mppt_data: continue
-		times = alarm_last.setdefault(name, {
-			'int_hi': datetime.min, 'int_lo': datetime.min,
-			'ext_hi': datetime.min, 'ext_lo': datetime.min})
-		fire(a, mppt_data[port], 'int_temp', 'int', 'internal', name, times)
-		fire(a, mppt_data[port], 'ext_temp', 'ext', 'external', name, times)
-	return alarm_last
+	return cd.check_temp_alarms(conf, alarm_last, esmart3_devs, temp_sensor_devs, verbose)
 
 
 def print_status(Ls_read, power_demand, zero_shift, status_text, last_runtime, send_history):
@@ -682,355 +551,10 @@ class discharge_times():			# handle timer.txt file
 			return 0
 
 
-class esmart:						# eSmart3 MPPT charger lib by skagmo.com 2018: https://github.com/skagmo/esmart_mppt | adapted for zeroinput
-	def __init__(self):
-		self.state = 0 # STATE_START
-		self.data = []
-		self.port = ""
-		self.timeout = 0
-	
-	def __del__(self):	self.close()
-	
-	def set_port(self, port):	self.port = port
-	
-	def open(self):
-		try:
-			self.ser = Serial(self.port, 9600, timeout=0.1)
-		except SerialException as e:
-			if verbose: print("Could not open port %s: %s" % (self.port, e))
-			mppt_data[self.port] = {'CS': 'PORT'}	# zero all values on port error
-			self.ser = None
-	def close(self):
-		try:
-			self.ser.close()
-			self.ser = False
-		except AttributeError:
-			pass
-	
-	def send(self, pl):	self.ser.write(self.pack(pl))
-	
-	def parse(self, data):
-		global mppt_data
-		for c in data:
-			if (self.state == 0):		# STATE_START
-				if (c == 0xaa):			# Start character detected
-					self.state = 1		# STATE_DATA
-					self.data = []
-					self.target_len = 255
-			elif (self.state == 1):		# STATE_DATA
-				self.data.append(c)
-				if (len(self.data) == 5): self.target_len = 6 + self.data[4]	# Received enough of the packet to determine length
-				if (len(self.data) == self.target_len):		# Received whole packet
-					self.state = 0		# STATE_START
-					# validate checksum: sum of all bytes (0xaa header + data) mod 256 == 0
-					if (0xaa + sum(self.data)) & 0xFF != 0:
-						if verbose: print('esmart checksum error on %s — packet discarded' % self.port)
-						continue
-					if (self.data[2] == 3): 
-						if (self.data[3] == 0):	# Type 0 packet contains most data
-							ts = time()
-							if verbose: _rec_msgs.put('REC %s : %s%s' % (
-								self.port, conf['chargers'][self.port]['name'],
-								'' if 'ts' not in mppt_data[self.port] else '  delay %.2fs' % (ts - mppt_data[self.port]['ts'])))
-							# build new dict locally, then replace atomically to avoid race with main loop
-							_new = {}
-							_new['CS']		= int.from_bytes(self.data[7:9],	byteorder='little')
-							_new['VPV']		= int.from_bytes(self.data[9:11],	byteorder='little') / 10.0
-							_new['Vbat']	= int.from_bytes(self.data[11:13],	byteorder='little') / 10.0
-							_new['Ibat']	= int.from_bytes(self.data[13:15],	byteorder='little') / 10.0
-							_new['Vload']	= int.from_bytes(self.data[17:19],	byteorder='little') / 10.0
-							_new['Iload']	= int.from_bytes(self.data[19:21],	byteorder='little') / 10.0
-							_new['PPV']		= int.from_bytes(self.data[21:23],	byteorder='little')
-							_new['Pload']	= int.from_bytes(self.data[23:25],	byteorder='little')
-							_new['ext_temp']= self.data[25] if self.data[25] < 200 else self.data[25] - 256
-							_new['int_temp']= self.data[27] if self.data[27] < 200 else self.data[27] - 256
-							_new['ts']		= ts
-							mppt_data[self.port] = _new	# atomic reference replacement
-	
-	def esmart_status_request(self):
-		if self.ser is None: return
-		try:
-			while self.ser.inWaiting():
-				self.parse(self.ser.read(100))
-			
-			if (time() - self.timeout) > 1:
-				self.ser.write(b"\xaa\x01\x01\x01\x00\x03\x00\x00\x1e\x32")								# send status request
-				self.timeout = time()
-		except IOError:
-			reconnect_delay = 0.5
-			reconnect_attempts = 20
-			if verbose: print("Serial port error, fixing", self.port)
-			try:
-				self.ser.close()
-			except Exception:
-				pass
-			for attempt in range(1, reconnect_attempts + 1):
-				try:
-					self.ser = Serial(self.port, 9600, timeout=0.1)
-					if verbose: print("Error fixed after %i attempt(s)" % attempt)
-					break
-				except SerialException as e:
-					if verbose: print("Attempt %i failed: %s" % (attempt, e))
-					sleep(reconnect_delay)
-			else:
-				if verbose: print("Could not reopen port after %i attempts: %s" % (reconnect_attempts, self.port))
-				mppt_data[self.port] = {'CS': 'PORT'}	# zero all values on port error
-	
-	
-def _map_victron_fields(src):
-	"""Map raw VE.Direct field names to zeroinput's mppt_data field names.
-	Handles V→Vbat, I→Ibat, mV/mA→V/A conversion, CS cast, Pload derivation.
-	src: dict of {field: value} as parsed from VE.Direct stream."""
-	mapped = {}
-	for f, v in src.items():
-		if   f == 'V':  mapped['Vbat'] = v
-		elif f == 'I':  mapped['Ibat'] = v
-		elif f == 'CS': mapped['CS']   = int(v) if str(v).lstrip('-').isdigit() else v
-		elif f == 'ts': mapped['ts']   = v
-		else:           mapped[f]      = v
-	if 'IL' in mapped and 'Vbat' in mapped:
-		mapped['Pload'] = int(mapped['IL'] * mapped['Vbat'])
-	return mapped
-
-
-def _victron_rec_msg(port_name, dev_name, old):
-	"""Build a deferred REC message string with delay if previous timestamp known."""
-	now = time()
-	delay = ('  delay %.2fs' % (now - old['ts'])) if 'ts' in old else ''
-	return 'REC %s : %s%s' % (port_name, dev_name, delay), now
-_vedirect_instances  = {}	# {physical_port: VEDirectBridge}  — AGG ports
-_victron_cmd_queues  = {}	# {device_key: Queue(maxsize=1)}    — conventional ports
-_rec_msgs            = Queue()	# deferred REC messages printed after power request
-
-
-class VEDirectBridge:
-	"""Wraps ve_aggregator.VEDirect and writes parsed blocks into zeroinput's mppt_data
-	via the on_block callback — no patching, no double parsing."""
-
-	def __init__(self, physical_port):
-		try:
-			from ve_aggregator import VEDirect as _VEDirect
-		except ImportError:
-			raise ImportError('ve_aggregator.py not found')
-		self._physical    = physical_port
-		# build SER# → synthetic key map from conf
-		self._ser_to_key  = {d['_ser']: k for k, d in conf['chargers'].items()
-		                     if d.get('_agg_port') == physical_port}
-		self._vd          = _VEDirect(physical_port, on_block=self._on_block)
-		if verbose: print('VEDirectBridge: started on %s  devices: %s' % (
-			physical_port, list(self._ser_to_key.keys())))
-
-	def _on_block(self, ser, block):
-		"""Called by ve_aggregator after every parsed block — mirror into mppt_data."""
-		key = self._ser_to_key.get(ser)
-		if not key: return
-		dev      = conf['chargers'][key]
-		old      = mppt_data.get(key, {})
-		port_lbl = dev.get('_port_name', self._physical)
-		# temperature sensor block (DS18B20 via firmware)
-		if dev.get('mppt_type') == 'temp_sensor':
-			temp_raw = block.get('TEMP')
-			if temp_raw is not None:
-				try:
-					temp = float(temp_raw)
-					_, now = _victron_rec_msg(port_lbl, dev['name'], old)	# msg unused, temp has its own format
-					mppt_data[key] = {'ext_temp': temp, 'ts': now}
-					if verbose: _rec_msgs.put('REC %s : %s  %.1f°C%s' % (
-						port_lbl, dev['name'], temp,
-						('  delay %.2fs' % (now - old['ts'])) if 'ts' in old else ''))
-				except ValueError: pass
-			return
-		mapped       = _map_victron_fields(block)
-		msg, now     = _victron_rec_msg(port_lbl, dev['name'], old)
-		mapped['ts'] = now
-		if verbose: _rec_msgs.put(msg)
-		mppt_data[key] = mapped
-
-	def start(self):   self._vd.start(); return self
-
-	def stop(self):    self._vd.stop()
-
-	def check_stale(self):
-		"""Call once per main loop cycle. Marks devices not seen within
-		device_timeout as CS='PORT' and zeroes all measurement values to prevent
-		stale data from affecting combine_charger_data and set_victron_power."""
-		active = set(self._vd.get_all().keys())		# filtered by device_timeout
-		for ser, key in self._ser_to_key.items():
-			if ser not in active and key in mppt_data:
-				if mppt_data[key].get('CS') != 'PORT':		# only zero once on transition
-					mppt_data[key] = {'CS': 'PORT'}			# atomic replace — all values gone
-
-	def set_watts(self, ser, watts):
-		self._vd.set_watts(ser, watts)
-
-# ── VE.Direct HEX SET (conventional direct ports) ────────────────────────────
-# Implements the same SET sequence as readtext_sendhex firmware:
-# convert W→0.1A, write register 0x2015, verify by readback.
-
-_HEX_ADDR        = 0x2015	# Charge Current Limit, 0.1A units, volatile
-_HEX_TIMEOUT     = 0.4		# s: wait for HEX ACK / GET reply (matches firmware)
-_VBAT_FALLBACK   = 24.0		# V: used when Vbat not yet known (matches firmware default)
-
-
-def _hex_build_set(val_x10):
-	"""VE.Direct HEX SET frame for register 0x2015. val_x10 in 0.1A units."""
-	lo = _HEX_ADDR & 0xFF;  hi = (_HEX_ADDR >> 8) & 0xFF
-	vlo = val_x10  & 0xFF;  vhi = (val_x10  >> 8) & 0xFF
-	cs = (0x55 - 0x80 - lo - hi - 0x00 - vlo - vhi) & 0xFF
-	return (':8%02X%02X00%02X%02X%02X\n' % (lo, hi, vlo, vhi, cs)).encode()
-
-
-def _hex_build_get():
-	"""VE.Direct HEX GET frame for register 0x2015 readback."""
-	lo = _HEX_ADDR & 0xFF;  hi = (_HEX_ADDR >> 8) & 0xFF
-	cs = (0x55 - 0x70 - lo - hi - 0x00) & 0xFF
-	return (':7%02X%02X00%02X\n' % (lo, hi, cs)).encode()
-
-
-def _hex_read_line(ser_obj, timeout):
-	"""Read one line from serial within timeout. Returns stripped str or ''."""
-	deadline = time() + max(0, timeout)
-	buf = b''
-	while time() < deadline:
-		ser_obj.timeout = min(0.05, max(0.001, deadline - time()))
-		c = ser_obj.read(1)
-		if not c: continue
-		buf += c
-		if c == b'\n':
-			return buf.decode('ascii', errors='replace').strip()
-	return ''
-
-
-def _hex_parse_get_reply(line):
-	"""Extract register value from HEX GET response (:6 frame). Returns int or None."""
-	# format: :6 LL HH FF VV WW CS  (all as hex nibbles, no spaces)
-	if not line.startswith(':6') or len(line) < 14:
-		return None
-	try:
-		val_lo = int(line[8:10],  16)
-		val_hi = int(line[10:12], 16)
-		return val_lo | (val_hi << 8)
-	except Exception:
-		return None
-
-
-def _hex_exec_set(ser_obj, device_key, watts):
-	"""Execute SET sequence on a conventional VE.Direct port.
-	Matches firmware behaviour: W→0.1A conversion, write 0x2015, verify by GET."""
-	vbat    = mppt_data.get(device_key, {}).get('Vbat') or _VBAT_FALLBACK
-	reg_val = round(watts / vbat * 10)
-
-	# 1. send SET frame
-	ser_obj.write(_hex_build_set(reg_val))
-	ser_obj.flush()
-
-	# 2. wait for ACK (any HEX response line)
-	deadline = time() + _HEX_TIMEOUT
-	ack_ok = False
-	while time() < deadline:
-		line = _hex_read_line(ser_obj, deadline - time())
-		if line.startswith(':'):
-			ack_ok = True
-			break
-
-	if not ack_ok:
-		if verbose: print('victron HEX set: ACK timeout for %s' % device_key)
-		return
-
-	# 3. send GET for verification
-	ser_obj.write(_hex_build_get())
-	ser_obj.flush()
-
-	# 4. wait for GET reply
-	deadline = time() + _HEX_TIMEOUT
-	rb_val = None
-	while time() < deadline:
-		line = _hex_read_line(ser_obj, deadline - time())
-		rb_val = _hex_parse_get_reply(line)
-		if rb_val is not None:
-			break
-
-	# 5. compare
-	if rb_val is None:
-		if verbose: print('victron HEX set: verify timeout for %s' % device_key)
-	elif rb_val != reg_val:
-		if verbose: print('victron HEX set: verify mismatch set=%i rb=%i for %s' % (
-			reg_val, rb_val, device_key))
-	else:
-		if verbose: print('victron HEX set: OK %s %iW %.1fA' % (
-			device_key, watts, reg_val / 10.0))
-
 
 def set_victron_power(device_key, watts):
-	"""Set MPPT charge power limit. Works for both AGG and conventional ports."""
-	dev = conf['chargers'].get(device_key, {})
-	if '_agg_port' in dev:
-		vd = _vedirect_instances.get(dev['_agg_port'])
-		if vd:
-			vd.set_watts(dev['_ser'], watts)
-	else:
-		q = _victron_cmd_queues.get(device_key)
-		if q:
-			try:	q.put_nowait(watts)		# drop if queue full (previous command pending)
-			except Exception: pass
-
-
-def handle_victron_data(serialport, stop_event: Event):												# reads serial data of victron devices (conventional, non-AGG ports only)
-	global mppt_data
-	rec_buf = {}
-	victron_debug = False
-	try:
-		ser = Serial(port=serialport, baudrate=19200, bytesize=8, parity='N', stopbits=1, timeout=2, xonxoff=0, rtscts=0)
-		ser.reset_input_buffer()
-		while True:
-			if stop_event.is_set(): 
-				ser.close()
-				return(0)
-			data = b''; char = ''
-			while char != b'\n':
-				char = ser.read()
-				data += char
-			if victron_debug: print('victron raw data:',data)
-			if data:
-				snv = str(data)[2:].split('\\t')
-				if len(snv) == 2: name,val = snv
-				else: continue
-				val = val[:-5]
-				if name == 'V': name = 'Vbat'
-				if name == 'I': name = 'Ibat'
-				if name == 'PID':										# begin new dataset with PID
-					ts = time()
-					old = mppt_data.get(serialport, {})
-					mppt_data[serialport] = rec_buf
-					if verbose:
-						msg, _ = _victron_rec_msg(serialport, conf['chargers'][serialport]['name'], old)
-						_rec_msgs.put(msg)
-					rec_buf = {'ts':ts}
-					if 'PPV' in old: rec_buf['PPV'] = old['PPV']	# keep old PPV for continuity
-				if name in ['PID','SER#','OR','LOAD','Checksum']:		rec_buf[name] = val					# add as string
-				elif name in ['Vbat','Ibat','VPV','IL'] and val.isnumeric():	rec_buf[name] = 0.001* int(val)		# add as float (mV/mA → V/A)
-				elif val.isnumeric():									rec_buf[name] = int(val)			# add as int
-				else:
-					if victron_debug: print('victron ELSE',data,'\n')
-					pass	# there seems to be a transmission error, ignore it
-				# derive Pload from IL * Vbat for Victron load port devices
-				if name == 'Checksum' and 'IL' in rec_buf and 'Vbat' in rec_buf:
-					rec_buf['Pload'] = int(rec_buf['IL'] * rec_buf['Vbat'])
-				# after complete block: check for pending SET command
-				if name == 'Checksum' and serialport in _victron_cmd_queues:
-					try:
-						watts = _victron_cmd_queues[serialport].get_nowait()
-						_hex_exec_set(ser, serialport, watts)
-					except Empty:
-						pass
-			continue
-	except Exception as e:
-		stop_event.set()							# tell all threads to stop
-		print(e)
-		print_exc()
-		mppt_data[serialport] = {'CS': 'PORT'}	# zero all values on port error
-		ser.close()
-		return(1)
+	"""Delegate to charger_drivers — unified interface for AGG and conventional ports."""
+	cd.set_victron_power(device_key, watts, conf)
 
 
 if __name__ =="__main__":
@@ -1043,31 +567,22 @@ if __name__ =="__main__":
 			except ImportError:
 				print('webconfig.py not found – httpd disabled')
 
-		# start victron reader threads / VEDirectBridge instances
-		_agg_physical = {d['_agg_port'] for d in conf['chargers'].values() if '_agg_port' in d}
-		for port in victron_devs:
-			if port in _agg_physical:
-				try:
-					bridge = VEDirectBridge(port)
-					_vedirect_instances[port] = bridge
-					bridge.start()
-					if verbose: print('VEDirectBridge started on %s' % port)
-				except ImportError as e:
-					print(e)
-			else:
-				# conventional port: dedicated reader thread + command queue
-				_victron_cmd_queues[port] = Queue(maxsize=1)
-				t = Thread(target=handle_victron_data, args=(port, stop_event))
-				victron_threads.append(t)
-				t.start()
+		# build charger device lists, initialise mppt_data, warm up eSmart handles
+		_cd_result = cd.build_chargers(conf, verbose)
+		esmart3_devs, victron_devs, temp_sensor_devs, esmart_handles, modbus_handles = _cd_result
+
+		# start Victron reader threads / VEDirectBridge instances
+		victron_threads = cd.start_victron_threads(victron_devs, conf, stop_event, verbose)
 		
 		max_input_power	= conf['max_input_power']
 		n_active_inverters = 0
 		power_demand		= 0
 		last_send		= 0
 		last2_send		= 0
+		last_Ls_read	= 0				# meter reading of the previous cycle (for the ramp trigger on change)
 		ramp_cnt			= 0
 		ramp_power			= 0
+		ramp_direction		= 0				# +1 up-ramp, -1 down-ramp, 0 none
 		free_power		= 0
 		dropped_first_up_ramp	= False
 		bat_voltage		= 0				# continous bat voltage
@@ -1088,20 +603,17 @@ if __name__ =="__main__":
 		
 		timer = None
 		if conf['discharge_timer']: timer = discharge_times()										# set up timer
-		if not conf.get('load_prediction', False):
+		try:
+			from predictor import LoadPredictor, LOG_FILE as PREDICTOR_LOG_FILE
+			predictor = LoadPredictor({'load_prediction': conf.get('load_prediction', True), 'min_spread_w': conf.get('min_spread_w', 150)}, False)	# load prediction init (verbose suppressed until log path is set)
+			if predictor._log_fh: predictor._log_fh.close(); predictor._log_fh = None
+			predictor._log_path = PREDICTOR_LOG_FILE if conf.get('predictor_log', True) else ''
+			predictor.verbose = verbose					# set verbose before log open so header is gated correctly
+			predictor._log_open()						# opens log and prints header+columns only if log enabled and verbose
+		except ImportError:
+			print('predictor.py not found – load prediction disabled')
+			conf['load_prediction'] = False
 			predictor = type('P', (), {'update': lambda *a,**k: 0, 'reload_conf': lambda *a,**k: None, 'status': lambda *a,**k: '', 'enabled': False, 'offset': 0, 'ramp_override_by_predictor': False})()
-		else:
-			try:
-				from predictor import LoadPredictor, LOG_FILE as PREDICTOR_LOG_FILE
-				predictor = LoadPredictor({'load_prediction': conf.get('load_prediction', True), 'min_spread_w': conf.get('min_spread_w', 150)}, False)	# load prediction init (verbose suppressed until log path is set)
-				if predictor._log_fh: predictor._log_fh.close(); predictor._log_fh = None
-				predictor._log_path = PREDICTOR_LOG_FILE if conf.get('predictor_log', True) else ''
-				predictor.verbose = verbose					# set verbose before log open so header is gated correctly
-				predictor._log_open()						# opens log and prints header+columns only if log enabled and verbose
-			except ImportError:
-				print('predictor.py not found – load prediction disabled')
-				conf['load_prediction'] = False
-				predictor = type('P', (), {'update': lambda *a,**k: 0, 'reload_conf': lambda *a,**k: None, 'status': lambda *a,**k: '', 'enabled': False, 'offset': 0, 'ramp_override_by_predictor': False})()
 		conf_path	= join(dirname(__file__), 'zeroinput.conf')
 		conf_mtime		= getmtime(conf_path)
 		_pred_path		= join(dirname(__file__), 'predictor.py')
@@ -1109,17 +621,6 @@ if __name__ =="__main__":
 		if verbose: print('zeroinput starts\n')
 		write_vzlogger_conf_example(conf)												# write vzlogger.conf.example on startup
 		
-		esmart_handles = []
-		for port in esmart3_devs:																		# set up esmart3 devices
-			esmart_handles.append( { 'obj': esmart() } )
-			esmart_handles[-1]['obj'].set_port(port)
-			esmart_handles[-1]['obj'].open()
-			for i in [1,2]:												# request status 2 times
-				if verbose: print(i)
-				esmart_handles[-1]['obj'].esmart_status_request()
-				sleep(0.20)
-			esmart_handles[-1]['obj'].close()
-
 		# build inverter drivers from conf['inverters'] (one driver per group)
 		inverter_drivers = build_inverters(conf.get('inverters', {}), verbose)
 		_s1_ok, _s1_cap = staging.check_stage1_capacity(
@@ -1149,7 +650,26 @@ if __name__ =="__main__":
 				'%s(%s x%i stages%s %i-%iW)' % (d.id, d.__class__.__name__,
 				 d.count, d.stages, d.min_power, d.max_power) for d in inverter_drivers))
 		if verbose: print('reading power meter data\n')
-		
+
+		# wait for real battery voltage data before entering the main loop —
+		# without this, the first cycle sees combined Vbat=0 (no charger data
+		# received/polled yet), which is misread as a 0V under-voltage and
+		# falsely triggers the 1-minute battery-protection timeout on every
+		# restart. Works for all charger types: combine_charger_data() picks up
+		# whatever build_chargers() already polled synchronously (eSmart3,
+		# Modbus) and whatever the AGG/Victron reader threads have delivered
+		# so far.
+		_vbat_wait_start = time()
+		_vbat_wait_timeout = 10		# seconds
+		while True:
+			combine_charger_data()
+			if mppt_data['combined'].get('Vbat', 0) > 0:
+				break
+			if time() - _vbat_wait_start > _vbat_wait_timeout:
+				print('WARNING: no battery voltage data after %ds, starting anyway' % _vbat_wait_timeout)
+				break
+			sleep(0.2)
+
 		while True:																						# infinite loop, stop the script with ctl+c
 
 			last2_send	= last_send		# dedicated history
@@ -1180,19 +700,33 @@ if __name__ =="__main__":
 			predictive_offset = predictor.update(Ls_read, last2_send)		# load prediction
 			power_demand = int( Ls_read + last2_send + zero_shift + predictive_offset )	# calculate the power demand
 			
-			if predictor.ramp_override_by_predictor:
+			if predictor.enabled and predictor.ramp_override_by_predictor:
 				ramp_cnt				= 0		# discard stale ramp state
+				ramp_direction			= 0
 				dropped_first_up_ramp	= False	# reset on override entry
 			else:
+				ls_change = Ls_read - last_Ls_read		# meter change since last cycle, not the absolute
+				                                        # value: the system need not have been at zero before
+
+				# abort an in-progress ramp if the meter now moves the opposite direction —
+				# without this, e.g. a strong down-step during a running up-ramp would be
+				# held back until the up-ramp countdown finishes, causing unnecessary export.
+				if ramp_cnt > 0 and (
+						(ls_change < -400 and ramp_direction > 0) or
+						(ls_change >  400 and ramp_direction < 0)):
+					ramp_cnt = 0
+					if verbose: print('ABORTED ramp - opposite direction detected')
+
 				# high change of power consumption, on rise: no active power limitation, sufficient bat_voltage
-				if (Ls_read < -400) or (Ls_read > 400 and not adjusted_power and bat_voltage > 51.0):
-					if not dropped_first_up_ramp and Ls_read > 400: 								# don't delay down ramps
+				if (ls_change < -400) or (ls_change > 400 and not adjusted_power and bat_voltage > cell_voltage(VC_RAMP_OK)):	# 16S original: 51.0 V
+					if not dropped_first_up_ramp and ls_change > 400: 								# don't delay down ramps
 						dropped_first_up_ramp = True
 						if verbose: print('DROPPED first Ramp')
 					else:
 						if	ramp_cnt == 0:
-							ramp_cnt = 2 + n_active_inverters											# counted in script cycles
+							ramp_cnt = 2 + round(min(max_input_power, abs(ls_change)) / (400 * max(1, n_active_inverters)))		# counted in script cycles; 400 W/s ramp rate per unit, capped to max_input_power
 							ramp_power = int(Ls_read + last2_send + zero_shift)						# without predictive_offset
+							ramp_direction = 1 if ls_change > 0 else -1
 				
 				if ramp_cnt > 0:																			# within ramp countdown
 					block_saw_detection = True																# disable saw detection
@@ -1202,6 +736,7 @@ if __name__ =="__main__":
 					
 					if ramp_cnt == 0:
 						dropped_first_up_ramp = False
+						ramp_direction = 0
 			status_text = ''
 			
 			bat_history, bat_voltage = update_battery(bat_history, send_history)						# update battery voltage
@@ -1220,7 +755,7 @@ if __name__ =="__main__":
 			else:
 				adjusted_power = False
 				
-				if bat_voltage <= 48 or (conf['discharge_timer'] and										# set a new battery timeout
+				if bat_voltage <= cell_voltage(VC_DERATE_LO) or (conf['discharge_timer'] and					# 16S original: 48 V; set a new battery timeout
 					( (not timer.battery or (timer.battery and (in_pc/3600) > timer.energy) ) and (not timer.inverter) )):
 					adjusted_power = True
 					power_demand		= 0																	# disable input
@@ -1228,7 +763,9 @@ if __name__ =="__main__":
 					timeout_repeat = datetime.now() + timedelta(minutes = 1)							# repeat in one minute
 				
 				else:
-					pv_bat_minus = 0 if bat_voltage > 49 else (49-bat_voltage)*50 * n_active_inverters		# reduction by battery voltage in relation to the base consumption of the inverter(s)
+					_v_bl = cell_voltage(VC_INV_BASELOAD)												# 16S original: 49 V
+					_v_bl_slope = 50 * 16 / conf.get('cell_count', 16)									# 16S original: 50 W/V; scaled so the per-cell derating slope is unchanged
+					pv_bat_minus = 0 if bat_voltage > _v_bl else (_v_bl-bat_voltage)*_v_bl_slope * n_active_inverters	# reduction by battery voltage in relation to the base consumption of the inverter(s)
 					avg_pv		= avg(pv_history[-3:])													# use a shorter span than pv_cont
 					pv_eff		= avg_pv-(avg_pv * conf['PV_to_AC_efficiency'] * 0.01)					# efficiency gap
 					pv_p_minus	= pv_bat_minus + pv_eff													# pv reduction
@@ -1241,14 +778,14 @@ if __name__ =="__main__":
 							adjusted_power = True
 							if verbose and pv_cont:	status_text	+= ((' limited, PV -%i W' % round(pv_p_minus)) if pv_p_minus else ' ') + ', no battery discharge'
 					
-					elif bat_voltage >= 48 and bat_voltage <= 51:												# limit battery power, pass through pv power
-						bat_power_percent_by_voltage	= (bat_voltage - 46.93 ) **3.281					# powercurve between 48-51 V, results in 1-100%
-						bat_power_by_voltage			= int(0.01 * max_input_power * bat_power_percent_by_voltage)	# 100% above 51 V
+					elif bat_voltage >= cell_voltage(VC_DERATE_LO) and bat_voltage <= cell_voltage(VC_DERATE_HI):	# 16S original: 48-51 V, limit battery power, pass through pv power
+						bat_power_percent_by_voltage	= (bat_voltage - cell_voltage(VC_DERATE_OFF)) **DERATE_EXP	# 16S original offset 46.93 V; powercurve over the derating band, results in 1-100%
+						bat_power_by_voltage			= int(0.01 * max_input_power * bat_power_percent_by_voltage)	# 100% above the upper bound
 						
 						if verbose: status_text = ', Bat %i W (%.1f%%)'	% (bat_power_by_voltage, bat_power_percent_by_voltage) + ', PV %i W (-%i W)'% (pv_power, pv_p_minus) if pv_power  != 0 else ''
 					
-					if conf['free_power_export'] and bat_voltage >= 54.5:										# give some free power to the world = "pull down the zero line" (not zero shift!)
-						free_power = int( (1.0/(57-54.5)) * (bat_voltage - 54.5) * conf['max_input_power'] )	# full energy input at maximum bat voltage: depends on mppt chargers "saturation charging voltage", usually 57 V
+					if conf['free_power_export'] and bat_voltage >= cell_voltage(VC_EXPORT):						# 16S original: 54.5 V; give some free power to the world = "pull down the zero line" (not zero shift!)
+						free_power = int( (1.0/(cell_voltage(VC_SATURATION)-cell_voltage(VC_EXPORT))) * (bat_voltage - cell_voltage(VC_EXPORT)) * conf['max_input_power'] )	# 16S original: 57 V saturation, 54.5 V export; full energy input at maximum bat voltage, depends on mppt chargers "saturation charging voltage"
 						if free_power > 0:
 							power_demand += free_power
 							adjusted_power = True
@@ -1286,6 +823,11 @@ if __name__ =="__main__":
 				
 				else:						max_input = max_input_power 								# the limit of the gti(s) by configuration
 				
+				heat_cap, heat_status = heat_protect_cap(mppt_data, max_input_power)				# heat protection: linear cap by selected temp sensor
+				if heat_cap < max_input:
+					max_input = heat_cap
+					if verbose: status_text += heat_status
+				
 				if power_demand	< 10:			# keep it positive with a little gap on bottom
 					power_demand	= 0				# disable input
 					adjusted_power = True
@@ -1309,12 +851,13 @@ if __name__ =="__main__":
 			alarm_last = check_temp_alarms(alarm_last)
 
 			last_runtime = time()
+			last_Ls_read = Ls_read																		# remember meter reading for next cycle's change-based ramp trigger
 			long_send_history = long_send_history[1:] + [power_demand]									# provide a long power_demand history
 			long_meter_history = long_meter_history[1:] + [Ls_read if (power_demand and not adjusted_power and not ramp_cnt) else 0]
 
-			n_active_inverters = send_to_inverters(power_demand, long_send_history, n_active_inverters)	# send to inverters
+			n_active_inverters = send_to_inverters(power_demand, long_send_history, n_active_inverters, ramp_cnt > 0)	# send to inverters
 			poll_chargers(esmart_handles, timeout_repeat, pv_cont)										# poll chargers
-			for bridge in _vedirect_instances.values(): bridge.check_stale()						# mark stale AGG devices
+			cd.check_stale()																				# mark stale AGG devices
 
 			in_pc += max(0, power_demand - pv_power)														# count energy only from battery
 			if conf['discharge_timer'] and timer.update(): in_pc = 0									# reset battery discharge energy counter
@@ -1333,6 +876,9 @@ if __name__ =="__main__":
 		if verbose: print('stop threads',file=sys.__stdout__)
 		stop_event.set()																				# tell all threads to stop
 		for t in victron_threads: t.join()
+		for bridge in cd._vedirect_instances.values():
+			try: bridge.stop()
+			except Exception: pass
 
 		for drv in inverter_drivers:
 			try: drv.stop()

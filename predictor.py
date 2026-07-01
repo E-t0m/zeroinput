@@ -21,7 +21,7 @@ def avg(xs):
 
 
 # --- module constants --------------------------------------------------------------------
-VERSION			= 107		# rectangle-signal rewrite, cycle-based timing
+VERSION			= 108		# keep peak state across k-means reset (no phantom short after long peak)
 LOG_FILE		= '/tmp/predictor.log'	# '' = no log
 
 NEAR_ZERO_W		= 50		# W: |Ls_read| <= this counts as "near zero" (quiet)
@@ -207,8 +207,14 @@ class LoadPredictor:
 			self.override_until_cycle		= 0
 			self.base_buf					= []
 			self.short_peaks				= []
-			self.in_peak					= False
-			self.peak_is_long				= False
+			# NOTE: in_peak / peak_is_long are deliberately NOT reset here. They
+			# describe the physical peak state (load above MIN_PEAK_W), which must
+			# only follow Ls_read, not an algorithm reset. Clearing them mid-peak
+			# (e.g. on the 'long' event, which fires while the load is still high)
+			# made _track_peak start a *new* peak on the next cycle, so the tail of
+			# a long peak was miscounted as a fresh short peak — which in turn armed
+			# the override after a single further short spike. The peak state is
+			# ended only in _track_peak when the load actually drops.
 			self.peak_after					= False
 		if self._log_fh:
 			try:

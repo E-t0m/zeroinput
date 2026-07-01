@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>zeroinput v2.1</title>
+<title>zeroinput v2.2</title>
 <style>
 	:root {
 		--bg:      #0f1117; --surface: #1a1d27; --border: #2a2d3e;
@@ -120,7 +120,7 @@
 </style>
 </head>
 <body>
-<header><h1>zeroinput v2.1</h1><span id="api_status" style="color:var(--muted);font-size:11px;">connecting...</span></header>
+<header><h1>zeroinput v2.2</h1><span id="api_status" style="color:var(--muted);font-size:11px;">connecting...</span></header>
 <nav>
 	<a onclick="tab('conf')"      id="tab_conf"      class="active">zeroinput.conf</a>
 	<a onclick="tab('chargers')"  id="tab_chargers">chargers</a>
@@ -171,7 +171,7 @@
 <!-- inverters tab -->
 <div id="pane_inverters" class="container">
 	<p style="font-size:13px;color:var(--muted);margin-bottom:12px;">
-		Feed-in units (write side). One sender per port; multiple identical units share a port via <code>count</code>.
+		Feed-in units (write side). One sender per port; multiple identical units wired in parallel share a port via <code>parallel units</code>.
 		<code>max/min power</code> are per single unit. Stage selects which power stage the group runs in — leave both unchecked to disable a unit without removing it.
 	</p>
 	<div class="rs-toolbar">
@@ -187,7 +187,7 @@
 <!-- alarms tab -->
 <div id="pane_alarms" class="container">
 	<p style="font-size:13px;color:var(--muted);margin-bottom:12px;">
-		Temperature alarms for eSmart3 and AGG temperature sensors.
+		Temperature alarms for eSmart3, EPever, Renogy, Morningstar and AGG temperature sensors.
 		Each alarm fires when the temperature crosses its threshold and a command is set.
 		Thresholds may be negative; an empty threshold or command disables that alarm.
 		Device list is read from the saved configuration — add devices in the chargers tab first.
@@ -221,12 +221,12 @@
 				This will stop and restart the zeroinput service via systemd.<br>
 				All current inverter output stops for a few seconds.<br>
 				Required after changes to chargers or inverters configuration.<br><br>
-				If Volkszähler data stops updating after the restart, restart vzlogger as well:<br>
-				<code style="font-size:12px;color:var(--muted)">sudo systemctl restart vzlogger</code>
+				If Volkszähler data stops updating after the restart, restart vzlogger as well using the button below.
 			</p>
 		</div>
-		<div class="btn-row" style="justify-content:center;">
-			<button class="btn-danger" onclick="doRestart()">Restart zeroinput</button>
+		<div class="btn-row" style="justify-content:center;gap:12px;">
+			<button class="btn-danger" onclick="doRestart('zeroinput')">Restart zeroinput</button>
+			<button class="btn-danger" onclick="doRestart('vzlogger')">Restart vzlogger</button>
 		</div>
 		<div id="restart-status" style="text-align:center;font-size:13px;color:var(--muted);min-height:20px;"></div>
 	</div>
@@ -263,6 +263,9 @@ const DEVICE_KEYS = {
 	'victron':     ['PPV','VPV','Vbat','Ibat','IL'],
 	'victron_agg': ['PPV','VPV','Vbat','Ibat','IL'],
 	'temp_sensor': ['ext_temp'],
+	'epever':      ['PPV','VPV','Vbat','Ibat','SOC','int_temp','ext_temp'],
+	'renogy':      ['PPV','VPV','Vbat','Ibat','Pload','SOC','int_temp','ext_temp'],
+	'morningstar': ['PPV','VPV','Vbat','Ibat','int_temp','ext_temp'],
 };
 let deviceList = [];
 
@@ -272,13 +275,15 @@ const LOCKED = [
 const SECTIONS = {
 	'Paths & hardware':  ['vzlogger_log_file','persistent_vz_file','chargers','inverters','webconfig_port'],
 	'Inverters':         ['max_input_power','max_bat_discharge','single_inverter_threshold','multi_inverter_wait'],
-	'PV & battery':      ['PV_to_AC_efficiency','bat_voltage_const','free_power_export'],
+	'PV & battery':      ['PV_to_AC_efficiency','bat_voltage_const','cell_count','free_power_export'],
+	'Heat protection':   ['heat_temp_low','heat_temp_high'],
 	'Zero shift':        ['zero_shifting'],
 	'Prediction':        ['load_prediction', 'predictor_log', 'min_spread_w'],
 	'Timer':             ['discharge_timer','discharge_t_file'],
 };
 
 let confData = {}, helpMap = {};
+let _confAddedDefaults = {};
 
 // ── shared ────────────────────────────────────────────────────────────────────
 
@@ -315,6 +320,19 @@ async function loadConf() {
 		const d = await r.json();
 		if (!d.content) { msg('Failed to load conf', 'err'); return; }
 		confData = JSON.parse(d.content);
+		// fill in defaults for newer keys that may not yet exist in the saved conf,
+		// so their Settings fields render (and get persisted on save)
+		const CONF_DEFAULTS = {
+			heat_temp_low: 60, heat_temp_high: 80,
+			heat_temp_low_help: 'heat protection: below this sensor temperature (°C) the full max_input_power is allowed',
+			heat_temp_high_help: 'heat protection: at/above this sensor temperature (°C) power_demand is capped to zero (inverter off); linear in between. Select the trigger sensor in the chargers tab.',
+			cell_count: 16,
+			cell_count_help: 'number of LiFePO4 cells in series (16 = 51.2V, 15 = 48V, 8 = 24V/28V). All battery voltage thresholds scale with this; 16 reproduces the original behaviour exactly.',
+		};
+		_confAddedDefaults = {};
+		Object.entries(CONF_DEFAULTS).forEach(([k, v]) => {
+			if (!(k in confData)) { confData[k] = v; _confAddedDefaults[k] = true; }
+		});
 		helpMap  = parseHelp(confData);
 		deviceList = [{name:'', type:null}, {name:'combined', type:'combined'}];
 		if (confData.chargers) Object.values(confData.chargers).forEach(d => {
@@ -421,7 +439,7 @@ async function saveConf() {
 		if (el.tagName === 'SELECT') v = el.value === 'true';
 		else if (el.dataset.type === 'number') v = parseFloat(el.value);
 		else v = el.value;
-		if (JSON.stringify(v) !== JSON.stringify(confData[k])) updates[k] = v;
+		if (JSON.stringify(v) !== JSON.stringify(confData[k]) || _confAddedDefaults[k]) updates[k] = v;
 	});
 	// collect dict sub-key inputs — merge into one object per parent key
 	document.querySelectorAll('[data-key][data-subkey]').forEach(el => {
@@ -559,26 +577,28 @@ document.getElementById('timer_ta').addEventListener('keydown', e => {
 
 // ── restart tab ───────────────────────────────────────────────────────────────
 
-async function doRestart() {
-	const btn = document.querySelector('.btn-danger');
+async function doRestart(service) {
+	service = service || 'zeroinput';
+	const btns = document.querySelectorAll('#pane_restart .btn-danger');
 	const st  = document.getElementById('restart-status');
-	btn.disabled = true;
-	st.textContent = 'Sending restart command…';
+	btns.forEach(b => b.disabled = true);
+	st.style.color = 'var(--muted)';
+	st.textContent = 'Sending restart command to ' + service + '…';
 	try {
-		const r = await fetch(API + '/api/restart', {method:'POST'});
+		const r = await fetch(API + '/api/restart?service=' + encodeURIComponent(service), {method:'POST'});
 		const d = await r.json();
 		if (d.ok) {
 			st.style.color = 'var(--ok)';
-			st.textContent = 'Restart command sent — zeroinput is restarting.';
+			st.textContent = 'Restart command sent — ' + service + ' is restarting.';
 		} else {
 			st.style.color = 'var(--err)';
 			st.textContent = 'Error: ' + (d.error || 'restart failed');
-			btn.disabled = false;
+			btns.forEach(b => b.disabled = false);
 		}
 	} catch(e) {
 		st.style.color = 'var(--err)';
 		st.textContent = 'Error: ' + e.message;
-		btn.disabled = false;
+		btns.forEach(b => b.disabled = false);
 	}
 }
 
@@ -586,12 +606,16 @@ async function doRestart() {
 
 function almEsc(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
 
-// collect alarm-capable devices from saved config: eSmart3 (int+ext) and AGG temp sensors (ext only)
+// collect alarm-capable devices from saved config: eSmart3 + epever/renogy/
+// morningstar (int+ext) and AGG temp sensors (ext only)
 function almDevices() {
 	const out = [];
 	const rs = confData.chargers || {};
+	const modbusTemp = ['epever', 'renogy', 'morningstar'];
 	for (const dev of Object.values(rs)) {
 		if (dev.mppt_type === 'eSmart3' && dev.name) {
+			out.push({name: dev.name, sensors: ['int','ext'], tempDisplay: dev.temp_display || ''});
+		} else if (modbusTemp.includes(dev.mppt_type) && dev.name) {
 			out.push({name: dev.name, sensors: ['int','ext'], tempDisplay: dev.temp_display || ''});
 		} else if (dev.mppt_type === 'victron_agg' && dev.devices) {
 			for (const sub of Object.values(dev.devices)) {
@@ -620,10 +644,8 @@ function almRow(d, sensor, bound) {
 	return `
 <div class="alarm-row">
 	<label>${sLabel} ${bLabel}</label>
-	<input type="number" class="narrow" data-alm="${k}" data-fld="thr" value="${thr == null ? '' : thr}"
-		placeholder="°C">
-	<input type="text" data-alm="${k}" data-fld="cmd" value="${almEsc(cmd)}"
-		placeholder="shell command on trigger">
+	<input type="number" class="narrow" data-alm="${k}" data-fld="thr" value="${thr == null ? '' : thr}">
+	<input type="text" data-alm="${k}" data-fld="cmd" value="${almEsc(cmd)}">
 	<div class="interval-wrap">
 		<input type="number" class="narrow" data-alm="${k}" data-fld="itv" value="${itv == null ? 300 : itv}">
 		<span>s</span>
@@ -650,7 +672,7 @@ function renderAlarms() {
 		html += `</div></div>`;
 	}
 
-	if (!devs.length) html = `<p class="rs-hint">No eSmart3 or temperature-sensor devices configured. Add them in the chargers tab.</p>` + html;
+	if (!devs.length) html = `<p class="rs-hint">No charger or temperature-sensor devices configured. Add them in the chargers tab.</p>` + html;
 	wrap.innerHTML = html;
 }
 
@@ -691,6 +713,10 @@ async function saveAlarms() {
 const CH_VICTRON     = 'victron';
 const CH_VICTRON_AGG = 'victron_agg';
 const CH_ESMART      = 'esmart3';
+const CH_EPEVER      = 'epever';
+const CH_RENOGY      = 'renogy';
+const CH_MORNINGSTAR = 'morningstar';
+const CH_MODBUS_TYPES = [CH_EPEVER, CH_RENOGY, CH_MORNINGSTAR];
 
 let chPorts = [];
 let chNextId = 0;
@@ -701,6 +727,9 @@ function chConfToPortList(chargers) {
 		if (dev.mppt_type === 'victron')     type = CH_VICTRON;
 		if (dev.mppt_type === 'victron_agg') type = CH_VICTRON_AGG;
 		if (dev.mppt_type === 'eSmart3')     type = CH_ESMART;
+		if (dev.mppt_type === 'epever')      type = CH_EPEVER;
+		if (dev.mppt_type === 'renogy')      type = CH_RENOGY;
+		if (dev.mppt_type === 'morningstar') type = CH_MORNINGSTAR;
 		return {
 			id:           chNextId++,
 			path:         path,
@@ -708,6 +737,8 @@ function chConfToPortList(chargers) {
 			type:         type,
 			temp_display: dev.temp_display  || '',
 			pvp:          dev.pvp           || 0,
+			unit:         dev.unit          || 1,	// modbus slave address
+			heat_protect: dev.heat_protect  || false,
 			devices:      dev.devices       || {},	// SER# → {name,pvp,type} for victron_agg
 		};
 	});
@@ -729,7 +760,12 @@ function chPortListToConf(ports) {
 			dev.mppt_type = 'eSmart3';
 			if (p.pvp)          dev.pvp          = parseInt(p.pvp);
 			if (p.temp_display) dev.temp_display = p.temp_display;
+		} else if (CH_MODBUS_TYPES.includes(p.type)) {
+			dev.mppt_type = p.type;					// 'epever' | 'renogy' | 'morningstar'
+			if (p.pvp)  dev.pvp  = parseInt(p.pvp);
+			dev.unit = parseInt(p.unit) || 1;
 		}
+		if (p.heat_protect) dev.heat_protect = true;	// heat-protection trigger sensor (at most one)
 		chargers[p.path] = dev;
 	}
 	return chargers;
@@ -764,7 +800,6 @@ function chMakeCard(p) {
 		<label>Device path</label>
 		<div>
 			<input type="text" id="chpath-${p.id}" value="${chEsc(p.path)}"
-				placeholder="/dev/ttyACM0"
 				oninput="chOnPath(${p.id},this.value)">
 			<div class="val-err" id="chpatherr-${p.id}">path already used</div>
 		</div>
@@ -772,7 +807,6 @@ function chMakeCard(p) {
 	<div class="field-row">
 		<label>Name</label>
 		<input type="text" id="chname-${p.id}" value="${chEsc(p.name)}"
-			placeholder="solar1"
 			oninput="chOnField(${p.id},'name',this.value)">
 	</div>
 	<div class="field-row">
@@ -781,11 +815,57 @@ function chMakeCard(p) {
 			<option value="${CH_VICTRON}"     ${p.type===CH_VICTRON    ?'selected':''}>Victron MPPT (single)</option>
 			<option value="${CH_VICTRON_AGG}" ${p.type===CH_VICTRON_AGG?'selected':''}>Victron AGG (aggregator)</option>
 			<option value="${CH_ESMART}"      ${p.type===CH_ESMART     ?'selected':''}>eSmart3 MPPT</option>
+			<option value="${CH_EPEVER}"      ${p.type===CH_EPEVER     ?'selected':''}>EPever Tracer-AN/-BN</option>
+			<option value="${CH_RENOGY}"      ${p.type===CH_RENOGY     ?'selected':''}>Renogy Rover/Elite/Adventurer</option>
+			<option value="${CH_MORNINGSTAR}" ${p.type===CH_MORNINGSTAR?'selected':''}>Morningstar TriStar MPPT</option>
 		</select>
 	</div>
 	${chMakeTypeFields(p)}
+	<div class="field-row">
+		<label>Heat protect</label>
+		<label class="inline-check"><input type="checkbox" id="chheat-${p.id}" ${p.heat_protect?'checked':''}
+			onchange="chOnHeatProtect(${p.id},this.checked)"> use this sensor as the heat-protection trigger</label>
+	</div>
 </div>`;
 	return card;
+}
+
+function chClearAllHeatProtect(exceptPortId) {
+	// clear the heat-protection flag everywhere — port-level sensors and all AGG
+	// sub-sensor rows — so that at most one trigger stays selected globally.
+	chPorts.forEach(p => {
+		if (p.id !== exceptPortId) {
+			p.heat_protect = false;
+			const el = document.getElementById('chheat-' + p.id);
+			if (el) el.checked = false;
+		}
+		// AGG sub-device rows
+		const tbody = document.getElementById('chdevices-' + p.id);
+		if (tbody) tbody.querySelectorAll('tr').forEach(row => {
+			const cbs = row.querySelectorAll('input[type=checkbox]');
+			cbs.forEach(cb => { cb.checked = false; });
+		});
+		if (p.devices) Object.values(p.devices).forEach(d => {
+			if (d && typeof d === 'object') delete d.heat_protect;
+		});
+	});
+}
+
+function chOnHeatProtect(id, on) {
+	// exactly one sensor may be the heat-protection trigger (across ports AND
+	// AGG sub-sensors)
+	if (on) chClearAllHeatProtect(id);
+	chPorts.forEach(p => { if (p.id === id) p.heat_protect = on; });
+}
+
+function chOnAggHeatProtect(pid, checkbox) {
+	// an AGG sub-sensor row was toggled — clear every other trigger, then collect
+	const stay = checkbox.checked;
+	if (stay) {
+		chClearAllHeatProtect(null);	// clears all checkboxes including this one
+		checkbox.checked = true;		// re-set this one as the single active trigger
+	}
+	chCollectDevices(pid);
 }
 
 function chMakeTypeFields(p) {
@@ -793,14 +873,13 @@ function chMakeTypeFields(p) {
 <div class="field-row">
 	<label>PVp W</label>
 	<input type="number" class="narrow" id="chpvp-${p.id}" value="${p.pvp || ''}"
-		placeholder="0"
 		oninput="chOnField(${p.id},'pvp',parseInt(this.value)||0)">
 </div>`;
 	if (p.type === CH_VICTRON_AGG) return `
 <p class="rs-hint">Aggregator port — one physical port, multiple Victron MPPTs identified by SER#.</p>
 <div class="rs-section-label">Devices (SER# → Name)</div>
 <table class="devices-table">
-	<thead><tr><th>SER#</th><th>Name</th><th>PVp W</th><th>Type</th><th></th></tr></thead>
+	<thead><tr><th>SER#</th><th>Name</th><th>PVp W</th><th>Type</th><th>Heat limit</th><th></th></tr></thead>
 	<tbody id="chdevices-${p.id}">
 		${Object.entries(p.devices).map(([ser, name]) => chDeviceRow(p.id, ser, name)).join('')}
 	</tbody>
@@ -810,16 +889,33 @@ function chMakeTypeFields(p) {
 <div class="field-row">
 	<label>PVp W</label>
 	<input type="number" class="narrow" id="chpvp-${p.id}" value="${p.pvp || ''}"
-		placeholder="0"
 		oninput="chOnField(${p.id},'pvp',parseInt(this.value)||0)">
 </div>
 <div class="field-row">
 	<label>Temp display</label>
 	<input type="text" id="chtempdsp-${p.id}" value="${chEsc(p.temp_display)}"
-		placeholder="battery"
 		oninput="chOnField(${p.id},'temp_display',this.value)">
 </div>
 <p class="rs-hint">An inverter sharing this line is configured separately in the <strong>inverters</strong> tab with the same port. Temperature alarms in the <strong>alarms</strong> tab.</p>`;
+	if (CH_MODBUS_TYPES.includes(p.type)) {
+		const hint = {
+			epever:      'Tracer-AN / Tracer-BN. Modbus RTU, 115200 8N1.',
+			renogy:      'Rover / Rover Elite / Adventurer / Wanderer. Modbus RTU, 9600 8N1.',
+			morningstar: 'TriStar MPPT 45/60. Modbus RTU, 9600 8N1. EIA-485 only on TS-MPPT-60/M — the TS-MPPT-45 is RS-232 only.',
+		}[p.type] || '';
+		return `
+<div class="field-row">
+	<label>PVp W</label>
+	<input type="number" class="narrow" id="chpvp-${p.id}" value="${p.pvp || ''}"
+		oninput="chOnField(${p.id},'pvp',parseInt(this.value)||0)">
+</div>
+<div class="field-row">
+	<label>Modbus unit</label>
+	<input type="number" class="narrow" id="chunit-${p.id}" value="${p.unit || 1}" min="1" max="247"
+		oninput="chOnField(${p.id},'unit',parseInt(this.value)||1)">
+</div>
+<p class="rs-hint">${hint} Unit = Modbus slave address (default 1).</p>`;
+	}
 	return '';
 }
 
@@ -850,18 +946,22 @@ function chDeviceRow(pid, ser, dev) {
 	const name  = (typeof dev === 'object') ? (dev.name || '') : (dev || '');
 	const pvp   = (typeof dev === 'object') ? (dev.pvp  || '') : '';
 	const dtype = (typeof dev === 'object') ? (dev.type || 'mppt') : 'mppt';
+	const heat  = (typeof dev === 'object') ? !!dev.heat_protect : false;
 	return `<tr>
-		<td><input type="text"   value="${chEsc(ser)}"  placeholder="HQ12345ABC" style="width:110px"
+		<td><input type="text"   value="${chEsc(ser)}"  style="width:110px"
 			oninput="chCollectDevices(${pid})"></td>
-		<td><input type="text"   value="${chEsc(name)}" placeholder="VE 150/35"  style="width:100px"
+		<td><input type="text"   value="${chEsc(name)}" style="width:100px"
 			oninput="chCollectDevices(${pid})"></td>
-		<td><input type="number" value="${pvp}" placeholder="0" class="pvp-input"
+		<td><input type="number" value="${pvp}" class="pvp-input"
 			${dtype==='temp'?'style="display:none"':''}
 			oninput="chCollectDevices(${pid})"></td>
 		<td><select oninput="chCollectDevices(${pid})">
 			<option value="mppt" ${dtype==='mppt'?'selected':''}>MPPT</option>
 			<option value="temp" ${dtype==='temp'?'selected':''}>Temp</option>
 		</select></td>
+		<td><input type="checkbox" title="heat-protection trigger" ${heat?'checked':''}
+			${dtype==='temp'?'':'style="display:none"'}
+			onchange="chOnAggHeatProtect(${pid},this)"></td>
 		<td><button class="rs-remove-btn" onclick="this.closest('tr').remove();chCollectDevices(${pid})">✕</button></td>
 	</tr>`;
 }
@@ -886,8 +986,13 @@ function chCollectDevices(pid) {
 		const ser   = inputs[0].value.trim();
 		const name  = inputs[1].value.trim();
 		const pvp   = parseInt(inputs[2].value) || 0;
+		const heat  = inputs[3] ? inputs[3].checked : false;	// heat-protection trigger checkbox
 		const dtype = selects[0] ? selects[0].value : 'mppt';
-		if (ser) p.devices[ser] = {name, pvp, type: dtype};
+		if (ser) {
+			const d = {name, pvp, type: dtype};
+			if (dtype === 'temp' && heat) d.heat_protect = true;
+			p.devices[ser] = d;
+		}
 	});
 }
 
@@ -901,7 +1006,7 @@ function chOnType(id, val) {
 }
 
 function chAddPort() {
-	const p = {id: chNextId++, path:'', name:'', type: CH_ESMART, temp_display:'', pvp: 0, devices: {}};
+	const p = {id: chNextId++, path:'', name:'', type: CH_ESMART, temp_display:'', pvp: 0, unit: 1, devices: {}};
 	chPorts.push(p);
 	document.getElementById('ch-list').appendChild(chMakeCard(p));
 	setTimeout(() => {
@@ -1040,15 +1145,13 @@ function invMakeCard(it) {
 	<div class="field-row">
 		<label>ID</label>
 		<div>
-			<input type="text" id="invid-${it.uid}" value="${invEsc(it.id)}"
-				placeholder="mp2" oninput="invOnId(${it.uid},this.value)">
+			<input type="text" id="invid-${it.uid}" value="${invEsc(it.id)}" oninput="invOnId(${it.uid},this.value)">
 			<div class="val-err" id="inviderr-${it.uid}">id already used</div>
 		</div>
 	</div>
 	<div class="field-row">
 		<label>Name</label>
-		<input type="text" id="invname-${it.uid}" value="${invEsc(it.name)}"
-			placeholder="MultiPlus II" oninput="invOnField(${it.uid},'name',this.value)">
+		<input type="text" id="invname-${it.uid}" value="${invEsc(it.name)}" oninput="invOnField(${it.uid},'name',this.value)">
 	</div>
 	<div class="field-row">
 		<label>Type</label>
@@ -1060,8 +1163,7 @@ function invMakeCard(it) {
 	<div class="field-row">
 		<label>Port</label>
 		<div>
-			<input type="text" id="invport-${it.uid}" value="${invEsc(it.port)}"
-				placeholder="/dev/ttyUSB0" oninput="invOnPort(${it.uid},this.value)">
+			<input type="text" id="invport-${it.uid}" value="${invEsc(it.port)}" oninput="invOnPort(${it.uid},this.value)">
 			<div class="val-err" id="invporterr-${it.uid}">port already used by another inverter</div>
 		</div>
 	</div>
@@ -1081,19 +1183,16 @@ function invMakeCard(it) {
 		</div>
 	</div>
 	<div class="field-row">
-		<label>Count</label>
-		<input type="number" class="narrow" id="invcount-${it.uid}" value="${it.count}"
-			placeholder="1" min="1" oninput="invOnField(${it.uid},'count',parseInt(this.value)||1)">
+		<label>Parallel units</label>
+		<input type="number" class="narrow" id="invcount-${it.uid}" value="${it.count}" min="1" oninput="invOnField(${it.uid},'count',parseInt(this.value)||1)">
 	</div>
 	<div class="field-row">
 		<label>Max power W</label>
-		<input type="number" class="narrow" id="invmax-${it.uid}" value="${it.max_power||''}"
-			placeholder="900" oninput="invOnField(${it.uid},'max_power',parseInt(this.value)||0)">
+		<input type="number" class="narrow" id="invmax-${it.uid}" value="${it.max_power == null ? '' : it.max_power}" oninput="invOnField(${it.uid},'max_power',parseInt(this.value)||0)">
 	</div>
 	<div class="field-row">
 		<label>Min power W</label>
-		<input type="number" class="narrow" id="invmin-${it.uid}" value="${it.min_power||''}"
-			placeholder="10" oninput="invOnField(${it.uid},'min_power',parseInt(this.value)||0)">
+		<input type="number" class="narrow" id="invmin-${it.uid}" value="${it.min_power == null ? '' : it.min_power}" oninput="invOnField(${it.uid},'min_power',parseInt(this.value)||0)">
 	</div>
 	${invMakeTypeFields(it)}
 </div>`;
@@ -1102,7 +1201,7 @@ function invMakeCard(it) {
 
 function invMakeTypeFields(it) {
 	if (it.type === 'soyosource') return `
-<p class="rs-hint">Per-unit max/min power. Multiple identical units on one port via count — they share one broadcast packet.</p>`;
+<p class="rs-hint">Per-unit max/min power. Multiple identical units wired in parallel on one port share one broadcast packet — set "Parallel units" to how many.</p>`;
 	if (it.type === 'victron_mk3') return `
 <div class="field-row">
 	<label>ESS sign</label>
