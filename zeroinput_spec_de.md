@@ -1,11 +1,11 @@
 # zeroinput – Funktionsspezifikation
-*v2.1*
+*v2.2*
 
 ## Zweck
 
 zeroinput steuert einen oder mehrere Batterie-Netzwechselrichter für Nulleinspeisung (Eigenverbrauchsoptimierung). Der Stromzähler wird kontinuierlich ausgelesen; die Wechselrichterleistung wird jeden Zyklus so angepasst, dass der Zähler möglichst nahe an null bleibt — weder Bezug noch Einspeisung.
 
-Ab v2.1 ist die Wechselrichterseite eine generische Mehrtyp-Treiberarchitektur: Soyosource-Limiter-Wechselrichter und Victron MultiPlus (ESS) werden unterstützt, in beliebiger Mischung und Anzahl, verteilt auf zwei Leistungsstufen. Das frühere Einzeltyp-Modell („nur Soyosource") entfällt.
+Die Wechselrichterseite ist eine generische Mehrtyp-Treiberarchitektur: Soyosource-Limiter-Wechselrichter und Victron MultiPlus (ESS) werden unterstützt, in beliebiger Mischung und Anzahl, verteilt auf zwei Leistungsstufen.
 
 ## Regelkreis
 
@@ -39,9 +39,11 @@ Wechselrichter werden im `inverters`-Block konfiguriert. Jeder Eintrag ist eine 
 
 Jede Gruppe sendet genau einen Befehl pro Zyklus: eine Soyosource-Gruppe sendet ein Paket (Pro-Gerät-Wert) an alle ihre Einheiten; eine MultiPlus-Gruppe schreibt einen ESS-Sollwert. Beim Start prüft zeroinput, ob die Stufe-1-Gruppen allein `single_inverter_threshold` abdecken, und warnt andernfalls.
 
+**Stufe-2→1-Überblendung.** Wechselt die Stufe von 2 auf 1 (nach der vollständigen `multi_inverter_wait`-Hysterese), müsste die einzelne verbleibende Stufe-1-Einheit sonst in einem Schritt von ihrem kleinen Gleichanteil (z.B. ~200 W bei vier Einheiten, die sich 800 W teilen) auf fast die gesamte Anforderung springen. Stattdessen wird die Pro-Gerät-Verteilung über `STAGE_FADE_CYCLES` Zyklen (5, ≈5 s) linear von der Stufe-2- zur Stufe-1-Verteilung überblendet: die Stufe-1-Einheit fadet hoch, während die Stufe-2-Einheiten herunterfaden. Da die einzelne hochfadende Einheit einen viel größeren Sprung zu bewältigen hat als jede herunterfadende, läuft das Ausfaden der Stufe-2-Einheiten um `STAGE2_FADE_OUT_DELAY` Zyklen (2) hinter dem Einfaden her — die hochfadende Einheit bekommt einen Vorsprung, sodass die summierte Einspeisung nie unter die Anforderung fällt. Der Kompromiss ist eine kurze Übereinspeisung während der Überlappung (wird hingenommen und pro Gerät auf `max_power` begrenzt). Die Übereinspeisung lebt nur in der Verteilung; `active_stage` liest die `power_demand`-Historie, nicht die gesendete Verteilung, kann also keinen Rückfall auf Stufe 2 auslösen. Eine laufende Rampe (`ramp_cnt > 0`) oder ein Lastanstieg, der groß genug ist, um `active_stage` wieder auf 2 zu heben, bricht die Überblendung sofort ab und die Anforderung wird normal verteilt. Das Hochschalten erfolgt sofort (ohne `multi_inverter_wait`-Verzögerung), sodass sowohl ein plötzlicher rampengroßer Sprung als auch ein allmählicher Anstieg, der nie eine Rampe ausgelöst hat, erfasst werden; fällt die Anforderung auf null, wird die Überblendung ebenfalls gelöscht. Der umgekehrte Übergang (1→2) wird nicht überblendet. Während Stufe 2 hängt die verbose-/Web-Ausgabe `Nc` (N Zyklen) an die Einheiten-Zeile an — eine bedingte Schätzung, wie viele Zyklen noch bis zur Rückkehr auf Stufe 1 verbleiben, *sofern jeder zukünftige Wert auf oder unter dem Schwellwert bleibt*. Sie wächst wieder, sobald ein neuer hoher Wert in die Historie eintritt, da das Herunterschalten das gesamte Fenster zum Einschwingen braucht.
+
 **Lückenprüfung.** Beim Start (und beim Speichern der Inverter-Konfiguration in der Weboberfläche) durchläuft zeroinput die angeforderte Leistung von der kleinsten `min_power` bis `max_input_power` entlang des realen Regelpfads und meldet jedes Leistungsband, das keine Wechselrichterkombination liefern kann. In Stufe 2 bewegt die Gleichteilung die gelieferte Leistung in Schritten von etwa der Anzahl aktiver Einheiten — das ist die immanente Regelauflösung und keine Lücke; nur größere Sprünge werden gemeldet. Lückenlose Abdeckung ist Pflicht: eine Lücke (z.B. ein Stufe-1-Gerät endet bei 900 W, während das einzige Stufe-2-Gerät `min_power` 1500 W hat) erzeugt eine unübersehbare Warnung. Die Einspeisung wird über `max_input_power = 0` oder den Timer deaktiviert, nicht durch das Stehenlassen von Lücken.
 
-Die Anzahl aktiver Einheiten (Summe der `count` über Gruppen, die Leistung erhalten haben) ersetzt das alte `n_active_inverters` / `total_number_of_inverters` und fließt in Rampenverhalten und Pload-Projektion.
+Die Anzahl aktiver Einheiten (Summe der `count` über Gruppen, die Leistung erhalten haben) fließt in das Rampenverhalten ein.
 
 ---
 
@@ -85,10 +87,24 @@ Ein konfigurierbarer Offset auf den Leistungssollwert:
 
 ## Batterieverwaltung
 
-- **Spannungskurve** (48–51 V): Batterieentladeleistung wird durch eine Leistungskurve begrenzt; volle Entladung ab 51 V erlaubt.
-- **Unterspannungsschutz**: unter 48 V wird der Wechselrichter für 1 Minute deaktiviert.
-- **Spannungskorrektur** (`bat_voltage_const`): kompensiert Spannungsabfall unter Last mit einem konfigurierbaren Faktor.
-- **Freie Einspeisung** (`free_power_export`): bei Batteriespannungen über 54,5 V wird überschüssige Energie gezielt ins Netz eingespeist; skaliert linear bis `max_input_power` bei der MPPT-Float-Spannung (~57 V).
+- **Einstellbare Zellzahl** (`cell_count`): Alle Batteriespannungs-Schwellen sind als Spannung pro Zelle hinterlegt und skalieren mit der Zahl der LiFePO4-Zellen in Serie. Standard ist 16S (51,2 V nominal); auch 15S (48 V), 8S (24/28 V) und andere Werte sind möglich. Die folgenden Spannungsangaben gelten für 16S und skalieren entsprechend.
+- **Spannungskurve** (48–51 V bei 16S, also 3,00–3,19 V/Zelle): Batterieentladeleistung wird durch eine Leistungskurve begrenzt; volle Entladung ab der oberen Schwelle erlaubt.
+- **Unterspannungsschutz**: unter der unteren Schwelle (48 V bei 16S) wird der Wechselrichter für 1 Minute deaktiviert.
+- **Spannungskorrektur** (`bat_voltage_const`): kompensiert Spannungsabfall unter Last mit einem konfigurierbaren Faktor (V/kW).
+- **Freie Einspeisung** (`free_power_export`): oberhalb der Export-Schwelle (54,5 V bei 16S) wird überschüssige Energie gezielt ins Netz eingespeist; skaliert linear bis `max_input_power` bei der MPPT-Float-Spannung (57 V bei 16S).
+- **Plausibilitätsfilter und Halten der Batteriespannung**: Bei der Mittelung der Batteriespannung über mehrere Laderegler werden Messwerte unter 2,0 V/Zelle verworfen, da eine LiFePO4-Zelle im Betrieb nie so tief fällt. Ein gestörter Regler, der 0 V oder einen unsinnig niedrigen Wert liefert, beeinflusst die gemittelte Spannung damit nicht. Liefert in einem Zyklus kein Regler einen plausiblen Wert — etwa nachts, wenn die MPPTs mangels PV-Eingangsspannung in den Ruhezustand gehen und keine Telemetrie mehr senden —, wird der zuletzt gemessene plausible Spannungswert gehalten und weitergegeben. So entsteht aus fehlender Messung keine 0 V, die wie eine leere Batterie aussähe und den Unterspannungsschutz auslösen würde. Diese Logik ist vollständig in der Laderegler-Aggregation gekapselt; die Regelung erhält immer einen plausiblen Spannungswert. Solange überhaupt noch nie ein gültiger Wert vorlag (Kaltstart), greift die Start-Wartephase.
+
+**Start-Wartephase auf Batteriedaten.** Vor Eintritt in die Hauptschleife ruft zeroinput wiederholt `combine_charger_data()` auf (alle 0,2 s, bis zu 10 s), bis `mppt_data['combined']['Vbat'] > 0` ist. Ohne diese Wartephase würde der allererste Zyklus `Vbat == 0` sehen (noch keine Laderdaten abgefragt/empfangen) — nicht von einer echten 0-V-Messung unterscheidbar — und bei jedem Neustart fälschlich den 1-Minuten-Unterspannungstimeout auslösen. Das funktioniert für jeden Ladertyp: synchrone Leser (eSmart3, Modbus) haben bereits Daten aus dem Warmup-Lesevorgang von `build_chargers()`, während AGG/Victron-Lesethreads ihren ersten Block innerhalb dieses Zeitfensters liefern. Meldet kein Lader innerhalb von 10 s einen `Vbat`-Wert, protokolliert zeroinput eine Warnung und startet trotzdem.
+
+---
+
+## Hitzeschutz
+
+Ein optionaler Hitzeschutz begrenzt `power_demand` linear anhand eines auswählbaren Temperatursensors. Unterhalb von `heat_temp_low` ist die volle `max_input_power` erlaubt, ab `heat_temp_high` wird der Wechselrichter abgeschaltet (Deckel 0), dazwischen linear interpoliert. Damit läuft der Wechselrichter bei Überhitzung nicht mit Restleistung weiter, sondern geht aus.
+
+Als Auslöser dient genau ein Laderegler, dessen Konfiguration `heat_protect: true` trägt. Geeignet ist jeder temperaturführende Geber (eigener Temperatursensor, eSmart3, Modbus-Regler, Aggregator-Subsensor); gelesen wird `ext_temp`, ersatzweise `int_temp`. Ist kein Sensor gewählt, ist der Schutz deaktiviert. Liefert der gewählte Sensor kurzzeitig keinen Messwert, wird der zuletzt gültige Temperaturwert weiter verwendet — eine reale Geräte-/Kühlkörpertemperatur ändert sich langsam genug, dass eine kurze Lücke unkritisch ist. Erst bei anhaltendem Sensorausfall greift als Sicherung ein fester Anteil der Maximalleistung (`HEAT_FAIL_FRACTION`, standardmäßig 50 %).
+
+Konfiguration: `heat_temp_low`, `heat_temp_high` (globale Schwellen) und die Sensor-Auswahl (`heat_protect`-Markierung an einem Laderegler, in der Weboberfläche per Auswahl).
 
 ---
 
@@ -106,7 +122,9 @@ Schwingungen in der Sendehistorie (wechselnde hohe/niedrige Anforderungen) werde
 
 ## Rampenverhalten
 
-Große plötzliche Zähleränderungen (> 400 W) lösen einen Rampenmodus aus: die Anforderung wird für `2 + Anzahl aktiver Einheiten` Zyklen auf dem Sprungwert gehalten, bevor die normale Regelung wieder einsetzt. Die erste Aufwärtsrampe nach einer stabilen Phase wird verworfen, um kurze, wenig bedeutsame Lastspitzen — wie das Anlaufen eines Kühlschrankkompressors — herauszufiltern, die sonst eine vollständige Rampenantwort auslösen würden.
+Große plötzliche Zähleränderungen lösen einen Rampenmodus aus: maßgeblich ist die **Änderung gegenüber dem vorigen Zyklus** (`Ls_read − last_Ls_read`), nicht der Absolutwert. Überschreitet diese Änderung 400 W, wird die Anforderung für `2 + round(min(|Sprung|, max_input_power) / (400 × Anzahl aktiver Einheiten))` Zyklen auf dem Sprungwert gehalten, bevor die normale Regelung wieder einsetzt. Die Prüfung auf die Änderung statt den Absolutwert ist wichtig, weil der Zähler vor dem Sprung nicht zwingend bei null lag — ein Lastabwurf, der den Zähler etwa von +300 W (Bezug) auf −1100 W (Einspeisung) wirft, ist ein Sprung von 1400 W, auch wenn keiner der beiden Absolutwerte für sich die Schwelle in der erwarteten Richtung sauber trifft. Die Formel nimmt an, dass jede aktive Wechselrichter-Einheit ihren Sollwert mit etwa 400 W/s rampt — ein größerer Sprung oder weniger aktive Einheiten brauchen mehr Zyklen zum Einschwingen, mehr Einheiten teilen sich die Rampe und sind schneller fertig. Der Sprung wird auf `max_input_power` begrenzt, da `power_demand` diesen Wert ohnehin nie überschreiten kann — ohne diese Begrenzung würde ein Sprung, der größer ist als das System je liefern kann, eine unrealistisch lange Haltezeit ergeben. Der Mindestwert ist 2 Zyklen (kleiner Sprung, mehrere Einheiten); gilt für Auf- und Abwärtsrampen gleich. Die erste Aufwärtsrampe nach einer stabilen Phase wird verworfen, um kurze, wenig bedeutsame Lastspitzen — wie das Anlaufen eines Kühlschrankkompressors — herauszufiltern, die sonst eine vollständige Rampenantwort auslösen würden.
+
+Eine laufende Rampe wird abgebrochen, wenn der Zählersprung jetzt um mehr als 400 W in die entgegengesetzte Richtung zeigt (z.B. ein starker Abwärtssprung während eine Aufwärtsrampe noch herunterzählt). Ohne diesen Abbruch würde die Anforderung auf dem veralteten Rampenwert verharren — und unnötig einspeisen oder beziehen — bis der Countdown der ursprünglichen Rampe abgelaufen ist. Beim Abbruch startet im selben Zyklus eine neue Rampe in der neuen Richtung.
 
 ---
 
@@ -115,12 +133,29 @@ Große plötzliche Zähleränderungen (> 400 W) lösen einen Rampenmodus aus: di
 Der Lastprediktor erkennt zyklische Lasten (Waschmaschine, Spülmaschine, Herd) und
 wiederkehrende kurze Hochlast-Spitzen und beugt der Einspeisung vor, die sie sonst verursachen
 würden. Er betreibt zwei Mechanismen: k-Means-Pegelstabilisierung für zyklische Lasten und
-einen Peak-/Override-Mechanismus für wiederkehrende kurze Spitzen.
+einen Peak-/Override-Mechanismus für wiederkehrende kurze Spitzen. Eine Spitze gilt als kurz,
+solange sie die Längenschwelle nicht überschreitet; überschreitet sie diese, wird sie als lange
+Last eingestuft und vom Spitzen-Mechanismus ausgenommen. Der Override wird erst durch zwei
+echte kurze Spitzen innerhalb des Beobachtungsfensters scharf geschaltet, sodass eine einzelne
+lange Last keine Übersteuerung auslöst.
 
 Er ist ein optionales, austauschbares Modul. zeroinput benötigt nur eine `LoadPredictor`-Klasse
 mit `update(Ls_read, last2_send)`, `reload_conf(conf)`, `status()` und den Attributen `enabled`,
 `offset` und `ramp_override_by_predictor`. Eigene Strategien können durch Ersetzen von
 `predictor.py` implementiert werden, ohne zeroinput selbst zu ändern.
+
+Ist `predictor.py` vorhanden, instanziiert zeroinput beim Start immer eine echte
+`LoadPredictor` — unabhängig vom initialen Wert von `load_prediction` — und schaltet sie nur
+über `reload_conf` ein/aus. Das Stub-Objekt (No-Op-`update`/`reload_conf` mit `enabled=False`)
+kommt nur zum Einsatz, wenn `predictor.py` komplett fehlt (`ImportError`). Damit ist
+`load_prediction` in beide Richtungen vollständig hot-umschaltbar: Einschalten initialisiert den
+Lernzustand des Predictors neu (`reload_conf` ruft beim Aus→Ein-Übergang `_init_state()` auf),
+Ausschalten greift sofort über die `enabled`-Prüfung unten.
+
+zeroinput berücksichtigt `ramp_override_by_predictor` nur, solange `predictor.enabled` wahr ist.
+Das schützt vor einem veralteten Override-Flag, das von vor dem Abschalten von `load_prediction`
+zur Laufzeit übrig geblieben ist — ohne diese `enabled`-Prüfung würde ein solches Flag `ramp_cnt`
+jeden Zyklus auf 0 zwingen und keine Rampe könnte laufen.
 
 Die vollständige Beschreibung — beide Mechanismen, das Spreizungsfenster, das zyklenbasierte
 Zeitmodell und alle Konstanten — steht in
@@ -144,13 +179,26 @@ Regeln werden der Reihe nach aktiviert; `0000-00-00` als Datum gilt täglich.
 
 ## MPPT-Laderegler-Unterstützung
 
+Die laderseitige Ein-/Ausgabe liegt in `charger_drivers.py` (getrennt von der Wechselrichter-Treiberschicht). Dieses Modul besitzt `mppt_data`, alle Lesethreads, die `VEDirectBridge`-Instanzen und die Modbus-Ladertreiber. `zeroinput.py` ruft dessen öffentliche API auf (`build_chargers`, `poll_chargers`, `combine_charger_data`, `display_mppt_data`, `check_temp_alarms`, `set_victron_power`, `check_stale`) und liest `mppt_data` direkt als geteilte Referenz.
+
 **eSmart3** — per RS485 jeden Zyklus abgefragt (Statusanforderung, Antwort parsen). Prüfsumme validiert (`(0xaa + sum(data)) & 0xFF == 0`) — fehlerhafte Pakete werden verworfen. Unterstützt Temperaturüberwachung und Alarme pro Gerät, Lastport-Daten (`Iload`, `Vload`, `Pload`) und `pvp` (PV-Spitzenleistung W) für `%PVp`-Anzeige. Mehrere Geräte unterstützt.
 
 **Victron MPPT (konventionell)** — per VE.Direct-Protokoll in einem dedizierten Hintergrundthread pro Gerät ausgelesen. `IL` (Laststrom) und `LOAD` (EIN/AUS) für Lastport-Anzeige geparst. `Pload = IL × Vbat` bei Verfügbarkeit berechnet. `pvp` für `%PVp`-Anzeige gespeichert. Portausfall setzt `CS='PORT'` für `PORT ERROR`-Anzeige. Ein Thread pro Port.
 
-**Victron MPPT (Aggregator)** — mehrere MPPTs an einem RS485-Port via `readtext_sendhex`-Firmware ([VE.Direct-Aggregator](https://github.com/E-t0m/ve.direct-aggregator), Arduino Mega 2560 / Teensy 4.1). Verwaltet durch `VEDirectBridge`, das `ve_aggregator.VEDirect` über den `on_block`-Callback einbindet — geparste Blöcke werden direkt mit Block-Rate in `mppt_data` geschrieben, kein Patching, kein doppeltes Parsen, kein Polling-Thread. [`ve_aggregator.py`](https://github.com/E-t0m/ve.direct-aggregator) muss im gleichen Verzeichnis wie `zeroinput.py` liegen. Geräte werden per SER# identifiziert (`mppt_type: victron_agg`). Geräte-`pvp` in `devices[ser]['pvp']`. Geräte mit `type: temp` in der conf werden zu `mppt_type: temp_sensor` — DS18B20-Temperaturblöcke (Feld `TEMP`) werden als `ext_temp` in `mppt_data` geschrieben und in einer separaten Zeile unterhalb der Haupttabelle angezeigt. `check_stale()` wird jeden Zyklus aufgerufen — ersetzt `mppt_data[key]` atomar durch `{'CS': 'PORT'}` für Geräte, die innerhalb von `device_timeout` nicht gesehen wurden, und nullt dabei alle Messwerte, um veraltete Daten in `combine_charger_data` und `set_victron_power` zu verhindern. Unkonfigurierte SER# werden als `UNCONFIGURED` angezeigt. Zwei Hintergrundthreads pro physischem Port. Mehrere Aggregator-Ports unterstützt.
+**Victron MPPT (Aggregator)** — mehrere MPPTs an einem seriellen Port via `readtext_sendhex`-Firmware ([VE.Direct-Aggregator](https://github.com/E-t0m/ve.direct-aggregator), Arduino Mega 2560 / Teensy 4.1). VE.Direct ist elektrisch ein 3,3-V-UART; die Verbindung zum Pi läuft über einen USB-UART-Adapter. RS485-Pegelwandler können auf einer oder beiden Seiten zur Leitungsverlängerung eingesetzt werden, sind aber nicht erforderlich. Verwaltet durch `VEDirectBridge`, das `ve_aggregator.VEDirect` über den `on_block`-Callback einbindet — geparste Blöcke werden direkt mit Block-Rate in `mppt_data` geschrieben, kein Patching, kein doppeltes Parsen, kein Polling-Thread. [`ve_aggregator.py`](https://github.com/E-t0m/ve.direct-aggregator) muss im gleichen Verzeichnis wie `zeroinput.py` liegen. Geräte werden per SER# identifiziert (`mppt_type: victron_agg`). Geräte-`pvp` in `devices[ser]['pvp']`. Geräte mit `type: temp` in der conf werden zu `mppt_type: temp_sensor` — DS18B20-Temperaturblöcke (Feld `TEMP`) werden als `ext_temp` in `mppt_data` geschrieben und in einer separaten Zeile unterhalb der Haupttabelle angezeigt. `check_stale()` wird jeden Zyklus aufgerufen — ersetzt `mppt_data[key]` atomar durch `{'CS': 'PORT'}` für Geräte, die innerhalb von `device_timeout` nicht gesehen wurden, und nullt dabei alle Messwerte, um veraltete Daten in `combine_charger_data` und `set_victron_power` zu verhindern. Unkonfigurierte SER# werden als `UNCONFIGURED` angezeigt. Die AGG-Firmware sendet etwa alle 10 s ein `ALIVE`-Keepalive; `ve_aggregator.VEDirect` akzeptiert einen `on_alive`-Callback (aufgerufen von beiden ALIVE-Erkennungsstellen: dem Zeilenscanner des Reader-Threads und `_handle_block`), den `VEDirectBridge` nutzt, um jedes ALIVE als `REC <port> ALIVE <agg-name>` zu melden — bestätigt, dass die MCU selbst erreichbar ist, unabhängig von einzelnen MPPT-Geräten. Zwei Hintergrundthreads pro physischem Port (VE.Direct-Reader, -Sender). Mehrere Aggregator-Ports unterstützt.
 
-**Kombinierte Daten** — PPV, Vbat, Ibat, Pload über alle Geräte aggregiert. Vbat gemittelt. Pload nur von Lader-Ports aufsummiert, die sich eine Leitung mit einem Soyosource-Wechselrichter teilen (Victron-DC-Lastports ausgenommen), multipliziert mit der Anzahl aktiver Einheiten. Hinweis: bei gemischten Leistungsklassen (z.B. 900 W Soyosource + 2400 W MultiPlus) ist diese Einzelwert-Projektion nur näherungsweise.
+**Modbus-Lader (EPever / Renogy / Morningstar)** — jeden Zyklus synchron abgefragt (öffnen → lesen → schließen), wie eSmart3, nicht threaded. Ein eigenständiger Modbus-RTU-Leser (CRC16, Request/Response-Framing) ist auf pyserial aufgesetzt, sodass keine externe Modbus-Bibliothek nötig ist. Jeder Typ nimmt ein optionales `unit` (Modbus-Slave-Adresse, Standard 1).
+- `epever` — Tracer-AN / Tracer-BN (und LS-B). Input-Register (Funktion 4) ab 0x3100, Werte ×100, 115200 8N1. Liest PV V/P, Batterie V/I, Batterie- und Innentemperatur, SOC und Ladestatus.
+- `renogy` — Rover / Rover Elite / Adventurer / Wanderer. Holding-Register (Funktion 3) 0x0100–0x0109, 9600 8N1. Die Batterietemperatur nutzt ein Vorzeichen-Flag-Byte (Bit 7 = negativ). Liest SOC, Batterie V/I, Lastleistung, PV V/P, Controller- und Batterietemperatur.
+- `morningstar` — TriStar MPPT 45/60. RAM-Register mit Festkomma-Skalierung: V_PU (0x0000/1) und I_PU (0x0002/3) werden zuerst gelesen, dann angewandt als `n·V_PU·2⁻¹⁵` (Spannung), `n·I_PU·2⁻¹⁵` (Strom), `n·V_PU·I_PU·2⁻¹⁷` (Leistung). 9600 8N1. HINWEIS: EIA-485 gibt es nur beim TS-MPPT-60/M; der TS-MPPT-45 hat nur RS-232 und kann keinen RS485-Bus teilen.
+
+EPever, Renogy und Morningstar liefern Innen- und Batterietemperatur und können für Temperaturalarme genutzt werden.
+
+Pro Port-Eintrag wird ein Modbus-Lader unterstützt (der conf-Schlüssel ist der Port-Pfad). Mehrere Modbus-Lader an einem physischen RS485-Bus (Multi-Drop mit unterschiedlichen `unit`-Adressen) sind elektrisch möglich, werden aber von der Konfigurationsstruktur noch nicht unterstützt — jedem Modbus-Lader einen eigenen Port geben.
+
+**PORT-Fehler und PPV-Decay.** Jedes Ladegerät, dessen Port ausfällt (Serialfehler, Timeout oder AGG-Stale-Timeout), bekommt seinen `mppt_data`-Eintrag durch `{'CS': 'PORT'}` ersetzt. `combine_charger_data` erkennt das und trägt statt null den zuletzt bekannten PPV-Wert bei — reduziert um 10% pro Zyklus. Die Einspeisung wird damit bei einem Laderausfall nicht sofort abgeschnitten, sondern klingt sanft ab: nach ca. 22 Zyklen (≈22 s bei 1 s/Zyklus) sind noch unter 14% des ursprünglichen Werts übrig, nach ca. 45 Zyklen unter 1%. Erholt sich das Gerät und liefert wieder Live-Daten, wird sofort der echte gemessene PPV verwendet und der Decay zurückgesetzt. Der abklingende Wert wird in der PV-Spalte des betroffenen Geräts angezeigt (neben `PORT ERROR` in der mode-Spalte), sodass das Ausklingen pro Gerät sichtbar ist, nicht nur in der Gesamtsumme.
+
+**Kombinierte Daten** — PPV, Vbat, Ibat, Pload über alle Geräte aggregiert. Vbat wird gemittelt (Werte unter 2,0 V/Zelle ausgenommen); fehlt in einem Zyklus jede plausible Messung, wird der zuletzt gültige Vbat gehalten. PPV, Ibat und Pload werden summiert. Pload ist die echte Summe der tatsächlich gemessenen Lastwerte aller Geräte.
 
 ---
 
@@ -200,7 +248,7 @@ Die Konfigurationsschlüssel des Prediktors (`load_prediction`, `min_spread_w`,
 
 ## Temperaturalarme
 
-Konfiguriert im conf-Block `alarms` (getrennt von `chargers`), als Schlüssel der Gerätename. Gilt für eSmart3-Geräte (interner + externer Sensor) und AGG-`temp_sensor`-Geräte (nur externer Sensor).
+Konfiguriert im conf-Block `alarms` (getrennt von `chargers`), als Schlüssel der Gerätename. Gilt für eSmart3-, EPever-, Renogy- und Morningstar-Geräte (interner + externer Sensor) und AGG-`temp_sensor`-Geräte (nur externer Sensor).
 
 Jeder Sensor unterstützt zwei unabhängige Alarme:
 - **`int_hi` / `ext_hi`** — löst aus wenn `temp > Schwellwert`
@@ -230,10 +278,11 @@ Die Kanalzuordnung ist in `vz_channels` definiert (in der Weboberfläche editier
 
 HTTP-Server, gestartet mit `-httpd`. Bietet:
 - **zeroinput.conf-Tab** — Live-Bearbeitung aller hot-reloadbaren Schlüssel; Pfad-Schlüssel zeigen Neustart-Hinweis. Der `/api/conf`-Endpoint ist strukturunabhängig und bearbeitet das JSON direkt, die Blöcke `chargers` und `inverters` sind hier also als Rohwerte editierbar.
-- **chargers-Tab** — strukturierter Editor für MPPT-Lader und Temperatursensoren (eSmart3, Victron, Aggregator mit SER#-Tabelle). Neustart nach dem Speichern erforderlich. PVp-Feld bei `type: temp` ausgeblendet.
+- **chargers-Tab** — strukturierter Editor für MPPT-Lader und Temperatursensoren (eSmart3, Victron, Aggregator mit SER#-Tabelle, EPever, Renogy, Morningstar). Modbus-Typen zeigen ein `unit`-Feld (Slave-Adresse). Neustart nach dem Speichern erforderlich. PVp-Feld bei `type: temp` ausgeblendet. Pro Sensor wählbare Hitzeschutz-Markierung (nur einer gültig).
 - **inverters-Tab** — strukturierter Editor für Einspeise-Wechselrichter (Typ, Port, Stufen-Checkboxen, count, max/min-Leistung, ESS-Vorzeichen). Prüft beim Speichern auf Leistungslücken. Neustart erforderlich.
 - **VZ-Kanäle-Tab** — Tabelleneditor für Volkszähler-Kanalzuordnung
 - **timer.txt-Tab** — Texteditor für Entladeregeln; Hinweis wenn Timer in conf deaktiviert
+- **Restart-Tab** — Neustart der Dienste zeroinput und vzlogger per Knopf (je ein Button; setzt passende sudoers-Einträge voraus)
 - **Status-Tab** — Live-HTML-Statusseite (nur mit `-web`)
 
 ---
