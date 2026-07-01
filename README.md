@@ -1,6 +1,6 @@
 # zeroinput v2.2
 set power demand to zero
-using soyosource / multiplus inverters and MPPT charge controllers
+using grid inverters and MPPT charge controllers
 
 #### teilweise veraltet: [Vorstellung in deutscher Sprache](about_de.md)
 - [Installationsanleitung](zeroinput_installation_de.md)
