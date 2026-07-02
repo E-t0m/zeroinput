@@ -10,9 +10,9 @@ using grid inverters and MPPT charge controllers
 - [Installation manual](zeroinput_installation_en.md)
 - [Specifications](zeroinput_spec_en.md)
 
-[Screenshots of the webconfig](screenshots.md)
 
-![scheme](https://github.com/user-attachments/assets/8d767329-15f9-4098-b4b4-a9e70d0d98c9)
+[Screenshots of the webconfig](screenshots.md)
+![scheme](https://github.com/user-attachments/assets/f5ded8a0-bda4-4d94-9d9b-a653b748f641)
 
 This script uses a https://volkszaehler.org/ installation for energy meter input and data display.
 
