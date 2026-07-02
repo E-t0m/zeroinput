@@ -1,6 +1,5 @@
 # zeroinput v2.2
-set power demand to zero
-using grid inverters and MPPT charge controllers
+set power import to zero, using grid inverters and charge controllers
 
 | English | Deutsch |
 |----------|---------|
