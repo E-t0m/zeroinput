@@ -1,6 +1,6 @@
 # zeroinput Lastprediktor — Spezifikation
 
-Funktionsspezifikation des zeroinput-Lastprediktors (`predictor.py`, VERSION 107). Dies ist die maßgebliche Beschreibung des Soll-Verhaltens. Die englische Fassung ist `predictor_spec_en.md`.
+Funktionsspezifikation des zeroinput-Lastprediktors (`predictor.py`, VERSION 108). Dies ist die maßgebliche Beschreibung des Soll-Verhaltens. Die englische Fassung ist `predictor_spec_en.md`.
 
 ## Zweck
 
@@ -29,7 +29,7 @@ zeroinput benötigt:
 
 ## Zeitmodell: Zyklen statt Sekunden
 
-Alle Zeitgrößen werden in **Zyklen** gezählt — ein `update()`-Aufruf ist ein Zyklus. Der Regelkreis läuft etwa mit einem Zyklus pro Sekunde, daher lassen sich die Konstantenwerte weiterhin natürlich als Sekunden lesen, aber die Zählung ist exakt und unabhängig von Schwankungen der Schleifenzeit. (Eine frühere sekundenbasierte Variante verfehlte einen Schwellwert, wenn die Zyklen nicht exakt eine Sekunde auseinanderlagen.) Die Wanduhrzeit wird nur für den Log-Zeitstempel verwendet.
+Alle Zeitgrößen werden in **Zyklen** gezählt — ein `update()`-Aufruf ist ein Zyklus. Der Regelkreis läuft etwa mit einem Zyklus pro Sekunde, daher lassen sich die Konstantenwerte weiterhin natürlich als Sekunden lesen, aber die Zählung ist exakt und unabhängig von Schwankungen der Schleifenzeit. Die Wanduhrzeit wird nur für den Log-Zeitstempel verwendet.
 
 ## Konstanten
 
@@ -37,7 +37,7 @@ Gemeinsam:
 
 | Konstante | Wert | Bedeutung |
 |---|---|---|
-| `NEAR_ZERO_W` | 50 | `|Ls_read|` ≤ dieser Wert gilt als „nahe null" (ruhig) |
+| `NEAR_ZERO_W` | 50 | Betrag von `Ls_read` ≤ dieser Wert gilt als „nahe null" (ruhig) |
 
 k-Means:
 
@@ -95,6 +95,12 @@ Ein Peak läuft, solange `Ls_read > MIN_PEAK_W`, und endet, sobald `Ls_read ≤ 
 
 Der Wert von `PEAK_SHORT_MAX_N` sollte an die eigene Anlage und die eigenen Erwartungen angepasst werden.
 
+### Peak-Zustand über den Reset hinweg
+
+Der physikalische Peak-Zustand — ob gerade ein Peak läuft und ob er bereits als lang eingestuft ist — beschreibt die reale Last und folgt allein `Ls_read`. Er wird deshalb **nicht** von einem k-Means-Reset gelöscht, sondern endet ausschließlich, wenn die Last unter `MIN_PEAK_W` fällt.
+
+Andernfalls würde der Reset durch einen langen Peak — der ja auslöst, während die Last noch hoch ist — den laufenden Peak künstlich beenden; im Folgezyklus begänne ein neuer Peak, dessen Schwanz beim Abklingen als zusätzlicher kurzer Peak gezählt würde. Zusammen mit einer einzelnen weiteren Spitze könnte dieser Phantom-Peak den Override fälschlich scharf schalten. Da der Peak-Zustand über den Reset hinweg erhalten bleibt, entsteht kein Phantom-Peak: nur zwei **echte** kurze Spitzen aktivieren den Override.
+
 ### Peak-Behandlung gegenüber k-Means
 
 - Jedes Peak-Sample wird in der History durch das Niveau der Phase ersetzt, in der der Peak begann (LOW oder HIGH); die History-Länge bleibt unverändert. Das Rechtecksignal wird über den Peak flach weitergehalten. Seltene Phasenwechsel während eines kurzen Peaks werden ignoriert (ein kurzer Peak ist viel kürzer als eine Phase).
@@ -118,7 +124,7 @@ Der Override endet bei einem langen Peak (≥ 10 Zyklen) oder nach `PEAK_WINDOW_
 
 ## Reset-Semantik
 
-Ein k-Means-Reset löscht die gelernten Niveaus, die History, die Phase und den Transition-Zähler. Standardmäßig beendet ein Reset **auch** den Override: er löscht das Override-Flag, die ausstehende Vorbereitung, den Grundlast-Puffer, die Liste der kurzen Peaks (`short_peaks`) und den laufenden Peak-Zustand — ein vollständiger Neustart. So kann eine alte Peak-Historie nach dem Reset keine ungewollte erneute Override-Aktivierung auslösen. Das gilt für den Reset durch langen Peak und für den down-Abbruch. Die einzige Ausnahme ist der k-Means-Timeout, der nur die Niveaus verwirft und Override, Grundlast-Puffer und Peak-Historie unangetastet lässt (ein laufender Override wird fortgesetzt).
+Ein k-Means-Reset löscht die gelernten Niveaus, die History, die Phase und den Transition-Zähler. Standardmäßig beendet ein Reset **auch** den Override: er löscht das Override-Flag, die ausstehende Vorbereitung, den Grundlast-Puffer und die Liste der kurzen Peaks (`short_peaks`). Der laufende Peak-Zustand (in-Peak, lang/kurz) bleibt hingegen erhalten und folgt weiter allein `Ls_read` (siehe „Peak-Zustand über den Reset hinweg"). So kann eine alte Peak-Historie nach dem Reset keine ungewollte erneute Override-Aktivierung auslösen, und zugleich entsteht durch den Reset kein Phantom-Peak. Das gilt für den Reset durch langen Peak und für den down-Abbruch. Die einzige Ausnahme ist der k-Means-Timeout, der nur die Niveaus verwirft und Override, Grundlast-Puffer und Peak-Historie unangetastet lässt (ein laufender Override wird fortgesetzt).
 
 Die down-Abbruch-Aussetzung (`peak_after`) ist bedingungs- und nicht zeitbasiert: nach einem Peak-Ende bleibt sie wirksam, bis `Ls_read` wieder nahe null ist, damit die Trägheits-Einspeisespitze des Peaks keinen falschen down-Abbruch auslöst. Ein erneuter Abfall unter −`JUMP_W` aus dem ruhigen Zustand ist ein echter Lastwegfall.
 
