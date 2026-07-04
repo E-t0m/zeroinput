@@ -47,6 +47,42 @@ _temp_hold_cnt		= {}					# {port: cycles the temperature has been held through a
 
 _MPPT_FMT = '{:<12s}  {:<10s}  {:>4s}  {:>4s}  {:>5s}  {:>5s}  {:<6s}  {:>5s}  {:>5s}  {:>3s}  {:>4s}  {:>4s}  {:<8s}'
 
+# column label + alignment spec, in the same order as _MPPT_FMT's fields
+_MPPT_COLUMNS = [
+	('device', '<12s'), ('name', '<10s'), ('W PV', '>4s'), ('%PVp', '>4s'),
+	('V bat', '>5s'), ('I bat', '>5s'), ('mode', '<6s'), ('Pload', '>5s'),
+	('Iload', '>5s'), ('age', '>3s'), ('Tint', '>4s'), ('Text', '>4s'), ('', '<8s'),
+]
+_MPPT_ALWAYS_SHOWN = {0, 1}		# device, name: identity columns, never hidden
+_MPPT_DYNAMIC_WIDTH = {6}			# mode: width computed from the values actually present, instead of a fixed 6 chars (which only ABSORB/RECOND/EXTCON/ErrorP need)
+_MPPT_IGNORE_VALUES = {8: {'OFF'}}	# Iload: 'OFF' carries no load info, so a column that is only '' or 'OFF' counts as empty too
+
+
+def _mppt_render(rows):
+	"""Print header + data rows, hiding every data column (all but device/name)
+	that is empty across all rows (a column index in _MPPT_IGNORE_VALUES treats
+	those values as empty too). Recomputed on every call since which columns end
+	up empty, and how wide a dynamic column needs to be, depends on which
+	chargers are currently active."""
+	ignore = _MPPT_IGNORE_VALUES
+	keep = [i for i in range(len(_MPPT_COLUMNS))
+	        if i in _MPPT_ALWAYS_SHOWN
+	        or any(r[i] and r[i] not in ignore.get(i, ()) for r in rows)]
+
+	specs = {}
+	for i in keep:
+		label, spec = _MPPT_COLUMNS[i]
+		if i in _MPPT_DYNAMIC_WIDTH:
+			align = spec[0]			# '<' or '>'
+			width = max(len(label), max((len(r[i]) for r in rows), default=0))
+			spec  = '%s%ds' % (align, width)
+		specs[i] = spec
+
+	fmt = '  '.join('{:%s}' % specs[i] for i in keep)
+	print(fmt.format(*(_MPPT_COLUMNS[i][0] for i in keep)))
+	for r in rows:
+		print(fmt.format(*(r[i] for i in keep)))
+
 
 def port_error(port):
 	"""Build the PORT-error record for a device that failed to read this cycle.
@@ -215,11 +251,12 @@ def drain_rec_msgs():
 
 
 def display_mppt_data(conf, verbose=False):
-	"""Print the MPPT charger data table (only when verbose)."""
+	"""Print the MPPT charger data table (only when verbose). Data columns that
+	are empty for every row (charger and temperature-sensor rows alike) are
+	left out of the header and every row, so an installation without e.g. a
+	load-current reading anywhere does not carry a permanently blank column."""
 	if not verbose: return
-	print(_MPPT_FMT.format(
-		'device', 'name', 'W PV', '%PVp', 'V bat', 'I bat',
-		'mode', 'Pload', 'Iload', 'age', 'Tint', 'Text', ''))
+	rows = []
 
 	for port in list(mppt_data.keys()):
 		port_data = mppt_data.get(port, {})
@@ -273,7 +310,7 @@ def display_mppt_data(conf, verbose=False):
 		else:
 			port_label = port
 
-		print(_MPPT_FMT.format(
+		rows.append((
 			port_label,
 			'combined' if port == 'combined' else conf['chargers'][port]['name'],
 			'%i'   % ppv			if ppv is not None else '',
@@ -289,6 +326,20 @@ def display_mppt_data(conf, verbose=False):
 			str(conf['chargers'][port]['temp_display']) if (
 				port != 'combined' and 'temp_display' in conf['chargers'][port]) else ''))
 
+	for port in list(mppt_data.keys()):
+		if port == 'combined': continue
+		if conf['chargers'].get(port, {}).get('mppt_type') != 'temp_sensor': continue
+		port_data = mppt_data.get(port, {})
+		temp = port_data.get('ext_temp')
+		age  = ('%.0fs' % (time() - port_data['ts'])) if 'ts' in port_data else ''
+		rows.append((
+			conf['chargers'][port].get('_port_name', port)[:12],
+			conf['chargers'][port]['name'],
+			'', '', '', '', 'TEMP', '', '', age, '',
+			('%.1f' % temp) if temp is not None else '', ''))
+
+	_mppt_render(rows)
+
 	for bridge in _vedirect_instances.values():
 		known     = set(bridge._ser_to_key.keys())
 		_any_key  = next(iter(bridge._ser_to_key.values()), None)
@@ -296,18 +347,6 @@ def display_mppt_data(conf, verbose=False):
 		for ser in bridge._vd.get_all().keys():
 			if ser not in known:
 				print('{:12s}  {:10s}  UNCONFIGURED'.format(ser[:12], port_name[:10]))
-
-	for port in list(mppt_data.keys()):
-		if port == 'combined': continue
-		if conf['chargers'].get(port, {}).get('mppt_type') != 'temp_sensor': continue
-		port_data = mppt_data.get(port, {})
-		temp = port_data.get('ext_temp')
-		age  = ('%.0fs' % (time() - port_data['ts'])) if 'ts' in port_data else ''
-		print(_MPPT_FMT.format(
-			conf['chargers'][port].get('_port_name', port)[:12],
-			conf['chargers'][port]['name'],
-			'', '', '', '', 'TEMP', '', '', age, '',
-			('%.1f' % temp) if temp is not None else '', ''))
 
 
 # ── data aggregation ───────────────────────────────────────────────────────────

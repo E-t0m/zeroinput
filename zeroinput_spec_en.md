@@ -165,7 +165,7 @@ Charger-side I/O lives in `charger_drivers.py` (separate from the inverter drive
 
 **eSmart3** — polled via RS485 each cycle (status request, parse response). Checksum validated (`(0xaa + sum(data)) & 0xFF == 0`) — corrupt packets discarded. Supports per-device temperature monitoring and alarms, load port data (`Iload`, `Vload`, `Pload`), and `pvp` (PV peak power W) for `%PVp` display. Multiple devices supported.
 
-**Victron MPPT (conventional)** — read via VE.Direct serial protocol in a dedicated background thread per device. `IL` (load current) and `LOAD` (ON/OFF) parsed for load port display. `Pload = IL × Vbat` derived when available. `pvp` stored for `%PVp` display. Port failure sets `CS='PORT'` for `PORT ERROR` display. One thread per port.
+**Victron MPPT (conventional)** — read via VE.Direct serial protocol in a dedicated background thread per device. `IL` (load current) and `LOAD` (ON/OFF) parsed for load port display. `Pload = IL × Vbat` derived when available. `pvp` stored for `%PVp` display. Port failure sets `CS='PORT'` for `ErrorP` display. One thread per port.
 
 **Victron MPPT (aggregator)** — multiple MPPTs on a single serial port via `readtext_sendhex` firmware ([VE.Direct Aggregator](https://github.com/E-t0m/ve.direct-aggregator), Arduino Mega 2560 / Teensy 4.1). VE.Direct is electrically a 3.3 V UART; the connection to the Pi is via USB-UART adapter. RS485 level converters can be used on either or both sides to extend cable length, but are not required. Handled by `VEDirectBridge`, which wraps `ve_aggregator.VEDirect` using the `on_block` callback — parsed blocks are delivered directly into `mppt_data` at block rate, no patching, no double parsing, no polling thread. [`ve_aggregator.py`](https://github.com/E-t0m/ve.direct-aggregator) must be in the same directory as `zeroinput.py`. Devices identified by SER# (`mppt_type: victron_agg`). Per-device `pvp` in `devices[ser]['pvp']`. Devices with `type: temp` in conf become `mppt_type: temp_sensor` — DS18B20 temperature blocks (field `TEMP`) written as `ext_temp` into `mppt_data`; shown in a separate row below the main table. `check_stale()` called each loop — atomically replaces `mppt_data[key]` with `{'CS': 'PORT'}` for devices not seen within `device_timeout`, zeroing all measurement values to prevent stale data affecting `combine_charger_data` and `set_victron_power`. Unconfigured SER# shown as `UNCONFIGURED` in display. The AGG firmware sends an `ALIVE` keepalive roughly every 10 s; `ve_aggregator.VEDirect` accepts an `on_alive` callback (called from both ALIVE detection points: the reader thread's line scanner and `_handle_block`) which `VEDirectBridge` uses to report each one as `REC <port> ALIVE <agg name>`, confirming the MCU itself is reachable independent of any individual MPPT device. Two background threads per physical port (VE.Direct reader, sender). Multiple aggregator ports supported.
 
@@ -178,7 +178,7 @@ EPever, Renogy and Morningstar expose internal and battery temperatures and can 
 
 One Modbus charger is supported per port entry (the conf key is the port path). Running several Modbus chargers on one physical RS485 bus (multi-drop with distinct `unit` addresses) is electrically possible but not yet supported by the config structure — give each Modbus charger its own port.
 
-**PORT error and PPV decay.** Any charger device whose port fails (serial error, timeout, or AGG stale timeout) has its `mppt_data` entry replaced with `{'CS': 'PORT'}`. `combine_charger_data` detects this and, instead of contributing zero to `combined['PPV']`, retains the last known PPV value and reduces it by 10% each cycle. This means feed-in is not cut immediately on a charger fault but tapers off gradually — after ~22 cycles (≈22 s at 1 s/cycle) the decayed value is below 14% of the original; after ~45 cycles below 1%. When the device recovers and delivers live data again, the actual measured PPV is used immediately and the decay resets. The decaying value is shown in the device's own PV column (alongside `PORT ERROR` in the mode column), so the fade-out is visible per device, not only in the combined total.
+**PORT error and PPV decay.** Any charger device whose port fails (serial error, timeout, or AGG stale timeout) has its `mppt_data` entry replaced with `{'CS': 'PORT'}`. `combine_charger_data` detects this and, instead of contributing zero to `combined['PPV']`, retains the last known PPV value and reduces it by 10% each cycle. This means feed-in is not cut immediately on a charger fault but tapers off gradually — after ~22 cycles (≈22 s at 1 s/cycle) the decayed value is below 14% of the original; after ~45 cycles below 1%. When the device recovers and delivers live data again, the actual measured PPV is used immediately and the decay resets. The decaying value is shown in the device's own PV column (alongside `ErrorP` in the mode column), so the fade-out is visible per device, not only in the combined total.
 
 **Combined data** — PPV, Vbat, Ibat, Pload aggregated across all devices. Vbat is averaged (values below 2.0 V/cell excluded); if no plausible reading exists in a cycle, the last valid Vbat is held. PPV, Ibat and Pload are summed. Pload is the real sum of every device's measured load.
 
@@ -208,14 +208,14 @@ Each cycle the driver writes the ESS power setpoint via `CommandWriteViaID` (0x3
 
 ## display_mppt_data
 
-Header: `port  name  W PV  %PVp  V bat  I bat  mode  Pload  Iload  age  Tint  Text`
+Header and data rows follow the column list `_MPPT_COLUMNS` (label and alignment per column). Before printing, all rows (chargers, `combined`, temperature sensors) are collected; `_mppt_render()` then hides every data column that is empty across all rows — `device` and `name` always stay visible. The `mode` column is additionally sized to the values actually present: narrow when only short values like `BULK` occur, wider as soon as `ABSORB`, `RECOND`, `EXTCON`, or `ErrorP` appears. The `Iload` column also counts as empty when it is only `OFF` or blank, since that carries no load information. Which columns are visible is recomputed on every call and thus follows the current device state.
 
-Layout defined in module constant `_MPPT_FMT` (used by header, data rows, and temp-sensor rows). REC output deferred via `_drain_rec_msgs()` helper.
+REC output deferred via `_drain_rec_msgs()` helper.
 
 - `%PVp` — `PPV / pvp × 100`; for `combined` uses sum of all device `pvp` values; empty if `pvp` not configured. The combined value is also stored as `mppt_data['combined']['PVperc']` and exportable as a vzlogger channel.
 - `Iload` — Victron `LOAD=ON`: current A; `LOAD=OFF`: `OFF`; eSmart3: current if `Iload > 0`, else empty
-- `mode` — Victron: OFF/FAULT/BULK/ABSORB/FLOAT/EQUAL/START/RECOND/EXTCON; eSmart3: WAIT/MPPT/BULK/FLOAT/PRE; both: `PORT ERROR` when `CS='PORT'`
-- Unconfigured AGG devices: `<SER#>  <port_name>  UNCONFIGURED`
+- `mode` — Victron: OFF/FAULT/BULK/ABSORB/FLOAT/EQUAL/START/RECOND/EXTCON; eSmart3: WAIT/MPPT/BULK/FLOAT/PRE; both: `ErrorP` when `CS='PORT'`
+- Unconfigured AGG devices: `<SER#>  <port_name>  UNCONFIGURED` (own format, printed after the table)
 - REC messages (verbose) deferred to after `power request` line via `_rec_msgs` queue
 
 ---

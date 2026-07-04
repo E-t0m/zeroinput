@@ -228,7 +228,7 @@ RUNTIME_NO_RELOAD = {
 	# once at startup, so changes require a restart (use /api/restart).
 }
 
-STAGE_FADE_CYCLES = 5		# cross-fade stage2->stage1 over this many cycles (~5 s)
+STAGE_FADE_CYCLES = 3		# cross-fade stage2->stage1: stage-1 fade-in span in cycles; total fade = this + STAGE2_FADE_OUT_DELAY = 5 cycles (~5 s)
 STAGE2_FADE_OUT_DELAY = 2	# stage-2 fade-out lags the stage-1 fade-in by this many cycles
 HEAT_FAIL_FRACTION = 0.5	# heat-protect cap fraction of max_input_power when the selected sensor has no reading
 
@@ -253,6 +253,7 @@ def cell_voltage(per_cell):
 # stage cross-fade state (owned by send_to_inverters)
 _fade_cnt        = 0		# remaining fade cycles (0 = no fade in progress)
 _fade_from_alloc = {}		# stage-2 allocation captured at fade start
+_fade_power_demand = 0		# power_demand frozen at fade start; used for BOTH blend endpoints while the fade runs, so the summed output stays constant and the control loop upstream is deliberately bypassed (otherwise it would fight the fade's own transient)
 _last_stage      = 1		# stage used on the previous cycle
 
 def reload_conf_if_changed(conf, conf_path, conf_mtime, predictor):
@@ -420,7 +421,7 @@ def send_to_inverters(power_demand, long_send_history, n_active_inverters, ramp_
 	distributed normally) if a ramp is running or if the load rises enough to pull
 	active_stage back to 2 — stage-up is immediate, so this catches both a
 	ramp-sized jump and a gradual rise that never triggered a ramp."""
-	global _fade_cnt, _fade_from_alloc, _last_stage
+	global _fade_cnt, _fade_from_alloc, _fade_power_demand, _last_stage
 	if power_demand == 0:
 		for drv in inverter_drivers:
 			drv.sleep()
@@ -435,20 +436,28 @@ def send_to_inverters(power_demand, long_send_history, n_active_inverters, ramp_
 
 	# detect a stage 2->1 transition and arm the cross-fade. The fade runs
 	# STAGE2_FADE_OUT_DELAY cycles longer than the fade-in span so the delayed
-	# fade-out of the stage-2 units also reaches completion.
+	# fade-out of the stage-2 units also reaches completion. power_demand is
+	# frozen at this moment: while the fade runs, the freshly computed demand is
+	# deliberately bypassed and both blend endpoints use the frozen value. The
+	# fade is an internal reallocation — its small output transient shows up at
+	# the meter, and reacting to it would make the control loop fight its own
+	# fade (lowering the demand during, then ramping it back up after).
 	if stage == 1 and _last_stage == 2 and not ramp_active:
-		_fade_from_alloc = staging.distribute(power_demand, inverter_drivers, 2,
+		_fade_power_demand = power_demand
+		_fade_from_alloc = staging.distribute(_fade_power_demand, inverter_drivers, 2,
 		                                       conf['single_inverter_threshold'])
 		_fade_cnt = STAGE_FADE_CYCLES + STAGE2_FADE_OUT_DELAY
 
 	# abort a fade in progress on a running ramp or if the load rose enough to
 	# pull active_stage back to 2 (stage-up is immediate, so this catches both a
-	# sudden ramp-sized jump and a gradual rise that never triggered a ramp)
+	# sudden ramp-sized jump and a gradual rise that never triggered a ramp).
+	# The frozen demand is discarded with the fade so a genuine load change is
+	# served immediately by the live control value again.
 	if ramp_active or stage != 1:
 		_fade_cnt = 0
 
 	if _fade_cnt > 0:
-		stage1_alloc = staging.distribute(power_demand, inverter_drivers, 1,
+		stage1_alloc = staging.distribute(_fade_power_demand, inverter_drivers, 1,
 		                                   conf['single_inverter_threshold'])
 		total = STAGE_FADE_CYCLES + STAGE2_FADE_OUT_DELAY
 		done  = total - _fade_cnt + 1								# 1..total
@@ -456,7 +465,7 @@ def send_to_inverters(power_demand, long_send_history, n_active_inverters, ramp_
 		t_out = max(0, done - STAGE2_FADE_OUT_DELAY) / float(STAGE_FADE_CYCLES)	# fade-out lags behind
 		alloc = staging.fade_blend(_fade_from_alloc, stage1_alloc, t, inverter_drivers, t_out)
 		_fade_cnt -= 1
-		if verbose: print('stage fade %i  t=%.2f t_out=%.2f' % (_fade_cnt, t, t_out))
+		if verbose: print('stage fade %i  t=%.2f t_out=%.2f  demand held %iW' % (_fade_cnt, t, t_out, _fade_power_demand))
 	else:
 		alloc = staging.distribute(power_demand, inverter_drivers, stage,
 		                           conf['single_inverter_threshold'])
