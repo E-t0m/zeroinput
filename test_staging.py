@@ -44,18 +44,3 @@ def show2(demand, stage):
 for d in [200,600,900]: show2(d,1)
 for d in [700,1500,3000,3500]: show2(d,2)
 
-print('\n--- stage 2->1 cross-fade (fade-out lags fade-in, brief over-feed) ---')
-fade_drv = [FakeDriver('s1',[1,2],1,10,900), FakeDriver('s2',[2],1,10,900),
-            FakeDriver('s3',[2],1,10,900), FakeDriver('s4',[2],1,10,900)]
-FADE = 5; DELAY = 2
-for demand in [800, 400]:
-	a2 = staging.distribute(demand, fade_drv, 2, 800)
-	a1 = staging.distribute(demand, fade_drv, 1, 800)
-	print('demand %i: from %s to %s' % (demand, a2, a1))
-	total = FADE + DELAY
-	for cnt in range(total, 0, -1):
-		done = total - cnt + 1
-		t = min(1.0, done / float(FADE))
-		t_out = max(0, done - DELAY) / float(FADE)
-		b = staging.fade_blend(a2, a1, t, fade_drv, t_out)
-		print('  t=%.1f t_out=%.1f  %s  sum=%i' % (t, t_out, b, sum(b.values())))
