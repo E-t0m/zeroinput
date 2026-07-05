@@ -38,6 +38,7 @@ from traceback import print_exc
 mppt_data = {'combined': {}}				# {device_key: {field: value}}
 
 _vedirect_instances	= {}					# {physical_port: VEDirectBridge}
+AGG_PORT_WATCHDOG_TIMEOUT = 60.0	# restart an AGG port's serial connection if nothing at all (not even ALIVE) has been received for this long
 _victron_cmd_queues	= {}					# {device_key: Queue(maxsize=1)}
 _rec_msgs			= Queue()				# deferred REC messages
 _ppv_decay			= {}					# {device_key: float} — last PPV × decay factor
@@ -484,9 +485,12 @@ def check_temp_alarms(conf, alarm_last, esmart3_devs, temp_sensor_devs, verbose=
 
 
 def check_stale():
-	"""Mark AGG devices not seen within device_timeout as stale (CS='PORT')."""
+	"""Mark AGG devices not seen within device_timeout as stale (CS='PORT'), and
+	restart any AGG port that has gone completely silent (see
+	VEDirectBridge.check_alive)."""
 	for bridge in _vedirect_instances.values():
 		bridge.check_stale()
+		bridge.check_alive()
 
 
 # ── Victron power control ──────────────────────────────────────────────────────
@@ -954,6 +958,22 @@ class VEDirectBridge:
 			if ser not in active and key in mppt_data:
 				if mppt_data[key].get('CS') != 'PORT':
 					mppt_data[key] = port_error(key)
+
+	def check_alive(self, timeout=AGG_PORT_WATCHDOG_TIMEOUT):
+		"""Restart the underlying serial connection if the port has produced
+		nothing at all — not even an ALIVE keepalive — for 'timeout' seconds.
+		This is a whole-port watchdog, distinct from check_stale() above (which
+		only tracks individual sub-devices going quiet while the port itself is
+		still talking). A silent port usually means the AGG MCU hung or the USB
+		link dropped; a clean stop/start re-opens the serial port and lets the
+		MCU re-sync from scratch. Restarting resets the underlying is_alive
+		timer immediately, so a persistently dead port is retried at most once
+		per 'timeout' interval rather than every cycle."""
+		if self._vd.is_alive(timeout):
+			return
+		print('VEDirectBridge %s: no data or ALIVE for %.0fs — restarting port' % (self._physical, timeout))
+		self._vd.stop()
+		self._vd.start()
 
 	def set_watts(self, ser, watts):
 		self._vd.set_watts(ser, watts)
