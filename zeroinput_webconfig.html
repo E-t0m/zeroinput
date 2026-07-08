@@ -128,6 +128,7 @@
 	<a onclick="tab('alarms')"    id="tab_alarms">alarms</a>
 	<a onclick="tab('vz_conf')"   id="tab_vz_conf">vz channels</a>
 	<a onclick="tab('timer')"     id="tab_timer">timer.txt</a>
+	<a onclick="tab('dirtshift')" id="tab_dirtshift" style="display:none">dirt shift</a>
 	<a onclick="tab('restart')"   id="tab_restart">restart</a>
 	<a onclick="location.reload()" id="tab_status" style="display:none">status</a>
 </nav>
@@ -209,6 +210,15 @@
 	<div class="btn-row">
 		<button onclick="saveTimer()">Save timer.txt</button>
 		<button class="sec" onclick="loadTimer()">Reset</button>
+	</div>
+</div>
+
+<!-- dirt shift tab -->
+<div id="pane_dirtshift" class="container">
+	<div id="dirtshift_grid" class="grid"></div>
+	<div class="btn-row">
+		<button onclick="saveDirtShift()">Save dirt_shift.conf</button>
+		<button class="sec" onclick="loadDirtShift()">Reset</button>
 	</div>
 </div>
 
@@ -295,7 +305,7 @@ function msg(text, type) {
 }
 
 function tab(name) {
-	['conf','chargers','inverters','alarms','vz_conf','timer','restart','status'].forEach(t => {
+	['conf','chargers','inverters','alarms','vz_conf','timer','dirtshift','restart','status'].forEach(t => {
 		document.getElementById('tab_' + t).classList.toggle('active', t === name);
 		document.getElementById('pane_' + t).classList.toggle('active', t === name);
 	});
@@ -574,6 +584,125 @@ document.getElementById('timer_ta').addEventListener('keydown', e => {
 		e.target.selectionStart = e.target.selectionEnd = s + 1;
 	}
 });
+
+// ── dirt shift tab ────────────────────────────────────────────────────────────
+
+const DIRTSHIFT_SECTIONS = {
+	'Data source':                   ['zeroinput_conf', 'vz_host_port', 'vz_chans'],
+	'Averaging':                     ['average_days', 'day_weights_pct'],
+	'Reserve':                       ['reserve_pct', 'build_reserve_after'],
+	'Grid intensity — SMARD':        ['smard_enabled', 'vz_dirtiness_uuid'],
+	'Grid intensity — sun position': ['latitude', 'longitude', 'green_morning_offset_h',
+	                                   'red_evening_offset_h', 'green_earliest', 'green_latest', 'yellow_width_h',
+	                                   'yellow_cap'],
+	'Battery energy':                ['PV_to_bat_efficiency', 'bat_to_AC_efficiency', 'max_days_empty_battery'],
+	'Other':                         ['disable_zeroinput_timer'],
+};
+
+let dirtShiftData = {}, dirtShiftHelp = {};
+
+async function loadDirtShift() {
+	try {
+		const r = await fetch(API + '/api/dirtshift');
+		const d = await r.json();
+		if (!d.content) { msg('Failed to load dirt_shift.conf', 'err'); return; }
+		dirtShiftData = JSON.parse(d.content);
+		dirtShiftHelp = parseHelp(dirtShiftData);
+		renderDirtShift();
+	} catch(e) { msg('Error: ' + e, 'err'); }
+}
+
+function renderDirtShift() {
+	const grid = document.getElementById('dirtshift_grid');
+	grid.innerHTML = '';
+	const shown = new Set();
+	function _skip(k) { return k.startsWith('_') || k.endsWith('_help'); }
+
+	function row(k, v) {
+		shown.add(k);
+		const tr = document.createElement('div'); tr.className = 'row';
+		const lc = document.createElement('div'); lc.className = 'cell label';
+		const kspan = document.createElement('span'); kspan.className = 'key'; kspan.textContent = k;
+		lc.appendChild(kspan);
+		const cc = document.createElement('div'); cc.className = 'cell comment';
+		const ic = document.createElement('div'); ic.className = 'cell';
+		if (Array.isArray(v)) {
+			// array value (e.g. day_weights_pct): single comma-separated input
+			const inp = document.createElement('input');
+			inp.type = 'text'; inp.value = v.join(', ');
+			inp.dataset.key = k; inp.dataset.type = 'array';
+			ic.appendChild(inp);
+		} else if (typeof v === 'object' && v !== null) {
+			// dict value (e.g. vz_chans): render sub-fields as labelled input rows
+			const wrap = document.createElement('div');
+			wrap.style.cssText = 'display:grid;grid-template-columns:80px 1fr;gap:6px 8px;align-items:center;';
+			Object.entries(v).forEach(([sk, sv]) => {
+				const lbl = document.createElement('span');
+				lbl.style.cssText = 'font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;';
+				lbl.textContent = sk;
+				const inp = document.createElement('input');
+				inp.type = typeof sv === 'number' ? 'number' : 'text';
+				inp.step = 'any'; inp.value = sv;
+				inp.dataset.key = k; inp.dataset.subkey = sk; inp.dataset.type = typeof sv;
+				wrap.appendChild(lbl); wrap.appendChild(inp);
+			});
+			ic.appendChild(wrap);
+		} else if (typeof v === 'boolean') {
+			const sel = document.createElement('select'); sel.dataset.key = k;
+			['true','false'].forEach(opt => {
+				const o = document.createElement('option'); o.value = opt; o.textContent = opt;
+				if (String(v) === opt) o.selected = true; sel.appendChild(o);
+			});
+			ic.appendChild(sel);
+		} else {
+			const inp = document.createElement('input');
+			inp.type = typeof v === 'number' ? 'number' : 'text';
+			inp.step = 'any'; inp.value = v; inp.dataset.key = k; inp.dataset.type = typeof v;
+			ic.appendChild(inp);
+		}
+		if (dirtShiftHelp[k]) cc.textContent = dirtShiftHelp[k];
+		tr.appendChild(lc); tr.appendChild(ic); tr.appendChild(cc);
+		grid.appendChild(tr);
+	}
+
+	Object.entries(DIRTSHIFT_SECTIONS).forEach(([sec, keys]) => {
+		const sh = document.createElement('div'); sh.className = 'section-header'; sh.textContent = sec;
+		grid.appendChild(sh);
+		keys.forEach(k => { if (k in dirtShiftData && !_skip(k)) row(k, dirtShiftData[k]); });
+	});
+	const rem = Object.keys(dirtShiftData).filter(k => !shown.has(k) && !_skip(k));
+	if (rem.length) {
+		const sh = document.createElement('div'); sh.className = 'section-header'; sh.textContent = 'other';
+		grid.appendChild(sh);
+		rem.forEach(k => row(k, dirtShiftData[k]));
+	}
+}
+
+async function saveDirtShift() {
+	const updated = Object.assign({}, dirtShiftData);
+	document.querySelectorAll('#dirtshift_grid [data-key]:not([data-subkey])').forEach(el => {
+		const k = el.dataset.key;
+		if (el.tagName === 'SELECT') updated[k] = el.value === 'true';
+		else if (el.dataset.type === 'number') updated[k] = parseFloat(el.value);
+		else if (el.dataset.type === 'array') updated[k] = el.value.split(',').map(s => parseFloat(s.trim()));
+		else updated[k] = el.value;
+	});
+	document.querySelectorAll('#dirtshift_grid [data-key][data-subkey]').forEach(el => {
+		const k = el.dataset.key; const sk = el.dataset.subkey;
+		if (updated[k] === dirtShiftData[k]) updated[k] = Object.assign({}, dirtShiftData[k]);
+		updated[k][sk] = el.dataset.type === 'number' ? (parseFloat(el.value)||0) : el.value;
+	});
+	const content = JSON.stringify(updated, null, '\t');
+	try {
+		const r = await fetch(API + '/api/dirtshift', {
+			method:'POST', headers:{'Content-Type':'application/json'},
+			body: JSON.stringify({content})
+		});
+		const d = await r.json();
+		if (d.ok) { msg('dirt_shift.conf saved', 'ok'); dirtShiftData = updated; }
+		else msg('Error: ' + d.error, 'err');
+	} catch(e) { msg('Error: ' + e, 'err'); }
+}
 
 // ── restart tab ───────────────────────────────────────────────────────────────
 
@@ -1468,6 +1597,10 @@ fetch(API + '/api/flags').then(r => r.json()).then(d => {
 	if (d.web_stats) {
 		document.getElementById('tab_status').style.display = '';
 		tab('status');
+	}
+	if (d.dirt_shift_available) {
+		document.getElementById('tab_dirtshift').style.display = '';
+		loadDirtShift();
 	}
 }).catch(() => {});
 </script>
