@@ -229,7 +229,7 @@ RUNTIME_NO_RELOAD = {
 }
 
 HEAT_FAIL_FRACTION = 0.5	# heat-protect cap fraction of max_input_power when the selected sensor has no reading
-STAGE_HOLD_CYCLES = 5		# hold power_demand this many cycles after a stage 2->1 transition: the inverters need ~4-5 s to settle after the hard switch, and reacting to that transient would make the control loop fight its own transition
+STAGE_HOLD_CYCLES = 7		# hold power_demand this many cycles after a stage 2->1 transition: the inverters need ~4-5 s to settle after the hard switch, and reacting to that transient would make the control loop fight its own transition
 
 # battery voltage thresholds, expressed PER CELL so they scale with conf['cell_count'].
 # The original code was hard-wired to 16S LiFePO4 (51.2 V nominal); the 16S value is
@@ -377,9 +377,9 @@ def update_battery(bat_history, send_history):
 	if conf['bat_voltage_const'] != 0:
 		if mppt_data['combined']['Pload'] == 0:	battery_power = mppt_data['combined']['PPV'] - send_history[-1]
 		else:									battery_power = mppt_data['combined']['PPV'] - mppt_data['combined']['Pload']
-		bat_corr = round(0.001 * battery_power * conf['bat_voltage_const'], 1)
+		bat_corr = round(0.001 * battery_power * conf['bat_voltage_const'], 2)
 		bat_history = bat_history[1:] + [mppt_data['combined']['Vbat'] - bat_corr]
-		if verbose and bat_corr: print('voltage correction',round(bat_history[-1],1),'V, dif',bat_corr,'V')
+		if verbose and bat_corr: print('voltage correction %.2f V, dif %.2f V' % (bat_history[-1], bat_corr))
 	else:
 		bat_history = bat_history[1:] + [mppt_data['combined']['Vbat']]
 	if 0 in bat_history:	bat_voltage = mppt_data['combined']['Vbat']
