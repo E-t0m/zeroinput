@@ -5,9 +5,10 @@
 import json
 import subprocess
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from os.path import join, dirname, abspath
+from os.path import join, dirname, abspath, exists
 
 BASE_DIR = dirname(abspath(__file__))
+DIRT_SHIFT_CONF = join(BASE_DIR, 'dirt_shift', 'dirt_shift.conf')
 
 def _read(path):
 	try:
@@ -114,6 +115,11 @@ class WebconfigHandler(BaseHTTPRequestHandler):
 			self._send_json(200 if content is not None else 500,
 				{'content': content} if content is not None else {'error': 'read failed'})
 
+		elif path == '/api/dirtshift':
+			content = _read(DIRT_SHIFT_CONF)
+			self._send_json(200 if content is not None else 500,
+				{'content': content} if content is not None else {'error': 'read failed'})
+
 		elif path == '/api/restart':
 			from urllib.parse import urlparse, parse_qs
 			service = parse_qs(urlparse(self.path).query).get('service', ['zeroinput'])[0]
@@ -128,7 +134,7 @@ class WebconfigHandler(BaseHTTPRequestHandler):
 			self._send_json(200, {'status': 'ok'})
 
 		elif path == '/api/flags':
-			self._send_json(200, {'web_stats': self.web_stats})
+			self._send_json(200, {'web_stats': self.web_stats, 'dirt_shift_available': exists(DIRT_SHIFT_CONF)})
 
 		else:
 			self._send_json(404, {'error': 'not found'})
@@ -205,6 +211,16 @@ class WebconfigHandler(BaseHTTPRequestHandler):
 				self._send_json(400, {'error': err})
 				return
 			ok = _write(join(BASE_DIR, 'predictor.py'), content)
+			self._send_json(200 if ok else 500, {'ok': ok} if ok else {'error': 'write failed'})
+
+		elif path == '/api/dirtshift':
+			content = body.get('content', '')
+			try:
+				json.loads(content)
+			except Exception as e:
+				self._send_json(400, {'error': 'invalid JSON: %s' % e})
+				return
+			ok = _write(DIRT_SHIFT_CONF, content)
 			self._send_json(200 if ok else 500, {'ok': ok} if ok else {'error': 'write failed'})
 
 		elif path == '/api/timer':
