@@ -378,7 +378,7 @@ def read_radiation_forecast():
 	"""Rolling 24-hour shortwave-radiation forecast starting at the current
 	hour: hours from now until midnight come from today's forecast, hours
 	after midnight come from tomorrow's — so a caller summing forward from
-	'now' (see sum_until_red/red_window_demand) always reads the forecast for
+	'now' (see _bridge_hours/red_window_demand) always reads the forecast for
 	the calendar day each hour actually falls on, instead of today's value
 	being reused for what is really tomorrow morning. Built fresh on every
 	call from the cached raw today/tomorrow arrays (see get_radiation_forecast),
@@ -548,7 +548,7 @@ def read_smard_zones():
 	from now until midnight come from today's classification, hours after
 	midnight come from tomorrow's — same rolling principle as
 	read_radiation_forecast, so a caller summing forward from 'now' (see
-	sum_until_red/red_window_demand) always reads the classification for the
+	_bridge_hours/red_window_demand) always reads the classification for the
 	calendar day each hour actually falls on. Built fresh on every call from
 	the cached raw today/tomorrow dicts (see get_smard_zones), which are
 	refetched together once per hour in their own cache file. An hour missing
@@ -761,7 +761,7 @@ def write_dirtiness_to_vz(value):
 def _zone_array(now, grid_data):
 	"""The 24-hour zone array actually driving this run's decisions: SMARD's if
 	available, otherwise the sun-position zone computed per hour. Used to keep
-	sum_until_red and red_window_demand consistent with whichever zone source
+	_bridge_hours and red_window_demand consistent with whichever zone source
 	effective_zone() draws on for the current hour, instead of always deriving
 	window boundaries from the sun position regardless of source."""
 	if grid_data is not None:
@@ -769,36 +769,38 @@ def _zone_array(now, grid_data):
 	return [dirtiness_zone(now.replace(hour=h, minute=0, second=0, microsecond=0)) for h in range(24)]
 
 
-def sum_until_red(values, now, zones):
-	"""Sum a 24-value hourly array (e.g. basic_load or an expected-PV curve) from
-	now up to (not including) the next hour 'zones' classifies red — the span a
-	reserve projection must bridge with current content plus remaining PV.
-	'zones' is the same 24-hour array (SMARD's or sun-position's, see
-	_zone_array) that also drives the current-hour discharge decision, so the
-	bridging window always agrees with it — this matters once SMARD is active,
-	since its real per-hour classification need not line up with the sun
-	position's fixed clock boundaries. The current hour is counted only for its remaining fraction
-	(minutes left until the top of the hour), not in full, since part of it has
-	already elapsed; every full hour after that is counted whole. Since
-	dirt_shift runs on a 15-minute schedule this fraction is effectively
-	quarter-hourly (1.0, 0.75, 0.5, 0.25) in normal operation, without needing
-	finer-grained source data than the hourly curves themselves. Zero if the
-	current hour is already red (nothing left to bridge; mode is 'free'
-	regardless then) or if values is unavailable. Looks at most 24 hours ahead
-	as a safety net if no red hour exists at all in 'zones'."""
-	if zones[now.hour] == 'red' or values is None:
-		return 0.0
-	total, h, first = 0.0, now.hour, True
+def _bridge_hours(now, zones, basic_load, expected_pv):
+	"""Hours (as (hour, fraction) pairs), from now up to (not including) the
+	first PV-surplus hour — the same boundary red_window_demand's scan stops
+	at (see there): scanning forward from the current hour (wrapping past
+	midnight), the first hour whose expected PV exceeds its basic_load ends
+	the window, since the battery genuinely refills from there on. Every
+	hour before that boundary is included, whether 'zones' classifies it red
+	or not, so summing basic_load/expected_pv over these same hours gives an
+	energy-balance projection directly comparable to a reserve target from
+	red_window_demand — both span the identical window. The current hour
+	counts only its remaining fraction (minutes left until the top of the
+	hour); every full hour after that counts whole. Without expected_pv, no
+	surplus boundary exists — the window then runs the full rolling 24 h,
+	matching red_window_demand's own no-forecast fallback. Empty if the
+	current hour is itself a surplus hour."""
+	hours, h, first = [], now.hour, True
 	for _ in range(24):
-		if zones[h] == 'red':
+		pv = expected_pv[h] if expected_pv is not None else 0.0
+		if expected_pv is not None and pv > basic_load[h]:
 			break
-		v = values[h]
-		if first:
-			v *= (60 - now.minute) / 60.0			# only the remaining part of the current hour counts
-			first = False
-		total += v
+		hours.append((h, (60 - now.minute) / 60.0 if first else 1.0))
+		first = False
 		h = (h + 1) % 24
-	return total
+	return hours
+
+
+def _sum_hours(values, hours):
+	"""Wh total of a 24-value hourly array over the (hour, fraction) pairs
+	from _bridge_hours. 0.0 if values is unavailable."""
+	if values is None:
+		return 0.0
+	return sum(values[h] * frac for h, frac in hours)
 
 
 def red_window_demand(basic_load, now, zones, expected_pv=None):
@@ -858,7 +860,8 @@ def reserve_build_hour(content, basic_load, now, zones, expected_pv):
 		target = conf['reserve_pct'] * 0.01 * red_window_demand(basic_load, fake, zones, expected_pv)
 		if target <= 0:
 			continue
-		proj = content + sum_until_red(expected_pv, fake, zones) - sum_until_red(basic_load, fake, zones)
+		bridge = _bridge_hours(fake, zones, basic_load, expected_pv)
+		proj = content + _sum_hours(expected_pv, bridge) - _sum_hours(basic_load, bridge)
 		if proj < target:
 			return fake.hour
 	return None
@@ -869,7 +872,7 @@ def _hourly_debug_table(now, pv_curve, radiation, expected_pv, grid_data):
 	the shortwave-radiation forecast, the clear-sky index derived from it
 	(see scaled_pv_curve/clear_sky_ghi), expected PV, and the CO2-intensity
 	zone/dirtiness — SMARD's if available, otherwise the sun-position zone for
-	that hour (see _zone_array, the same array sum_until_red/red_window_demand
+	that hour (see _zone_array, the same array _bridge_hours/red_window_demand
 	use) — so everything the discharge decision draws on is visible at a
 	glance, in one place instead of five separate lists. 'dirt%' is
 	(1 - ratio) * 100 (see write_dirtiness_to_vz): 0 at ratio 1 (renewables
@@ -957,8 +960,9 @@ def main():
 	# curve without a radiation forecast still counts as a forecast
 	# (scaled_pv_curve then just returns it unscaled).
 	if expected_pv is not None:
-		remaining_pv   = sum_until_red(expected_pv, now, zones)
-		remaining_load = sum_until_red(basic_load, now, zones)
+		bridge = _bridge_hours(now, zones, basic_load, expected_pv)
+		remaining_pv   = _sum_hours(expected_pv, bridge)
+		remaining_load = _sum_hours(basic_load, bridge)
 		projected = content + remaining_pv - remaining_load
 		protect_reserve = projected < reserve
 		build_h = reserve_build_hour(content, basic_load, now, zones, expected_pv)

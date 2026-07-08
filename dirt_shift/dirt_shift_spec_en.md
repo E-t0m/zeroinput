@@ -89,9 +89,12 @@ Whether the reserve needs to be protected **right now** is decided — provided 
 
 ```
 Projection = current content + expected remaining PV yield − expected remaining consumption
-             (each summed from now until the red window starts)
+             (both over the same window as the red reserve: from now to the
+             first PV-surplus hour, whether the hours in between are red or not)
 Reserve protected when Projection < red reserve
 ```
+
+Both sides of the comparison must run over the same window to be comparable: if the red reserve ends at the first surplus hour (see above), the projection must end exactly there too — not at the next red hour, which with several separate red spans can lie much later and would then fold in swings from a far larger span than the reserve itself covers.
 
 The remaining yield and remaining consumption are summed over the same window: from the current hour up to the next hour classified red — again from the same zone source as above (SMARD if active, otherwise sun position), not always rigidly from the sun position. The running hour counts only for its **remaining fraction** — the minutes still left until the top of the hour — not in full; since `dirt_shift` runs on a 15-minute schedule, this effectively gives quarter-hour precision at the edge of the window in normal operation, without the underlying hourly curves themselves needing finer resolution. If the current hour is already red, there is nothing left to bridge, so discharge is always free there anyway.
 

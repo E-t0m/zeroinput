@@ -89,9 +89,13 @@ Ob die Reserve **jetzt schon** geschützt werden muss, entscheidet — sofern ei
 
 ```
 Projektion = aktueller Inhalt + erwarteter PV-Restertrag − erwarteter Restverbrauch
-             (jeweils von jetzt bis zum Beginn des roten Nachtfensters)
+             (beides über dasselbe Fenster wie die Rot-Reserve: von jetzt bis zur
+             ersten Überschussstunde, unabhängig davon ob die Stunden dazwischen
+             rot sind oder nicht)
 Reserve geschützt, wenn Projektion < Rot-Reserve
 ```
+
+Beide Seiten der Ungleichung müssen über dasselbe Fenster laufen, um vergleichbar zu sein: Endet die Rot-Reserve an der ersten Überschussstunde (siehe oben), muss auch die Projektion exakt dort enden — nicht erst an der nächsten roten Stunde, die bei mehreren getrennten roten Phasen deutlich später liegen kann und dann Schwankungen aus einem viel größeren Zeitraum einrechnen würde, als die Reserve selbst abdeckt.
 
 Restertrag und Restverbrauch werden über dieselbe Fensterlogik aufsummiert: von der aktuellen Stunde bis zur nächsten Stunde, die als rot eingestuft ist — wieder aus derselben Zonen-Quelle wie oben (SMARD, falls aktiv, sonst Sonnenstand), nicht immer starr aus dem Sonnenstand. Die laufende Stunde zählt dabei nur **anteilig** — nach den Minuten, die bis zum Stundenwechsel noch übrig sind — nicht komplett; da `dirt_shift` im ¼-Stunden-Raster läuft, ergibt das im Normalbetrieb effektiv Viertelstunden-Genauigkeit am Rand des Zeitfensters, ohne dass die zugrundeliegenden Stundenkurven selbst feiner aufgelöst werden müssten. Ist die aktuelle Stunde selbst schon rot, ist nichts mehr zu überbrücken, dort wird ohnehin immer frei entladen.
 
