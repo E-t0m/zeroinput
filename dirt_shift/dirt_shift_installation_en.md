@@ -67,14 +67,14 @@ The supplied `dirt_shift.conf` contains placeholders that must be replaced:
 
 The remaining keys (`reserve_pct`, `build_reserve_after`, the `latitude`/`longitude` and CO₂-intensity parameters, `yellow_cap`, `average_days`, `day_weights_pct`, the efficiencies, `max_days_empty_battery`) have usable defaults and can be left unchanged at first.
 
-- `build_reserve_after` (default 13:30) sets a fixed clock time at which the red reserve is protected, used when no PV forecast can be obtained at all. When a PV forecast is available, an ongoing energy-balance projection (current battery content plus expected PV yield minus expected consumption, up to the next PV-surplus hour — the same window the red reserve itself is computed over) decides when protection kicks in — independent of the clock.
-- `yellow_cap` (default 600 W) caps discharge power in the yellow transition zone, so short-lived load spikes cannot eat into the red reserve. A fixed, deliberately configured value — not one derived from forecast data.
-- The location (`latitude`/`longitude`, default ~centre of Germany) drives the solar-position calculation, which serves as the fallback profile and is also used whenever SMARD is enabled but momentarily unavailable.
+- `build_reserve_after` (default 13:30) sets a fixed clock time at which the red reserve is protected, used when no PV forecast can be obtained at all. When a PV forecast is available, the **cleanest** hours up to the next PV-surplus hour are protected instead — as many as it takes for their accumulated shortfalls to cover the red reserve. The selection follows dirtiness strictly, not the clock.
+- `yellow_cap` (default 1000 W) caps discharge power in the yellow transition zone, so short-lived load spikes cannot eat into the red reserve. A fixed, deliberately configured value — not one derived from forecast data.
+- The location (`latitude`/`longitude`, default ~centre of Germany) drives the clear-sky model and the radiation forecast.
 - `day_weights_pct` weights individual days of the average more heavily (chronological, index −1 = yesterday, index 0 = same weekday of the previous week); the length must match `average_days`, otherwise equal weighting is used.
 
-**Optional: SMARD.** With `"smard_enabled": true`, `dirt_shift` pulls real day-ahead grid data (Bundesnetzagentur, free, no registration) for today **and** tomorrow and derives the zones from it. If SMARD's data for a given hour is not (yet) available, that hour uses the solar-position calculation; the run continues normally. Additionally, `vz_dirtiness_uuid` (a channel UUID created in volkszähler beforehand) can be set so `dirt_shift` logs the current dirtiness value to volkszähler via HTTP POST on every run (empty disables it).
+**SMARD is a prerequisite.** `dirt_shift` pulls real day-ahead grid data (Bundesnetzagentur, free, no registration) for today **and** tomorrow and derives the zones from it; there is no alternative zone source. If the fetch fails, the cached data substitutes for exactly **one** more day; beyond that `dirt_shift` aborts, leaving an all-allowed timer behind. Optionally, `vz_dirtiness_uuid` (a channel UUID created in volkszähler beforehand) can be set so `dirt_shift` logs the current dirtiness value to volkszähler via HTTP POST on every run (empty disables it).
 
-The radiation forecast (Open-Meteo, `shortwave_radiation`, free, no registration) always runs independently of `smard_enabled` and scales the empirical PV reference curve to the actual day's weather (today and tomorrow, likewise free, no API key needed).
+The radiation forecast (Open-Meteo, `shortwave_radiation`, free, no registration) scales the empirical PV reference curve to the actual day's weather (today and tomorrow, no API key needed).
 
 ### 3. Adapt the basic_load formula to your installation
 
@@ -160,7 +160,7 @@ If not even `zeroinput.conf` is readable (timer path unknown), only the abort wi
 
 **"no complete days returned by volkszähler".** The volkszähler has no complete days for the requested period. Only after a few days of operation does the average return sensible values. Until then the free-timer fallback applies.
 
-**Intensity zone looks wrong (sun-position fallback).** Without SMARD (or when SMARD momentarily fails), the zone follows from the solar position (date + `latitude`/`longitude`) and the fixed bounds `green_earliest`/`green_latest`. With `-v` you can check sunrise/sunset and the computed zone. A wrongly set location or unsuitable bounds are the most common cause.
+**Aborts with "SMARD zone data unavailable".** The SMARD fetch failed and the cache is older than one day. `dirt_shift` leaves an all-allowed timer behind, so zeroinput keeps running unrestricted. Check the network connection and SMARD's reachability; a manual run with `-v` shows the reason.
 
 **Intensity zone looks wrong (SMARD active).** With `-debug`, the hourly overview table shows the actual `dirt%` classification per hour. SMARD's percentile split follows the real shape of the day, so the red phase can fall at any time of day, not only at night.
 

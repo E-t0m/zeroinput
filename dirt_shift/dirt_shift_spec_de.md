@@ -17,7 +17,7 @@ Die direkte PV-Durchleitung (`pvpt`, PV pass-through) wird **immer** garantiert,
 
 Alle Daten stammen aus dem volkszähler:
 
-- **basic_load** — der tatsächliche Hausverbrauch in Wh/h, in der Standardformel berechnet als `Import + |Inverter| − Auto`. 7-Tage-Stundenmittel, stündlich in `dirt_avg_cache.json` zwischengespeichert. Dient der Mengenabschätzung der Rot-Reserve und der Energiebilanz (siehe Rot-Reserve und Energiebilanz).
+- **basic_load** — der tatsächliche Hausverbrauch in Wh/h, in der Standardformel berechnet als `Import + |Inverter| − Auto`. 7-Tage-Stundenmittel, stündlich in `dirt_avg_cache.json` zwischengespeichert. Dient der Mengenabschätzung der Rot-Reserve und der Schutzstunden-Auswahl (siehe Rot-Reserve und Schutzstunden).
 - **Energieinhalt** — der reale Akkuinhalt in Wh, rekonstruiert über `get_vz_bat_cap` durch Integration von PV und Inverter seit dem letzten bekannten „leer"-Zustand (Spannung ≤ 3,0625 V/Zelle als Anker, also 49 V bei 16 Zellen; skaliert mit `cell_count` aus der zeroinput-Konfiguration), mit Wirkungsgraden. Bei jedem Lauf frisch abgefragt.
 - **PV-Erzeugung** — derselbe PV-Kanal wird zusätzlich für die empirische PV-Referenzkurve genutzt (siehe dort); die Rohwerte werden dort mit `abs()` behandelt, da dieser Kanal in vielen Installationen negativ geloggt wird.
 
@@ -29,19 +29,19 @@ Die 7-Tage-Basis (`average_days`) enthält genau eine volle Wochenstruktur — j
 
 ## CO₂-Intensitätsprofil
 
-Die Zonen-Einteilung (rot/gelb/grün) kommt wahlweise aus zwei Quellen:
+Die Zonen-Einteilung (rot/gelb/grün) kommt aus **SMARD** (Bundesnetzagentur) — realen Day-Ahead-Netzdaten, kostenlos und ohne Anmeldung. SMARD ist Voraussetzung; eine alternative Quelle gibt es nicht.
 
-**SMARD** (Bundesnetzagentur, `smard_enabled: true`) — reale Day-Ahead-Netzdaten, kostenlos und ohne Anmeldung. `dirt_shift` fragt die prognostizierte Wind+Solar-Einspeisung und den prognostizierten Stromverbrauch für heute **und morgen** ab und bildet daraus pro Stunde das Verhältnis Erneuerbare/Last, getrennt für jeden Kalendertag. Für jeden Tag werden dessen 24 Stunden nach diesem Verhältnis sortiert und per Perzentil eingeteilt: die `SMARD_GREEN_FRACTION` (30 %) höchsten Stunden werden grün, die `SMARD_RED_FRACTION` (30 %) niedrigsten rot, der Rest gelb — die Einteilung passt sich damit der Form des jeweiligen Tages an, statt an einem festen absoluten Schwellwert zu hängen.
+`dirt_shift` fragt die prognostizierte Wind+Solar-Einspeisung und den prognostizierten Stromverbrauch für heute **und morgen** ab und bildet daraus pro Stunde das Verhältnis Erneuerbare/Last, getrennt für jeden Kalendertag. Für jeden Tag werden dessen 24 Stunden nach diesem Verhältnis sortiert und per Perzentil eingeteilt: die `SMARD_GREEN_FRACTION` (30 %) höchsten Stunden werden grün, die `SMARD_RED_FRACTION` (30 %) niedrigsten rot, der Rest gelb — die Einteilung passt sich damit der Form des jeweiligen Tages an, statt an einem festen absoluten Schwellwert zu hängen.
 
-Nach außen liefert `dirt_shift` daraus ein **rollierendes 24-Stunden-Array**, verankert an der aktuellen Uhrzeit: Stunden von jetzt bis Mitternacht stammen aus der Einteilung von heute, Stunden nach Mitternacht aus der von morgen — eine Stunde, die im Array „schon vorbei" wirkt, ist damit tatsächlich das nächste Vorkommen dieser Stunde morgen, mit morgens eigener, echter Einteilung statt einer Wiederverwendung des heutigen Musters. Ist die Day-Ahead-Prognose für morgen zu einer bestimmten Stunde noch nicht veröffentlicht (typischerweise vor dem späten Nachmittag) oder komplett nicht verfügbar, fällt diese Stunde auf die heutige Einteilung zurück. Schlägt schon die heutige Abfrage fehl (kein Netz, unvollständige Daten, `smard_enabled: false`), fällt `dirt_shift` insgesamt auf die Sonnenstand-Heuristik zurück.
+Nach außen liefert `dirt_shift` daraus ein **rollierendes 24-Stunden-Array**, verankert an der aktuellen Uhrzeit: Stunden von jetzt bis Mitternacht stammen aus der Einteilung von heute, Stunden nach Mitternacht aus der von morgen — eine Stunde, die im Array „schon vorbei" wirkt, ist damit tatsächlich das nächste Vorkommen dieser Stunde morgen, mit morgens eigener, echter Einteilung. Ist die Day-Ahead-Prognose für morgen zu einer bestimmten Stunde noch nicht veröffentlicht (typischerweise vor dem späten Nachmittag) oder komplett nicht verfügbar, gilt für diese Stunde die heutige Einteilung.
 
-**Sonnenstand** (Fallback, immer verfügbar, keine externen Daten) — Sonnenauf- und -untergang werden astronomisch aus Datum und Standort (`latitude`/`longitude`) berechnet (einfache Näherung, auf ein, zwei Minuten genau; Sommer-/Winterzeit wird über die Systemzeitzone berücksichtigt). Für gewickelte Stunden (vor der aktuellen Uhrzeit im rollierenden Array) wird dabei weiterhin das heutige Datum verwendet, nicht das morgige — Sonnenauf-/untergang verschieben sich von Tag zu Tag nur um ein bis zwei Minuten, der Unterschied ist hier vernachlässigbar. Der Erneuerbaren-Anteil im Netz läuft dem Sonnenstand hinterher: morgens sinkt die CO₂-Intensität erst, wenn genug PV relativ zur **Last** im Netz ist (die Last fährt uhrzeitgesteuert hoch), abends steigt sie, bevor die Sonne weg ist (PV fällt, Abendlast steigt). Deshalb ist das günstige (niedrig-intensive, „grüne") Fenster ein **Hybrid** aus Sonnenstand und festen Uhrzeit-Schranken:
+**Ausfall der SMARD-Abfrage:** Schlägt die Abfrage fehl, dürfen die zwischengespeicherten Daten genau **einen Tag** überbrücken — der Cache trägt ein `fetch_date`, und gestern geholte Daten sind noch nutzbar, weil deren „morgen"-Hälfte die Day-Ahead-Prognose für den nun laufenden Tag ist. Ist der Cache älter oder gar nicht vorhanden, bricht `dirt_shift` hart ab und hinterlässt einen „Alles-erlaubt"-Timer.
 
-Drei Zonen (beide Quellen liefern dieselben drei Werte):
+Drei Zonen:
 
-- **rot** (höchste Intensität) — außerhalb des günstigen Fensters bzw. niedrigstes Erneuerbaren-Verhältnis: Abend, Nacht, früher Morgen
-- **gelb** (Übergang) — je `yellow_width_h` an beiden Rändern des grünen Fensters bzw. mittleres Verhältnis
-- **grün** (niedrige Intensität) — die Tagesmitte bzw. höchstes Verhältnis
+- **rot** (höchste Intensität) — die Stunden mit dem niedrigsten Erneuerbaren-Verhältnis
+- **gelb** (Übergang) — das mittlere Band
+- **grün** (niedrige Intensität) — die Stunden mit dem höchsten Verhältnis
 
 ---
 
@@ -57,7 +57,7 @@ Die Kurve wird **einmal täglich** ab `PV_CURVE_REFRESH_HOUR` (4 Uhr, eine ruhig
 
 Die PV-Referenzkurve zeigt, was an einem **typischen** Tag zu erwarten ist — sie weiß aber nichts über das Wetter von heute. Diese Lücke füllt eine kostenlose, anmeldefreie Strahlungsprognose von **Open-Meteo** (`shortwave_radiation`, W/m², stündlich, für den heutigen Tag). `shortwave_radiation` ist die globale Horizontalstrahlung (direkte plus diffuse Komponente) — das physikalische Modellergebnis von Open-Meteo für die tatsächlich am Boden ankommende Strahlungsleistung.
 
-Aus der Strahlungsprognose wird ein **Klarhimmel-Index** gebildet: `expected_pv = Referenzwert × min(1, Strahlungsprognose / Klarhimmel-GHI)`. `Klarhimmel-GHI` ist die modellierte Globalstrahlung bei wolkenlosem Himmel für dieselbe Stunde und denselben Ort, nach dem Haurwitz-Klarhimmelmodell (1945): `GHI = 1098 × cos(z) × exp(−0,059 / cos(z))` für den Zenitwinkel `z` (aus Sonnenhöhe, siehe `solar_elevation_deg`/`clear_sky_ghi`), sonst 0 (Sonne unter dem Horizont). Das Modell braucht nur die Sonnenposition — keine Trübungs-/Aerosoldaten — und ist damit offline berechenbar und konsistent mit der übrigen Sonnenstands-Mathematik von `dirt_shift`. Der Index wird bei 1,0 gekappt (kurzzeitige Strahlungsüberhöhung an Wolkenrändern über den Klarhimmelwert hinaus wird nicht modelliert, um die Prognose konservativ zu halten).
+Aus der Strahlungsprognose wird ein **Klarhimmel-Index** gebildet: `expected_pv = Referenzwert × min(1, Strahlungsprognose / Klarhimmel-GHI)`. `Klarhimmel-GHI` ist die modellierte Globalstrahlung bei wolkenlosem Himmel für dieselbe Stunde und denselben Ort, nach dem Haurwitz-Klarhimmelmodell (1945): `GHI = 1098 × cos(z) × exp(−0,059 / cos(z))` für den Zenitwinkel `z` (aus Sonnenhöhe, siehe `solar_elevation_deg`/`clear_sky_ghi`), sonst 0 (Sonne unter dem Horizont). Das Modell braucht nur die Sonnenposition — keine Trübungs-/Aerosoldaten — und ist damit offline berechenbar. Der Index wird bei 1,0 gekappt (kurzzeitige Strahlungsüberhöhung an Wolkenrändern über den Klarhimmelwert hinaus wird nicht modelliert, um die Prognose konservativ zu halten).
 
 Damit ergibt sich automatisch eine jahreszeit- und tageszeitabhängige Referenz: im Winter ist das Klarhimmel-GHI zur Mittagszeit deutlich niedriger als im Sommer (flacherer Sonnenstand), sodass derselbe gemessene Strahlungswert im Winter einen höheren Klarhimmel-Index (weniger Dämpfung) ergibt als im Sommer bei identischer absoluter Einstrahlung — was der physikalischen Realität entspricht.
 
@@ -69,39 +69,36 @@ Die ganze 48-Stunden-Reihe wird stündlich neu abgefragt und in `dirt_weather_ca
 
 ## Entladung nach Zone
 
-Sobald die Rot-Reserve geschützt ist (siehe nächster Abschnitt), bestimmt die aktuelle Zone pro Lauf (¼-stündlich) das Entladeverhalten. Der gesamte Akkuinhalt wird in die Stunden hoher CO₂-Intensität gelenkt, am stärksten in die intensivsten:
+Pro Lauf (¼-stündlich) bestimmen die aktuelle Zone und der Schutz-Status das Entladeverhalten:
 
-- **rot** → **kein Limit**: voller Entlade-Deckel (`100 100 99999`), der Akku darf ungebremst raus
-- **gelb** → **`yellow_cap`** (Watt) als Deckel: gebremste Entladung in der Übergangszone, sofern der aktuelle Inhalt noch über der Reserve liegt — ist er schon auf die Reserve gefallen, wird gestoppt
-- **grün** → **kein Akku-Entladen**: nur `pvpt` (`000 100 000`)
+- **rot** → **kein Limit**: voller Entlade-Deckel (`100 100 99999`), der Akku darf ungebremst raus. Rote Stunden sind **immer** frei, unabhängig vom Schutz — dort soll die Reserve ja gerade verbraucht werden.
+- **gelb, geschützt** → **`yellow_cap`** (Watt) als Deckel: gebremste Entladung, sofern der aktuelle Inhalt noch über der Reserve liegt — ist er schon auf die Reserve gefallen, wird gestoppt
+- **grün, geschützt** → **kein Akku-Entladen**: nur `pvpt` (`000 100 000`)
+- **nicht geschützt** (gelb oder grün) → **kein Limit**: der Akku entlädt frei
 
-Solange die Reserve nicht geschützt ist, entlädt der Akku unabhängig von der Zone frei (siehe nächster Abschnitt). `pvpt` (direkte PV-Durchleitung) läuft in jedem Fall in allen Zonen weiter; `dirt_shift` steuert ausschließlich die Batterieentladung.
+`pvpt` (direkte PV-Durchleitung) läuft in jedem Fall in allen Zonen weiter; `dirt_shift` steuert ausschließlich die Batterieentladung.
 
 ---
 
-## Rot-Reserve und Energiebilanz
+## Rot-Reserve und Schutzstunden
 
-Die **Rot-Reserve** ist `reserve_pct` (Standard 90 %) des `basic_load`-Bedarfs über alle **roten** Stunden zwischen jetzt und der nächsten **PV-Ertragsphase**, **netto** nach dem in diesen Stunden noch erwarteten PV-Ertrag. Die Grenze des Fensters ist die erste Stunde, deren erwartete PV den `basic_load` übersteigt (Überschussstunde): ab dort füllt sich der Akku tatsächlich wieder, und spätere rote Phasen werden vom kommenden Ertrag gedeckt, nicht von der gestrigen Ladung — sie dafür zurückzuhalten würde nur Speicherplatz für den kommenden Ertrag blockieren. Mehrere getrennte rote Phasen vor diesem Punkt (Abendrot, Nachtrot, Morgenrot mit gelben Lücken dazwischen) werden alle zusammengezählt, da dazwischen nichts nachfüllt. An einem so trüben Tag, dass die erwartete PV den Verbrauch nie übersteigt, gibt es keine Überschussstunde — dann werden alle roten Stunden der rollierenden 24 Stunden reserviert, was korrekt ist, weil kein Nachfüllen kommt. Zur Netto-Rechnung: `pvpt` deckt einen Teil dieses Bedarfs bereits direkt ab (an den Rändern eines roten Abschnitts, solange die Sonne noch nicht ganz weg bzw. schon wieder da ist), dieser Anteil muss also nicht zusätzlich aus dem Akku reserviert werden. Fehlt die PV-Prognose, kann keine Überschussstunde erkannt und nicht netto gerechnet werden — dann dient die reine `basic_load`-Summe über alle roten Stunden der rollierenden 24 Stunden als konservativer Fallback. Die 90 % legen die Reserve bewusst nicht über den berechneten Bedarf hinaus — der Akku soll sich im Regelfall über das rote Fenster praktisch vollständig entladen, statt Kapazität ungenutzt zu lassen.
+Die **Rot-Reserve** ist `reserve_pct` (Standard 90 %) des `basic_load`-Bedarfs über alle **roten** Stunden zwischen jetzt und der nächsten **PV-Ertragsphase**, **netto** nach dem in diesen Stunden noch erwarteten PV-Ertrag. Die Grenze des Fensters ist die erste Stunde, deren erwartete PV den `basic_load` übersteigt (Überschussstunde): ab dort füllt sich der Akku tatsächlich wieder, und spätere rote Phasen werden vom kommenden Ertrag gedeckt, nicht von der gestrigen Ladung — sie dafür zurückzuhalten würde nur Speicherplatz für den kommenden Ertrag blockieren. Mehrere getrennte rote Phasen vor diesem Punkt (Abendrot, Nachtrot, Morgenrot mit gelben Lücken dazwischen) werden alle zusammengezählt, da dazwischen nichts nachfüllt. An einem so trüben Tag, dass die erwartete PV den Verbrauch nie übersteigt, gibt es keine Überschussstunde — dann werden alle roten Stunden der rollierenden 24 Stunden reserviert, was korrekt ist, weil kein Nachfüllen kommt.
 
-Welche Stunden als „rot" zählen, kommt aus **derselben** Quelle, die auch die aktuelle Zonen-Entscheidung trifft (SMARD, falls aktiv, sonst der Sonnenstand) — nicht immer starr aus dem Sonnenstand, unabhängig davon. Mit dem Sonnenstand-Fallback ergibt das denselben einen zusammenhängenden Abend-bis-Morgen-Block wie zuvor; SMARDs reale Daten können dagegen mehrere getrennte rote Abschnitte über den Tag verteilt liefern, die dann alle zusammengezählt werden. Diese Konsistenz ist wichtig: Bestimmt SMARD die laufende Modus-Entscheidung, muss auch die Fenstergrenze für die Energiebilanz (siehe unten) SMARDs eigener Einteilung folgen — sonst könnte die Bilanz versuchen, bis zu einem Sonnenstand-Zeitpunkt zu überbrücken, der (aus SMARDs Sicht) bereits in der Vergangenheit liegt, und dabei fast einen ganzen Tag umwickeln, statt nur die tatsächlich verbleibenden Stunden zu zählen.
+Zur Netto-Rechnung: `pvpt` deckt einen Teil dieses Bedarfs bereits direkt ab (an den Rändern eines roten Abschnitts, solange die Sonne noch nicht ganz weg bzw. schon wieder da ist), dieser Anteil muss also nicht zusätzlich aus dem Akku reserviert werden. Die 90 % legen die Reserve bewusst nicht über den berechneten Bedarf hinaus — der Akku soll sich im Regelfall über das rote Fenster praktisch vollständig entladen, statt Kapazität ungenutzt zu lassen.
 
-Ob die Reserve **jetzt schon** geschützt werden muss, entscheidet — sofern eine PV-Prognose vorliegt (siehe PV-Referenzkurve) — eine vollständige Energiebilanz, keine feste Uhrzeit:
+### Welche Stunden geschützt werden
 
-```
-Projektion = aktueller Inhalt + erwarteter PV-Restertrag − erwarteter Restverbrauch
-             (beides über dasselbe Fenster wie die Rot-Reserve: von jetzt bis zur
-             ersten Überschussstunde, unabhängig davon ob die Stunden dazwischen
-             rot sind oder nicht)
-Reserve geschützt, wenn Projektion < Rot-Reserve
-```
+Der Reserve-Aufbau geschieht **strikt nach Dreckigkeit**, nicht nach Uhrzeit: Kandidaten sind alle **nicht-roten** Stunden im selben Fenster (von jetzt bis zur ersten Überschussstunde). Sie werden nach `dirt%` **aufsteigend** sortiert — die saubersten zuerst — und ihre Fehlbeträge (`basic_load − erwartete PV`, mindestens 0) in dieser Reihenfolge aufsummiert. Jede Stunde bis einschließlich derjenigen, die die Summe erstmals auf das Reserve-Ziel bringt, wird geschützt.
 
-Beide Seiten der Ungleichung müssen über dasselbe Fenster laufen, um vergleichbar zu sein: Endet die Rot-Reserve an der ersten Überschussstunde (siehe oben), muss auch die Projektion exakt dort enden — nicht erst an der nächsten roten Stunde, die bei mehreren getrennten roten Phasen deutlich später liegen kann und dann Schwankungen aus einem viel größeren Zeitraum einrechnen würde, als die Reserve selbst abdeckt.
+Die Auswahl muss dabei **nicht zusammenhängend** sein: Eine saubere Stunde spät im Fenster kann geschützt werden, während eine dreckigere Stunde davor frei bleibt, wenn deren Fehlbetrag zum Erreichen des Ziels nicht nötig war. Reicht die Summe über **alle** Kandidaten nicht aus, werden alle geschützt — die Auswahl schiebt sich dann automatisch so weit in die dreckigeren Stunden des Tages, wie das Fenster hergibt, weil nichts anderes mehr zum Zurückhalten übrig ist.
 
-Restertrag und Restverbrauch werden über dieselbe Fensterlogik aufsummiert: von der aktuellen Stunde bis zur nächsten Stunde, die als rot eingestuft ist — wieder aus derselben Zonen-Quelle wie oben (SMARD, falls aktiv, sonst Sonnenstand), nicht immer starr aus dem Sonnenstand. Die laufende Stunde zählt dabei nur **anteilig** — nach den Minuten, die bis zum Stundenwechsel noch übrig sind — nicht komplett; da `dirt_shift` im ¼-Stunden-Raster läuft, ergibt das im Normalbetrieb effektiv Viertelstunden-Genauigkeit am Rand des Zeitfensters, ohne dass die zugrundeliegenden Stundenkurven selbst feiner aufgelöst werden müssten. Ist die aktuelle Stunde selbst schon rot, ist nichts mehr zu überbrücken, dort wird ohnehin immer frei entladen.
+Der aktuelle Lauf ist genau dann geschützt, wenn die laufende Stunde in dieser Menge liegt. Die Entscheidung beruht damit auf einer Rangfolge über das ganze Fenster, nicht auf einem einzelnen Prognosewert. Die `-v`-Ausgabe zeigt die gewählten Stunden in der Zeile `dirt-ranked: ... -> protected hours [...]`.
 
-Diese Bilanz ist bewusst **unabhängig vom aktuellen Inhalt allein**: Ein voller Akku schützt nicht automatisch vor dem Schutz-Modus, wenn der erwartete Restverbrauch die erwartete Restsonne übersteigt; ein leerer Akku muss nicht automatisch schützen, wenn eine gute Prognose die Lücke deckt. Ob der Inhalt *aktuell* schon auf die Reserve gefallen ist, ist eine davon getrennte, jederzeit aktive Prüfung — sie entscheidet in der gelben Zone zwischen `limit` (Inhalt noch über der Reserve, Überschuss abfließen lassen) und `stop` (Inhalt schon an der Reserve).
+Ob der Inhalt *aktuell* schon auf die Reserve gefallen ist, ist eine davon getrennte, jederzeit aktive Prüfung — sie entscheidet in der gelben Zone zwischen `limit` (Inhalt noch über der Reserve, Überschuss abfließen lassen) und `stop` (Inhalt schon an der Reserve).
 
-**Ohne PV-Prognose** (Kurve nie erfolgreich berechnet) fällt die Entscheidung auf `build_reserve_after` als reine Uhrzeit-Grenze zurück, genau wie früher: vor dieser Uhrzeit (Standard 13:30) wird immer frei entladen, ab dann greift die Zonen-Logik unabhängig vom Energiebilanz-Ergebnis. Eine Kurve ohne Strahlungsprognose zählt noch als Prognose (dann eben unskaliert) — nur wenn wirklich keine PV-Referenzkurve vorliegt, greift die Uhrzeit-Regel.
+**Ohne PV-Prognose** (Kurve nie erfolgreich berechnet, etwa bei einer frischen Installation) fällt die Entscheidung auf `build_reserve_after` als reine Uhrzeit-Grenze zurück: vor dieser Uhrzeit (Standard 13:30) wird immer frei entladen, ab dann greift die Zonen-Logik. Eine Kurve ohne Strahlungsprognose zählt noch als Prognose (dann eben unskaliert) — nur wenn wirklich keine PV-Referenzkurve vorliegt, greift die Uhrzeit-Regel.
+
+---
 
 ## Ausfallsicherung
 
@@ -151,18 +148,14 @@ Aus `zeroinput.conf` gelesen (read-only):
 dirt_shift-eigene Schlüssel in `dirt_shift.conf`:
 
 - `zeroinput_conf` — Pfad zur `zeroinput.conf` (Standard `../zeroinput.conf`, da dirt_shift üblicherweise in einem Unterordner von zeroinput liegt)
-- **`yellow_cap`** (Watt, Standard 600) — Leistungsobergrenze für Entladung in der gelben Zone. Kurzzeitiger Haushaltsverbrauch bleibt grundsätzlich unvorhersehbar, darum ist dies bewusst kein aus Prognosedaten abgeleiteter Wert, sondern eine feste, dokumentierte Grenze. Sie schützt die Rot-Reserve vor spitzenbedingtem Überzug, ohne die Wh-Budgetierung des Slots zu verändern — unabhängig von jeder Wechselrichter-Staging-Schwelle in `zeroinput.conf`.
+- **`yellow_cap`** (Watt, Standard 1000) — Leistungsobergrenze für Entladung in der gelben Zone. Kurzzeitiger Haushaltsverbrauch bleibt grundsätzlich unvorhersehbar, darum ist dies bewusst kein aus Prognosedaten abgeleiteter Wert, sondern eine feste, dokumentierte Grenze. Sie schützt die Rot-Reserve vor spitzenbedingtem Überzug, ohne die Wh-Budgetierung des Slots zu verändern — unabhängig von jeder Wechselrichter-Staging-Schwelle in `zeroinput.conf`.
 - `vz_host_port`, `vz_chans` — volkszähler-Host und Kanal-UUIDs für die data.json-API. Getrennt von zeroinputs `vz_channels`/`vzlogger_log_file`: dirt_shift nutzt die HTTP-API für Mittelwerte, PV-Kurve und Energieinhalt, zeroinput die vzlogger-FIFO für die Live-Regelung. Beide greifen auf denselben volkszähler zu, die UUID-Listen müssen nicht identisch sein.
 - `vz_dirtiness_uuid` — echte volkszähler-Kanal-UUID für den Dreckigkeitswert-Export per HTTP-POST (siehe Netz-Dreckigkeit exportieren). Leer deaktiviert den Export.
 - `average_days` — Tage für das Stundenmittel (Standard 7)
 - `day_weights_pct` — Tagesgewichtung in Prozent für das Mittel, chronologisch: Index 0 = ältester Tag (heute minus `average_days`, also der gleiche Wochentag der Vorwoche), Index −1 = gestern. Gestern und der Vorwochentag stärker zu gewichten fängt den jüngsten Trend und die Wochentagsstruktur ein. Die Länge muss `average_days` entsprechen; bei Abweichung werden alle Tage gleich gewichtet. Alle 100 = neutral.
 - `reserve_pct` — Prozent des `basic_load`-Bedarfs über das rote Nachtfenster, der reserviert wird (Standard 90)
-- `build_reserve_after` — Uhrzeit (HH:MM), reiner Fallback-Wert, wenn keine PV-Prognose vorliegt (Standard 13:30). Liegt eine Prognose vor, bestimmt stattdessen die Energiebilanz (siehe Rot-Reserve und Energiebilanz), unabhängig von der Uhrzeit.
-- `smard_enabled` — reale CO₂-Intensitätszonen aus SMARD-Day-Ahead-Daten (Bundesnetzagentur; kein API-Key nötig) statt der Sonnenstand-Zonen. `false` (Standard) nutzt nur das Sonnenstand-Profil. Eine fehlgeschlagene SMARD-Abfrage fällt für diesen Lauf automatisch auf das Sonnenstand-Profil zurück.
-- `latitude`, `longitude` — Standort der Anlage (Dezimalgrad) für die Sonnenstandsberechnung; Standard ~Mitte Deutschland (51,0 / 10,0)
-- `green_morning_offset_h`, `red_evening_offset_h` — Stunden-Versatz zum Sonnenstand: grün erst so lange nach Sonnenaufgang, rot so lange vor Sonnenuntergang (Standard 3,5 / 3,0)
-- `green_earliest`, `green_latest` — feste Uhrzeit-Schranken des grünen Fensters, im Sommer dominierend (Standard 9,0 / 17,5)
-- `yellow_width_h` — Breite der gelben Übergangszone an beiden grünen Rändern (Standard 1,0)
+- `build_reserve_after` — Uhrzeit (HH:MM), nur genutzt, wenn keine PV-Prognose vorliegt (Standard 13:30). Liegt eine Prognose vor, bestimmt die dirt%-sortierte Schutzstunden-Auswahl (siehe Rot-Reserve und Schutzstunden), unabhängig von der Uhrzeit.
+- `latitude`, `longitude` — Standort der Anlage (Dezimalgrad) für das Klarhimmel-Modell und die Strahlungsprognose; Standard ~Mitte Deutschland (51,0 / 10,0)
 - `PV_to_bat_efficiency`, `bat_to_AC_efficiency` — Wirkungsgrade für die Rekonstruktion des Energieinhalts
 - `max_days_empty_battery` — wie viele Tage rückwärts nach einem „leer"-Zustand gesucht wird
 - `disable_zeroinput_timer` — auf `true` rechnet und gibt aus, ohne die Timer-Datei zu schreiben (Trockenlauf)

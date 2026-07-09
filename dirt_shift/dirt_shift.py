@@ -17,30 +17,31 @@
 # of energy available and required overnight.
 #
 # This is a standalone tool. It queries volkszähler for basic_load/PV averages
-# and battery content, and writes the same timer.txt interface zeroinput reads
-# for discharge control. No grid data is fetched — the intensity profile is
-# derived from the computed sun position plus fixed load bounds.
+# and battery content, derives the hourly CO2-intensity profile from SMARD
+# day-ahead grid data (a prerequisite — no other zone source exists), and
+# writes the same timer.txt interface zeroinput reads for discharge control.
 #
 # Concept (see comments at each step):
-#   1. intensity profile: three zones from the clean (low-intensity) window, a
-#      hybrid of sun position and fixed clock bounds (see _green_bounds):
-#        high   (red)    — outside the clean window: evening, night, early morning
-#        medium (yellow) — transition band on both edges of the clean window
-#        low    (green)  — midday
+#   1. intensity profile: SMARD's forecasted wind+solar generation and load
+#      give an hourly renewables/load ratio; each day's hours are split by
+#      percentile into three zones (see _smard_zones_for_date):
+#        high   (red)    — the lowest-ratio (dirtiest) hours
+#        medium (yellow) — the middle band
+#        low    (green)  — the highest-ratio (cleanest) hours
+#      If the SMARD fetch fails, cached data substitutes for one more day;
+#      beyond that dirt_shift aborts, leaving an all-allowed timer.
 #   2. red reserve = reserve_pct (~90%) * basic_load over every red hour
 #      between now and the next PV surplus phase (the point the battery
 #      genuinely refills from).
-#   3. the reserve is protected as soon as the forecasted PV yield remaining
-#      today (empirical PV curve x shortwave-radiation forecast) can no longer
-#      close the gap to it — a bright day can push this later than a fixed
-#      clock time would, a dull day earlier. Without a usable forecast,
-#      build_reserve_after (~13:30) is used as a fallback clock cutoff. While
-#      the reserve is not protected, discharge is free regardless of zone —
-#      this runs the battery down (even through a clean/green midday) to make
-#      room for the day's remaining PV yield. Once protected, the zone decides:
-#      high -> no limit; medium -> capped at yellow_cap (unless content has
-#      dropped to the reserve, then stop); low -> no battery discharge
-#      (pvpt only).
+#   3. discharge is withheld during exactly the cleanest hours it takes to
+#      cover that reserve: every non-red hour up to the next PV-surplus hour
+#      is ranked by cleanliness, and their shortfalls accumulated
+#      cleanest-first until the reserve target is reached — those hours are
+#      protected (limit/stop), all others discharge freely (see
+#      dirty_protect_hours). A red hour always discharges with no limit; that
+#      is where the reserve is meant to be spent. Without any PV forecast
+#      (curve never computed, e.g. fresh install), build_reserve_after
+#      (~13:30) is used as a clock cutoff instead.
 #   4. pvpt (direct PV pass-through) is always granted, independent of all this.
 #   5. runs every 1/4h, re-writing timer.txt with fresh battery content and zone.
 
@@ -307,9 +308,8 @@ def read_pv_curve():
 
 def solar_elevation_deg(d, hour):
 	"""Solar elevation angle (degrees) at local clock hour 'hour' (float) on
-	date d, for the configured location. Same approximation as sun_times (no
-	library, equation of time neglected) — kept consistent with the rest of
-	dirt_shift's sun-position math, and more than accurate enough against the
+	date d, for the configured location. Plain astronomical approximation (no
+	library, equation of time neglected) — more than accurate enough against the
 	hourly resolution of the radiation forecast it feeds (see clear_sky_ghi).
 	Negative for a sun below the horizon."""
 	import math, time as _t
@@ -332,8 +332,7 @@ def clear_sky_ghi(d, hour):
 	(1945) clear-sky model: GHI = CLEAR_SKY_A * cos(z) * exp(-CLEAR_SKY_B /
 	cos(z)) for zenith angle z while the sun is above the horizon, else 0.
 	Needs only the solar position (see solar_elevation_deg), no turbidity/
-	aerosol data, so it is computable offline, consistent with the rest of
-	dirt_shift's sun-position math. It is the denominator against which the
+	aerosol data, so it is computable offline. It is the denominator against which the
 	Open-Meteo shortwave_radiation forecast is compared to get a clear-sky
 	index (0..1) for scaling the empirical PV curve (see scaled_pv_curve)."""
 	import math
@@ -347,7 +346,7 @@ def clear_sky_ghi(d, hour):
 def get_radiation_forecast():
 	"""Today's hourly global horizontal irradiance forecast (shortwave_radiation,
 	W/m^2) from Open-Meteo (no API key required for non-commercial use), for
-	the same location as the sun-position zones. shortwave_radiation is the
+	the configured location (latitude/longitude). shortwave_radiation is the
 	direct plus diffuse component together — what a PV module actually
 	receives, including on an overcast day. Today's and tomorrow's local 24
 	hours are requested in one call. Returns (today, tomorrow), each a
@@ -526,15 +525,11 @@ def _smard_zones_for_date(date):
 
 
 def get_smard_zones():
-	"""Today's and tomorrow's SMARD-derived zones (see _smard_zones_for_date),
-	instead of the sun-position heuristic. Returns (today, tomorrow), each
-	either a {'zones':..., 'ratio':...} dict or None. Tomorrow's day-ahead
-	data commonly is not published yet earlier in the day — that is expected
-	and not treated as an error, tomorrow is simply None then. Returns
-	(None, None) if SMARD is disabled or today's own query fails (the caller
-	then falls back to dirtiness_zone(), the sun-position heuristic)."""
-	if not conf.get('smard_enabled', False):
-		return None, None
+	"""Today's and tomorrow's SMARD-derived zones (see _smard_zones_for_date).
+	Returns (today, tomorrow), each either a {'zones':..., 'ratio':...} dict
+	or None. Tomorrow's day-ahead data commonly is not published yet earlier
+	in the day — that is expected and not treated as an error, tomorrow is
+	simply None then. Returns (None, None) if today's own query fails."""
 	today_local = datetime.now().date()
 	today = _smard_zones_for_date(today_local)
 	if today is None:
@@ -552,16 +547,13 @@ def read_smard_zones():
 	calendar day each hour actually falls on. Built fresh on every call from
 	the cached raw today/tomorrow dicts (see get_smard_zones), which are
 	refetched together once per hour in their own cache file. An hour missing
-	from tomorrow (day-ahead data not yet published, or entirely absent)
-	falls back to today's classification for that same hour. With
-	smard_enabled false (default), this returns None on every call without
-	trying the network, printing a one-line note under -v so 'disabled' is
-	distinguishable from 'enabled but failing' (which prints its own message
-	from _smard_zones_for_date). Either way, the caller falls back to
-	dirtiness_zone()."""
-	if not conf.get('smard_enabled', False):
-		if verbose: print('SMARD disabled (smard_enabled=false) — using sun-position zones')
-		return None
+	from tomorrow (day-ahead data not yet published, or entirely absent) uses
+	today's classification for that same hour. SMARD is a prerequisite: if the
+	fetch fails, the cached data may substitute for exactly one more day (the
+	cache carries fetch_date; data fetched yesterday still passes — its
+	'tomorrow' half was the day-ahead forecast for what is now today).
+	Anything older, or no cache at all, returns None — the caller then aborts
+	hard, leaving the all-allowed free timer."""
 	vz_in = {}
 	if not avgnew:
 		try:
@@ -579,21 +571,34 @@ def read_smard_zones():
 		if today is not None:
 			vz_in['today'] = today
 			vz_in['tomorrow'] = tomorrow
+			vz_in['fetch_date'] = datetime.now().strftime('%Y-%m-%d')
 			vz_in['timestamp'] = datetime.now().timestamp()
 			with open(join(dirname(__file__), 'dirt_smard_cache.json'), 'w') as fo:
 				json_dump(vz_in, fo)
 		elif verbose:
-			print('SMARD zone refresh failed — keeping previous zones')
+			print('SMARD zone refresh failed — trying previous data')
 	elif verbose:
 		print('using cached SMARD zones from',
 		      datetime.fromtimestamp(last_ts).strftime('%Y-%m-%d %H:%M') if last_ts else 'never')
 
 	today = vz_in.get('today')
-	if today is None:
+	fetch_date = vz_in.get('fetch_date')
+	if today is None or fetch_date is None:
 		return None
-	tomorrow = vz_in.get('tomorrow')
+	age_days = (datetime.now().date() - datetime.strptime(fetch_date, '%Y-%m-%d').date()).days
+	if age_days > 1:
+		if verbose: print('cached SMARD data is from %s — too old to substitute' % fetch_date)
+		return None
+	if age_days == 1:
+		# fetched yesterday, substituting once: yesterday's 'tomorrow' half was
+		# the day-ahead forecast for what is now today.
+		if verbose: print('SMARD data from %s substituting for one day' % fetch_date)
+		today = vz_in.get('tomorrow') or today
+		tomorrow = None
+	else:
+		tomorrow = vz_in.get('tomorrow')
 	if tomorrow is None:
-		return today									# no tomorrow data at all: today's classification stands for the whole rolling window
+		return today									# no tomorrow data: today's classification stands for the whole rolling window
 	now_hour = datetime.now().hour
 	zones = [today['zones'][h] if h >= now_hour else tomorrow['zones'][h] for h in range(24)]
 	ratio = [today['ratio'][h] if h >= now_hour else tomorrow['ratio'][h] for h in range(24)]
@@ -605,7 +610,7 @@ def get_vz_bat_cap():
 	Inverter since the last known 'empty' state (voltage <= 3.0625 V/cell, i.e.
 	49 V at 16 cells, scaled by cell_count). Returns (latest_voltage,
 	content_Wh)."""
-	if verbose: print(datetime.now().strftime('%Y-%m-%d %H:%M'), 'query volkszähler for energy content:')
+	if verbose: print(datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 'query volkszähler for energy content:')
 	days_back = 0
 	latest_voltage = 0.0					# guard: set on the first (days_back==0) query below
 	end = datetime.today().replace(microsecond=0)
@@ -663,73 +668,6 @@ def get_vz_bat_cap():
 
 # ── dirt_shift core logic (verified separately) ───────────────────────────────
 
-def sun_times(d):
-	"""Sunrise/sunset (local clock hours, float) for the configured location on
-	date d. Plain astronomical approximation (no library, ~1-2 min accurate,
-	irrelevant against the hour-scale offsets). Equation of time neglected."""
-	import math, time as _t
-	lat = conf.get('latitude', 51.0)
-	lon = conf.get('longitude', 10.0)
-	is_dst = _t.localtime(_t.mktime(d.timetuple())).tm_isdst
-	tz = (-_t.altzone if is_dst else -_t.timezone) / 3600.0		# local UTC offset incl. DST
-	N = d.timetuple().tm_yday
-	decl = math.radians(23.45) * math.sin(math.radians(360.0 / 365.0 * (N - 81)))
-	lat_r = math.radians(lat)
-	cosH = -math.tan(lat_r) * math.tan(decl)
-	if cosH >= 1:   return None, None				# polar night: sun never rises
-	if cosH <= -1:  return 0.0, 24.0				# polar day: sun never sets
-	H = math.degrees(math.acos(cosH))
-	solar_noon = 12.0 - lon / 15.0 + tz
-	return solar_noon - H / 15.0, solar_noon + H / 15.0
-
-
-def _green_bounds(now):
-	"""Start and end (local clock hours) of the clean (green) grid window for the
-	date of 'now', as a hybrid of sun position and fixed clock bounds:
-	  green_start = max(sunrise + green_morning_offset_h, green_earliest)
-	  green_end   = min(sunset  - red_evening_offset_h,   green_latest)
-	The grid only turns clean once enough PV is up relative to the load. In summer
-	the load (clock-driven: morning ramp-up, evening rise) bounds the window, so
-	the fixed hours dominate; in winter the later sunrise / earlier sunset
-	dominates and the green window shrinks. Returns (green_start, green_end) or
-	None for a polar night (no green at all)."""
-	sr, ss = sun_times(now)
-	if sr is None:
-		return None									# polar night: never green
-	gm = conf.get('green_morning_offset_h', 3.5)
-	re = conf.get('red_evening_offset_h', 3.0)
-	ge = conf.get('green_earliest', 9.0)
-	gl = conf.get('green_latest', 17.5)
-	return max(sr + gm, ge), min(ss - re, gl)
-
-
-def dirtiness_zone(now):
-	"""Grid CO2-intensity zone at 'now', from the clean (low-intensity) window plus
-	a transition band on both edges. Returns 'red' (high intensity, no discharge
-	limit), 'yellow' (transition, capped at yellow_cap) or 'green' (low intensity,
-	no battery discharge)."""
-	gb = _green_bounds(now)
-	if gb is None:           return 'red'			# polar night: continuously high intensity
-	green_start, green_end = gb
-	yw = conf.get('yellow_width_h', 1.0)
-	h = now.hour + now.minute / 60.0
-	if green_start + yw <= h <= green_end - yw:		return 'green'
-	if green_start <= h < green_start + yw:			return 'yellow'
-	if green_end - yw < h <= green_end:				return 'yellow'
-	return 'red'
-
-
-def effective_zone(now, grid_data):
-	"""The zone actually used for this run's decision: the SMARD-derived zone
-	for the current hour if available, otherwise the sun-position heuristic
-	(dirtiness_zone). Keeps the fallback in one place so main() does not need
-	to know which source produced the zone. grid_data is the
-	{'zones':..., 'ratio':...} dict from read_smard_zones(), or None."""
-	if grid_data is not None:
-		return grid_data['zones'][now.hour]
-	return dirtiness_zone(now)
-
-
 def write_dirtiness_to_vz(value):
 	"""Best-effort: POST the current grid dirtiness value directly to
 	volkszähler's middleware API, once per run — no local file, no vzlogger
@@ -740,33 +678,25 @@ def write_dirtiness_to_vz(value):
 	volkszähler queries. Sign convention matches the installation's existing
 	power channels (Import positive = drawing from the grid, Inverter
 	negative = feeding in): positive = dirtier (below-average renewable
-	share), negative = cleaner than average / renewable surplus. Silently
-	does nothing if no UUID is configured. Checks the HTTP response status
-	(raise_for_status) so a rejected write — wrong/unknown UUID, server
-	error — is caught here rather than passing as silent success; under -v,
-	prints a one-line confirmation on success and the error on failure.
-	Never raises further — a failed write must not abort the run."""
+	share), negative = cleaner than average / renewable surplus. Checks the
+	HTTP response status (raise_for_status) so a rejected write — wrong or
+	unknown UUID, server error — is caught here rather than passing as silent
+	success. Never raises further: a failed write must not abort the run.
+	Returns True if the value reached volkszähler, False if the write was
+	attempted and failed, None if no UUID is configured (nothing attempted).
+	The debug table marks the written hour accordingly (see
+	_hourly_debug_table)."""
 	uuid = conf.get('vz_dirtiness_uuid', '')
 	if not uuid:
-		return
+		return None
 	try:
 		url = 'http://%s/data/%s.json' % (conf['vz_host_port'], uuid)
 		resp = post(url=url, params={'value': value, 'ts': int(time() * 1000)}, timeout=10)
 		resp.raise_for_status()
-		if verbose: print('dirtiness value written: %g' % value)
+		return True
 	except Exception as e:
 		if verbose: print('dirtiness write failed:', e)
-
-
-def _zone_array(now, grid_data):
-	"""The 24-hour zone array actually driving this run's decisions: SMARD's if
-	available, otherwise the sun-position zone computed per hour. Used to keep
-	_bridge_hours and red_window_demand consistent with whichever zone source
-	effective_zone() draws on for the current hour, instead of always deriving
-	window boundaries from the sun position regardless of source."""
-	if grid_data is not None:
-		return grid_data['zones']
-	return [dirtiness_zone(now.replace(hour=h, minute=0, second=0, microsecond=0)) for h in range(24)]
+		return False
 
 
 def _bridge_hours(now, zones, basic_load, expected_pv):
@@ -780,14 +710,11 @@ def _bridge_hours(now, zones, basic_load, expected_pv):
 	energy-balance projection directly comparable to a reserve target from
 	red_window_demand — both span the identical window. The current hour
 	counts only its remaining fraction (minutes left until the top of the
-	hour); every full hour after that counts whole. Without expected_pv, no
-	surplus boundary exists — the window then runs the full rolling 24 h,
-	matching red_window_demand's own no-forecast fallback. Empty if the
-	current hour is itself a surplus hour."""
+	hour); every full hour after that counts whole. Empty if the current hour
+	is itself a surplus hour."""
 	hours, h, first = [], now.hour, True
 	for _ in range(24):
-		pv = expected_pv[h] if expected_pv is not None else 0.0
-		if expected_pv is not None and pv > basic_load[h]:
+		if expected_pv[h] > basic_load[h]:
 			break
 		hours.append((h, (60 - now.minute) / 60.0 if first else 1.0))
 		first = False
@@ -795,15 +722,7 @@ def _bridge_hours(now, zones, basic_load, expected_pv):
 	return hours
 
 
-def _sum_hours(values, hours):
-	"""Wh total of a 24-value hourly array over the (hour, fraction) pairs
-	from _bridge_hours. 0.0 if values is unavailable."""
-	if values is None:
-		return 0.0
-	return sum(values[h] * frac for h, frac in hours)
-
-
-def red_window_demand(basic_load, now, zones, expected_pv=None):
+def red_window_demand(basic_load, now, zones, expected_pv):
 	"""Wh the basic_load draws across every red hour between now and the next
 	PV production phase — scanning forward from the current hour (wrapping
 	past midnight), red hours accumulate their demand net of any PV still
@@ -818,19 +737,17 @@ def red_window_demand(basic_load, now, zones, expected_pv=None):
 	dull that expected PV never exceeds load, no surplus hour exists and all
 	red hours of the rolling 24 h are reserved for — correct, as no refill is
 	coming. 'zones' is a rolling 24-hour array anchored at 'now' (see
-	_zone_array, read_smard_zones, read_radiation_forecast): an hour before
+	read_smard_zones, read_radiation_forecast): an hour before
 	now.hour is really tomorrow's occurrence of that hour, with tomorrow's
 	own classification/value where available. A deficit red hour and the
 	(rare) surplus red hour offset each other within the window; only the
 	final total is floored at zero. Zero if no red hour lies before the
-	surplus point. Without expected_pv (no forecast), no surplus point can be
-	detected and no netting done — the plain basic_load sum over all red
-	hours of the rolling day is used as the conservative fallback."""
+	surplus point."""
 	demand = 0.0
 	h = now.hour
 	for _ in range(24):
-		pv = expected_pv[h] if expected_pv is not None else 0.0
-		if expected_pv is not None and pv > basic_load[h]:
+		pv = expected_pv[h]
+		if pv > basic_load[h]:
 			break										# PV surplus hour: the battery refills from here on
 		if zones[h] == 'red':
 			demand += basic_load[h] - pv
@@ -838,51 +755,66 @@ def red_window_demand(basic_load, now, zones, expected_pv=None):
 	return max(0.0, demand)
 
 
-def reserve_build_hour(content, basic_load, now, zones, expected_pv):
-	"""Predicted hour-of-day at which the red reserve starts being BUILT —
-	i.e. the first hour, scanning forward from now up to (not into) the next
-	red hour, at which the same projection the discharge decision uses
-	(content + remaining PV - remaining load until the next red hour, vs the
-	reserve target at that hour) would fall short, switching protection on
-	and beginning to retain energy. The forecast-based counterpart to the
-	build_reserve_after clock fallback. Current content is held constant
-	across the scan (the real trajectory depends on actual consumption and
-	yield; every quarter-hour run re-evaluates with fresh content anyway), so
-	this is an indication, not a commitment. If protection is already active
-	now, this returns the current hour. Returns None if no hour before the
-	next red span is predicted to need protection — e.g. when the PV surplus
-	phase runs right up to the red start, so the reserve is built implicitly
-	by charging during surplus, never by restricting discharge."""
-	for i in range(24):
-		fake = now.replace(hour=(now.hour + i) % 24, minute=now.minute if i == 0 else 0)
-		if zones[fake.hour] == 'red':
-			return None									# red span reached: the reserve is spent there, not built
-		target = conf['reserve_pct'] * 0.01 * red_window_demand(basic_load, fake, zones, expected_pv)
-		if target <= 0:
-			continue
-		bridge = _bridge_hours(fake, zones, basic_load, expected_pv)
-		proj = content + _sum_hours(expected_pv, bridge) - _sum_hours(basic_load, bridge)
-		if proj < target:
-			return fake.hour
-	return None
+def dirty_protect_hours(now, zones, basic_load, expected_pv, ratio, reserve):
+	"""The set of hours (hour-of-day integers) between now and the next
+	PV-surplus hour whose discharge must be withheld so their accumulated
+	shortfall covers the red reserve target — used only with SMARD active (a
+	real per-hour dirtiness ranking, see write_dirtiness_to_vz's
+	(1-ratio)*100 convention, is required). Candidate hours are every
+	non-red hour in that window (see _bridge_hours; a red hour always
+	discharges freely regardless, so it is never a candidate) — by
+	construction every candidate is a deficit or exactly-balanced hour,
+	since _bridge_hours itself already stops at the first true surplus hour.
+	Candidates are ranked cleanest first (ratio descending) and each hour's
+	shortfall (basic_load[h] - expected_pv[h], floored at 0) is accumulated
+	in that order — every hour up to and including the one that brings the
+	running total to at least 'reserve' is protected. The selection is not
+	required to be contiguous: a clean hour late in the window can be
+	protected while a dirtier hour earlier in the window stays free, if the
+	dirty hour's own shortfall was not needed to reach the target. If the
+	accumulated total across every candidate never reaches 'reserve', every
+	candidate hour is protected — the selection then simply extends as far
+	into the day's dirtier hours as the window allows, since nothing else is
+	left to draw on. Empty if 'reserve' is 0 (nothing to protect) or the
+	window has no non-red hour. An hour with no ratio value (a gap in
+	SMARD's coverage) ranks as the dirtiest, so it is protected only as a
+	last resort."""
+	candidates = [(h, frac) for h, frac in _bridge_hours(now, zones, basic_load, expected_pv)
+	              if zones[h] != 'red']
+	if reserve <= 0 or not candidates:
+		return set()
+	ranked = sorted(candidates, key=lambda hf: ratio[hf[0]] if ratio[hf[0]] is not None else -1.0,
+	                 reverse=True)								# cleanest (highest ratio) first
+	protect, total = set(), 0.0
+	for h, frac in ranked:
+		protect.add(h)
+		total += max(0.0, basic_load[h] - expected_pv[h]) * frac
+		if total >= reserve:
+			break
+	return protect
 
 
-def _hourly_debug_table(now, pv_curve, radiation, expected_pv, grid_data):
+def _hourly_debug_table(now, pv_curve, radiation, expected_pv, basic_load, grid_data, dirt_written=None):
 	"""Print one aligned table (hour 0-23) combining the PV reference curve,
 	the shortwave-radiation forecast, the clear-sky index derived from it
-	(see scaled_pv_curve/clear_sky_ghi), expected PV, and the CO2-intensity
-	zone/dirtiness — SMARD's if available, otherwise the sun-position zone for
-	that hour (see _zone_array, the same array _bridge_hours/red_window_demand
-	use) — so everything the discharge decision draws on is visible at a
-	glance, in one place instead of five separate lists. 'dirt%' is
-	(1 - ratio) * 100 (see write_dirtiness_to_vz): 0 at ratio 1 (renewables
-	exactly cover load), negative on a renewable surplus (ratio > 1), rising
-	toward 100 as the renewable share drops toward 0. The current hour is
-	marked with '*'."""
-	source = 'SMARD' if grid_data is not None else 'sun-position (SMARD unavailable)'
-	zones = _zone_array(now, grid_data)
-	print('hourly data (zone source: %s)' % source)
-	print('%-3s %8s %8s %5s %8s %6s %-8s' % ('hr', 'PV_curve', 'rad_Wm2', 'clr%', 'exp_PV', 'dirt%', 'zone'))
+	(see scaled_pv_curve/clear_sky_ghi), expected PV, basic_load, whether
+	that hour charges or discharges, and the SMARD-derived dirtiness/zone
+	(the same rolling array _bridge_hours/red_window_demand/
+	dirty_protect_hours use) — so everything the discharge decision draws on
+	is visible at a glance, in one place instead of six separate lists.
+	'chg' is 'L' (lädt) if expected_pv[h] > basic_load[h], else 'E'
+	(entlädt) — the exact boundary _bridge_hours/red_window_demand scan for
+	(a PV-surplus hour ends their window). 'dirt%' is (1 - ratio) * 100 (see
+	write_dirtiness_to_vz): 0 at ratio 1 (renewables exactly cover load),
+	negative on a renewable surplus (ratio > 1), rising toward 100 as the
+	renewable share drops toward 0. The current hour is marked with '*'. Its
+	dirt% value carries a second marker for the volkszähler write of that
+	same value (see write_dirtiness_to_vz, whose return value 'dirt_written'
+	is passed here): '*' prefix if it reached volkszähler, '!' if the write
+	failed, no prefix if no UUID is configured and nothing was attempted."""
+	zones = grid_data['zones']
+	print('')
+	print('%-3s %8s %8s %5s %8s %8s %3s %6s %-8s' % ('hr', 'PV_curve', 'rad_Wm2', 'clr%', 'exp_PV', 'basic_ld', 'chg', 'dirt%', 'zone'))
 	for h in range(24):
 		pv  = round(pv_curve[h]) if pv_curve is not None else '-'
 		r   = radiation[h] if (radiation is not None and h < len(radiation)) else None
@@ -893,91 +825,79 @@ def _hourly_debug_table(now, pv_curve, radiation, expected_pv, grid_data):
 		else:
 			rad_s, clr = '-', '-'
 		exp = round(expected_pv[h]) if expected_pv is not None else '-'
-		if grid_data is not None:
-			ratio_h = grid_data['ratio'][h]
-			dirt_s = ('%.0f' % ((1.0 - ratio_h) * 100)) if ratio_h is not None else '-'
+		bl  = round(basic_load[h]) if basic_load is not None else '-'
+		if expected_pv is not None and basic_load is not None:
+			chg = 'L' if expected_pv[h] > basic_load[h] else 'E'
 		else:
-			dirt_s = '-'
+			chg = '-'
+		ratio_h = grid_data['ratio'][h]
+		dirt_s = ('%.0f' % ((1.0 - ratio_h) * 100)) if ratio_h is not None else '-'
+		if h == now.hour and dirt_written is not None:
+			dirt_s = ('*' if dirt_written else '!') + dirt_s	# volkszähler write of this hour's value
 		marker = '*' if h == now.hour else ' '
-		print('%2d%s %8s %8s %5s %8s %6s %-8s' % (h, marker, pv, rad_s, clr, exp, dirt_s, zones[h]))
-
+		print('%2d%s %8s %8s %5s %8s %8s %3s %6s %-8s' % (h, marker, pv, rad_s, clr, exp, bl, chg, dirt_s, zones[h]))
+	print('')
 
 
 def main():
 	vz = read_average()
 	basic_load = vz['basic_load']
 	now = datetime.now()
-	pv_curve = read_pv_curve()					# not yet used in the discharge decision — cached for future use
-	radiation = read_radiation_forecast()				# ditto
-	expected_pv = scaled_pv_curve(pv_curve, radiation, now)
+	pv_curve = read_pv_curve()
+	radiation = read_radiation_forecast()
+	expected_pv = scaled_pv_curve(pv_curve, radiation, now)	# drives red_window_demand/dirty_protect_hours below
+	grid_data = read_smard_zones()					# before get_vz_bat_cap, so all cache notices print together
+	if grid_data is None:
+		die('SMARD zone data unavailable (fetch failed, no cache newer than one day)', conf['timer.txt'])
 	_voltage, content = get_vz_bat_cap()
 
 	yellow_cap = conf['yellow_cap']
-	grid_data = read_smard_zones()
-	zone = effective_zone(now, grid_data)
-	zone_source = 'SMARD' if grid_data is not None else 'sun-position'
+	r = grid_data['ratio'][now.hour]
+	dirt_written = write_dirtiness_to_vz((1.0 - r) * 100) if r is not None else None
 	if debug:
-		_hourly_debug_table(now, pv_curve, radiation, expected_pv, grid_data)
+		_hourly_debug_table(now, pv_curve, radiation, expected_pv, basic_load, grid_data, dirt_written)
 
-	if grid_data is not None:
-		r = grid_data['ratio'][now.hour]
-		if r is not None:
-			write_dirtiness_to_vz((1.0 - r) * 100)
-
-	zones = _zone_array(now, grid_data)
+	# decide this run's discharge mode. A red hour always discharges with no
+	# limit — that is where the reserve is meant to be spent. Outside a red
+	# hour, dirty_protect_hours ranks every non-red hour between now and the
+	# next PV-surplus hour by cleanliness and protects exactly as many of the
+	# cleanest ones as it takes for their accumulated shortfall to cover the
+	# red reserve target — a per-hour ranking across the whole window, so the
+	# outcome rests on the ranking rather than on any single forecast value
+	# (see the reserve_basis line for which hours were selected). The current
+	# hour is protected if it is in that set.
+	#
+	# Without any PV forecast (curve never successfully computed, e.g. on a
+	# fresh install), build_reserve_after (config) is used as a clock cutoff
+	# instead, the reserve then being computed against a zero-PV day.
+	#
+	# Once protected, the zone and current content decide between 'limit'
+	# (still above the reserve — bleed the surplus) and 'stop' (content has
+	# already reached/dropped below it); green always stops once protected,
+	# since it never discharges.
+	zones = grid_data['zones']
 
 	# the red reserve: basic_load demand over every red hour between now and
 	# the next PV surplus phase (see red_window_demand), net of expected PV
 	# during those hours, scaled by reserve_pct.
-	reserve = conf['reserve_pct'] * 0.01 * red_window_demand(basic_load, now, zones, expected_pv)
+	pv_for_reserve = expected_pv if expected_pv is not None else [0.0] * 24
+	reserve = conf['reserve_pct'] * 0.01 * red_window_demand(basic_load, now, zones, pv_for_reserve)
 
-	# decide this run's discharge mode. While the reserve is not (yet) protected,
-	# discharge is free regardless of zone — this runs the battery down (even
-	# through a clean/green midday) to make room for the day's remaining PV
-	# yield. Once the reserve is protected, the CO2-intensity zone and the
-	# reserve decide:
-	#   red    -> high intensity: discharge with no limit (full output)
-	#   yellow -> transition: discharge capped to yellow_cap (Watt), unless the
-	#             reserve is being protected and content has dropped to it
-	#   green  -> low intensity: no battery discharge (pvpt only)
-	# Once content has dropped to the reserve, discharge stops (outside red)
-	# until the next red span itself begins (where the reserve is then spent).
-	#
-	# protect_reserve is driven by a full energy-balance projection, not a fixed
-	# clock time: current content plus the forecasted PV yield (curve x clear-
-	# sky-scaled radiation) remaining until the coming red window starts, minus
-	# the basic_load still due in that same span. If that projection would fall
-	# short of the reserve, protection starts now — a bright day with little
-	# load left can push this later than a fixed clock time would, a dull day
-	# or a lot of remaining consumption earlier. This is independent of the
-	# plain current content (like the old clock cutoff was): whether content
-	# has already dropped to the reserve right now is the separate check
-	# below, which is what actually distinguishes yellow's 'limit' (protected,
-	# but current content is still above the reserve — bleed the surplus)
-	# from 'stop' (content has already reached/dropped below it).
-	# build_reserve_after (config) is used only as a fallback clock cutoff when
-	# no forecast is available at all (PV curve never successfully computed); a
-	# curve without a radiation forecast still counts as a forecast
-	# (scaled_pv_curve then just returns it unscaled).
 	if expected_pv is not None:
-		bridge = _bridge_hours(now, zones, basic_load, expected_pv)
-		remaining_pv   = _sum_hours(expected_pv, bridge)
-		remaining_load = _sum_hours(basic_load, bridge)
-		projected = content + remaining_pv - remaining_load
-		protect_reserve = projected < reserve
-		build_h = reserve_build_hour(content, basic_load, now, zones, expected_pv)
-		build_s = ' (>%02d:00)' % build_h if build_h is not None else ''
-		reserve_basis = ('forecast: content %.0f + remaining PV %.0f - remaining load %.0f '
-		                  '= projected %.0f Wh vs %.0f Wh reserve target%s'
-		                  % (content, remaining_pv, remaining_load, projected, reserve, build_s))
+		protect_hours = dirty_protect_hours(now, zones, basic_load, expected_pv, grid_data['ratio'], reserve)
+		protect_reserve = now.hour in protect_hours
+		hours_s = ','.join('%02d' % h for h in sorted(protect_hours)) if protect_hours else '-'
+		reserve_basis = ('dirt-ranked: %.0f Wh reserve target -> protected hours [%s]'
+		                  % (reserve, hours_s))
 	else:
 		after = conf['build_reserve_after']
 		hh, mm = (int(x) for x in after.split(':'))
 		protect_reserve = (now.hour, now.minute) >= (hh, mm)
 		reserve_basis = 'clock fallback: build_reserve_after %s (no PV forecast available)' % after
 
+	zone = zones[now.hour]
 	if not protect_reserve:
-		mode = 'free'										# reserve not (yet) protected: run the battery down regardless of zone
+		mode = 'free'										# not protected (a red hour is never a candidate): run the battery down
 	elif zone == 'green':
 		mode = 'stop'										# low intensity: never discharge
 	elif zone != 'red' and content <= reserve:
@@ -988,12 +908,8 @@ def main():
 		mode = 'limit'										# yellow: capped at yellow_cap
 
 	if verbose:
-		sr, ss = sun_times(now)
-		srs = '%05.2f' % sr if sr is not None else 'n/a'
-		sss = '%05.2f' % ss if ss is not None else 'n/a'
-		print('\ndirt_shift  %s' % now.strftime('%Y-%m-%d %H:%M:%S'))
-		print('sun rise %s set %s   zone %s (%s)   content %d Wh   red reserve(%d%%) %.0f Wh' % (
-			srs, sss, zone, zone_source, content, conf['reserve_pct'], reserve))
+		print('zone %s   content %d Wh   red reserve(%d%%) %.0f Wh' % (
+			zone, content, conf['reserve_pct'], reserve))
 		print('%s -> reserve %s   => discharge mode: %s' % (
 			reserve_basis, 'protected' if protect_reserve else 'open', mode.upper()))
 
@@ -1001,7 +917,7 @@ def main():
 		write_timer(mode, now, yellow_cap)
 
 	if verbose:
-		print('done.', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+		print('dirt_shift done.', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
 		if html: print('\n</pre></body></html>')
 	return 0
 

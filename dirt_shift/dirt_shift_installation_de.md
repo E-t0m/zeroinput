@@ -67,14 +67,14 @@ Die mitgelieferte `dirt_shift.conf` enthält Platzhalter, die ersetzt werden mü
 
 Die übrigen Schlüssel (`reserve_pct`, `build_reserve_after`, die `latitude`/`longitude` und CO₂-Intensitäts-Parameter, `yellow_cap`, `average_days`, `day_weights_pct`, die Wirkungsgrade, `max_days_empty_battery`) haben brauchbare Vorgabewerte und können zunächst unverändert bleiben.
 
-- `build_reserve_after` (Standard 13:30) legt eine feste Uhrzeit fest, ab der die Rot-Reserve geschützt wird, falls überhaupt keine PV-Prognose zustande kommt. Liegt eine PV-Prognose vor, entscheidet eine laufende Energiebilanz-Projektion (aktueller Akkuinhalt plus erwarteter PV-Ertrag minus erwarteter Verbrauch, bis zur nächsten PV-Überschussstunde — demselben Fenster, über das auch die Rot-Reserve selbst berechnet wird), wann der Schutz einsetzt — unabhängig von der Uhrzeit.
-- `yellow_cap` (Standard 600 W) begrenzt die Entladeleistung in der gelben Übergangszone, damit kurzzeitige Lastspitzen die Rot-Reserve nicht anzapfen. Ein fester, bewusst gesetzter Wert — kein aus Prognosedaten abgeleiteter.
-- Der Standort (`latitude`/`longitude`, Standard ~Mitte Deutschland) steuert die Sonnenstandsberechnung, die als Fallback-Profil dient und auch dann verwendet wird, wenn SMARD aktiv, aber gerade nicht verfügbar ist.
+- `build_reserve_after` (Standard 13:30) legt eine feste Uhrzeit fest, ab der die Rot-Reserve geschützt wird, falls überhaupt keine PV-Prognose zustande kommt. Liegt eine PV-Prognose vor, werden stattdessen gezielt die **saubersten** Stunden bis zur nächsten PV-Überschussstunde geschützt — so viele, wie es braucht, damit ihre aufsummierten Fehlbeträge die Rot-Reserve decken. Die Auswahl folgt strikt der Dreckigkeit, nicht der Uhrzeit.
+- `yellow_cap` (Standard 1000 W) begrenzt die Entladeleistung in der gelben Übergangszone, damit kurzzeitige Lastspitzen die Rot-Reserve nicht anzapfen. Ein fester, bewusst gesetzter Wert — kein aus Prognosedaten abgeleiteter.
+- Der Standort (`latitude`/`longitude`, Standard ~Mitte Deutschland) steuert das Klarhimmel-Modell und die Strahlungsprognose.
 - `day_weights_pct` gewichtet einzelne Tage des Mittels stärker (chronologisch, Index −1 = gestern, Index 0 = gleicher Wochentag der Vorwoche); die Länge muss `average_days` entsprechen, sonst wird gleich gewichtet.
 
-**Optional: SMARD.** Mit `"smard_enabled": true` bezieht `dirt_shift` reale Day-Ahead-Netzdaten (Bundesnetzagentur, kostenlos, ohne Anmeldung) für heute **und morgen** und leitet daraus die Zonen ab. Ist SMARDs Abfrage für eine Stunde (noch) nicht verfügbar, wird für genau diese Stunde die Sonnenstandsberechnung herangezogen; der Lauf läuft normal weiter. Zusätzlich kann `vz_dirtiness_uuid` (eine vorher in volkszähler angelegte Kanal-UUID) gesetzt werden, damit `dirt_shift` den aktuellen Dreckigkeitswert bei jedem Lauf per HTTP-POST in volkszähler protokolliert (leer = deaktiviert).
+**SMARD ist Voraussetzung.** `dirt_shift` bezieht reale Day-Ahead-Netzdaten (Bundesnetzagentur, kostenlos, ohne Anmeldung) für heute **und morgen** und leitet daraus die Zonen ab; eine alternative Zonenquelle gibt es nicht. Schlägt die Abfrage fehl, überbrücken die zwischengespeicherten Daten genau **einen Tag**; danach bricht `dirt_shift` ab und hinterlässt einen „Alles-erlaubt"-Timer. Optional kann `vz_dirtiness_uuid` (eine vorher in volkszähler angelegte Kanal-UUID) gesetzt werden, damit `dirt_shift` den aktuellen Dreckigkeitswert bei jedem Lauf per HTTP-POST in volkszähler protokolliert (leer = deaktiviert).
 
-Die Strahlungsprognose (Open-Meteo, `shortwave_radiation`, kostenlos, ohne Anmeldung) läuft unabhängig von `smard_enabled` immer mit und skaliert die empirische PV-Referenzkurve auf das tatsächliche Tageswetter (heute und morgen, ebenfalls kostenlos, kein API-Key nötig).
+Die Strahlungsprognose (Open-Meteo, `shortwave_radiation`, kostenlos, ohne Anmeldung) skaliert die empirische PV-Referenzkurve auf das tatsächliche Tageswetter (heute und morgen, kein API-Key nötig).
 
 ### 3. basic_load-Formel an die eigene Anlage anpassen
 
@@ -160,7 +160,7 @@ Ist nicht einmal die `zeroinput.conf` lesbar (Timer-Pfad unbekannt), bleibt nur 
 
 **„no complete days returned by volkszähler".** Der volkszähler hat für den abgefragten Zeitraum keine vollständigen Tage. Erst nach einigen Betriebstagen liefert die Mittelung sinnvolle Werte. Bis dahin greift der Frei-Timer-Fallback.
 
-**Intensitätszone wirkt falsch (Sonnenstand-Fallback).** Ohne SMARD (oder wenn SMARD gerade fehlschlägt) ergibt sich die Zone aus dem Sonnenstand (Datum + `latitude`/`longitude`) und den festen Schranken `green_earliest`/`green_latest`. Mit `-v` lassen sich Sonnenauf-/-untergang und die berechnete Zone prüfen. Ein falsch gesetzter Standort oder unpassende Schranken sind die häufigste Ursache.
+**Abbruch mit „SMARD zone data unavailable".** Die SMARD-Abfrage schlägt fehl und der Cache ist älter als einen Tag. `dirt_shift` hinterlässt einen „Alles-erlaubt"-Timer, zeroinput läuft also uneingeschränkt weiter. Netzwerkverbindung und Erreichbarkeit von SMARD prüfen; ein Handlauf mit `-v` zeigt den Grund.
 
 **Intensitätszone wirkt falsch (SMARD aktiv).** Mit `-debug` zeigt die stündliche Übersichtstabelle die tatsächliche `dirt%`-Einstufung pro Stunde. SMARDs Perzentil-Einteilung orientiert sich am realen Tagesverlauf, daher kann die rote Phase zu jeder Tageszeit liegen, nicht nur nachts.
 
