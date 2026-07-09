@@ -590,11 +590,9 @@ document.getElementById('timer_ta').addEventListener('keydown', e => {
 const DIRTSHIFT_SECTIONS = {
 	'Data source':                   ['zeroinput_conf', 'vz_host_port', 'vz_chans'],
 	'Averaging':                     ['average_days', 'day_weights_pct'],
-	'Reserve':                       ['reserve_pct', 'build_reserve_after'],
-	'Grid intensity — SMARD':        ['smard_enabled', 'vz_dirtiness_uuid'],
-	'Grid intensity — sun position': ['latitude', 'longitude', 'green_morning_offset_h',
-	                                   'red_evening_offset_h', 'green_earliest', 'green_latest', 'yellow_width_h',
-	                                   'yellow_cap'],
+	'Reserve':                       ['reserve_pct', 'build_reserve_after', 'yellow_cap'],
+	'Grid intensity':                ['vz_dirtiness_uuid'],
+	'Location (PV forecast)':        ['latitude', 'longitude'],
 	'Battery energy':                ['PV_to_bat_efficiency', 'bat_to_AC_efficiency', 'max_days_empty_battery'],
 	'Other':                         ['disable_zeroinput_timer'],
 };
