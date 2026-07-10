@@ -443,7 +443,7 @@ function renderConf() {
 async function saveConf() {
 	const updates = {};
 	// collect flat inputs
-	document.querySelectorAll('[data-key]:not([data-subkey])').forEach(el => {
+	document.querySelectorAll('#conf_grid [data-key]:not([data-subkey])').forEach(el => {
 		const k = el.dataset.key;
 		let v;
 		if (el.tagName === 'SELECT') v = el.value === 'true';
@@ -452,7 +452,7 @@ async function saveConf() {
 		if (JSON.stringify(v) !== JSON.stringify(confData[k]) || _confAddedDefaults[k]) updates[k] = v;
 	});
 	// collect dict sub-key inputs — merge into one object per parent key
-	document.querySelectorAll('[data-key][data-subkey]').forEach(el => {
+	document.querySelectorAll('#conf_grid [data-key][data-subkey]').forEach(el => {
 		const k = el.dataset.key; const sk = el.dataset.subkey;
 		if (!updates[k]) updates[k] = Object.assign({}, confData[k]);
 		updates[k][sk] = el.dataset.type === 'number' ? (parseFloat(el.value)||0) : el.value;
@@ -590,10 +590,11 @@ document.getElementById('timer_ta').addEventListener('keydown', e => {
 const DIRTSHIFT_SECTIONS = {
 	'Data source':                   ['zeroinput_conf', 'vz_host_port', 'vz_chans'],
 	'Averaging':                     ['average_days', 'day_weights_pct'],
-	'Reserve':                       ['reserve_pct', 'build_reserve_after', 'yellow_cap'],
+	'Reserve':                       ['reserve_pct'],
 	'Grid intensity':                ['vz_dirtiness_uuid'],
 	'Location (PV forecast)':        ['latitude', 'longitude'],
 	'Battery energy':                ['PV_to_bat_efficiency', 'bat_to_AC_efficiency', 'max_days_empty_battery'],
+	'Precharge (experimental)':      ['precharge_enabled'],
 	'Other':                         ['disable_zeroinput_timer'],
 };
 
