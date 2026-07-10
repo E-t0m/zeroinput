@@ -23,25 +23,23 @@
 #
 # Concept (see comments at each step):
 #   1. intensity profile: SMARD's forecasted wind+solar generation and load
-#      give an hourly renewables/load ratio; each day's hours are split by
-#      percentile into three zones (see _smard_zones_for_date):
-#        high   (red)    — the lowest-ratio (dirtiest) hours
-#        medium (yellow) — the middle band
-#        low    (green)  — the highest-ratio (cleanest) hours
+#      give an hourly renewables/load ratio; each day's hours are split at
+#      their own median into two zones (see _smard_zones_for_date):
+#        red   (dirtier half of the day)
+#        green (cleaner half of the day)
 #      If the SMARD fetch fails, cached data substitutes for one more day;
 #      beyond that dirt_shift aborts, leaving an all-allowed timer.
 #   2. red reserve = reserve_pct (~90%) * basic_load over every red hour
 #      between now and the next PV surplus phase (the point the battery
 #      genuinely refills from).
-#   3. discharge is withheld during exactly the cleanest hours it takes to
-#      cover that reserve: every non-red hour up to the next PV-surplus hour
-#      is ranked by cleanliness, and their shortfalls accumulated
-#      cleanest-first until the reserve target is reached — those hours are
-#      protected (limit/stop), all others discharge freely (see
-#      dirty_protect_hours). A red hour always discharges with no limit; that
-#      is where the reserve is meant to be spent. Without any PV forecast
-#      (curve never computed, e.g. fresh install), build_reserve_after
-#      (~13:30) is used as a clock cutoff instead.
+#   3. green: charge, never discharge, until content exceeds the reserve;
+#      then free discharge until content drops back to it.
+#      red: free discharge if content already covers the reserve. If it
+#      falls short, the single dirtiest red hour in the window is served
+#      unrestricted (see dirtiest_hour) — every other red hour in the window
+#      is capped to CAP_FACTOR * basic_load for that hour instead, so a load
+#      above ordinary consumption (e.g. EV charging) is forced onto the grid,
+#      preserving content for the dirtiest hour.
 #   4. pvpt (direct PV pass-through) is always granted, independent of all this.
 #   5. runs every 1/4h, re-writing timer.txt with fresh battery content and zone.
 
@@ -66,8 +64,7 @@ CLEAR_SKY_B          = 0.059	# Haurwitz clear-sky GHI model exponent coefficient
 SMARD_REGION        = 'DE'		# SMARD region code (see the SMARD API's region parameter)
 SMARD_FILTER_WIND_SOLAR = 5097	# 'Prognostizierte Erzeugung: Wind und Photovoltaik' (day-ahead, combined)
 SMARD_FILTER_LOAD       = 411	# 'Prognostizierter Verbrauch' (day-ahead) — less firmly confirmed than the generation filter, but the fallback below covers a wrong/broken value
-SMARD_GREEN_FRACTION = 0.3	# today's hours with the highest wind+solar/load ratio, classified green
-SMARD_RED_FRACTION   = 0.3	# today's hours with the lowest wind+solar/load ratio, classified red (the rest is yellow)
+CAP_FACTOR = 2	# discharge cap while withholding a non-priority red hour: CAP_FACTOR * basic_load[hour] — enough headroom for ordinary short spikes without inviting inefficient inverter staging, still far below any deliberate high-power load (e.g. EV charging), which stays forced onto the grid
 
 def write_free_timer(path):
 	"""On any hard error, write an 'all allowed' timer so zeroinput is never
@@ -106,8 +103,8 @@ except Exception:
 # pull shared values from zeroinput.conf (read-only, never duplicated here):
 #   discharge_t_file           — the timer file zeroinput reads (we write it)
 #   cell_count                 — battery cell count for the empty-voltage anchor
-# (the yellow-zone discharge cap is dirt_shift's own 'yellow_cap' parameter,
-# see dirt_shift.conf — unrelated to any inverter staging threshold in
+# (the discharge cap for a non-priority red hour is CAP_FACTOR * basic_load,
+# a local constant — unrelated to any inverter staging threshold in
 # zeroinput.conf.)
 try:
 	_zi_path = join(dirname(__file__), conf['zeroinput_conf'])
@@ -486,16 +483,17 @@ def _smard_series(filter_id, today):
 
 def _smard_zones_for_date(date):
 	"""Classify one calendar date's SMARD-derived CO2-intensity zones
-	('red'/'yellow'/'green') and the raw wind+solar/load ratio per hour, from
-	real SMARD day-ahead data (Bundesnetzagentur; no API key needed). Hours
-	are ranked by this ratio for the date and split by percentile —
-	SMARD_GREEN_FRACTION highest = green, SMARD_RED_FRACTION lowest = red,
-	the rest yellow — so the split adapts to each day's own shape rather than
-	a fixed absolute threshold. Returns {'zones': 24-value list, 'ratio':
-	24-value list (None where SMARD did not cover that hour)}, or None if the
-	query/parse fails or too few hours are covered for that date (SMARD's
-	day-ahead data for tomorrow, in particular, may simply not be published
-	yet)."""
+	('red'/'green') and the raw wind+solar/load ratio per hour, from real
+	SMARD day-ahead data (Bundesnetzagentur; no API key needed). The day's
+	median ratio splits its 24 hours in half: the cleaner half (ratio at or
+	above the median) is green, the dirtier half is red — a self-adjusting
+	cut that reflects the day's own spread instead of a fixed fraction, so
+	even a day that is uniformly dirty still separates its relatively
+	cleaner hours from its worst ones. Returns {'zones': 24-value list,
+	'ratio': 24-value list (None where SMARD did not cover that hour)}, or
+	None if the query/parse fails or too few hours are covered for that date
+	(SMARD's day-ahead data for tomorrow, in particular, may simply not be
+	published yet)."""
 	try:
 		renewable = _smard_series(SMARD_FILTER_WIND_SOLAR, date)
 		load      = _smard_series(SMARD_FILTER_LOAD, date)
@@ -505,19 +503,18 @@ def _smard_zones_for_date(date):
 			raise ValueError('incomplete day (%i/24 hours)' % len(hours))
 
 		ratio = {h: (renewable[h] / load[h] if load[h] > 0 else 0.0) for h in hours}
-		ranked = sorted(hours, key=lambda h: ratio[h])		# lowest ratio (dirtiest) first
-		n_red   = max(1, int(round(len(hours) * SMARD_RED_FRACTION)))
-		n_green = max(1, int(round(len(hours) * SMARD_GREEN_FRACTION)))
-		red_hours   = set(ranked[:n_red])
-		green_hours = set(ranked[-n_green:])
+		sorted_ratios = sorted(ratio[h] for h in hours)
+		n = len(sorted_ratios)
+		median = (sorted_ratios[n // 2] if n % 2 else
+		          (sorted_ratios[n // 2 - 1] + sorted_ratios[n // 2]) / 2.0)
 
 		zones = [None] * 24
 		for h in hours:
-			zones[h] = 'red' if h in red_hours else 'green' if h in green_hours else 'yellow'
+			zones[h] = 'green' if ratio[h] >= median else 'red'
 		for h in range(24):									# hours SMARD didn't cover: treat as red (safe default)
 			if zones[h] is None: zones[h] = 'red'
 		ratio_list = [ratio.get(h) for h in range(24)]		# None where not covered
-		if debug: print('SMARD ratio by hour (%s):' % date, {h: round(ratio[h], 2) for h in hours})
+		if debug: print('SMARD ratio by hour (%s), median %.2f:' % (date, median), {h: round(ratio[h], 2) for h in hours})
 		return {'zones': zones, 'ratio': ratio_list}
 	except Exception as e:
 		if verbose: print('SMARD zone fetch failed for %s:' % date, e)
@@ -732,8 +729,8 @@ def red_window_demand(basic_load, now, zones, expected_pv):
 	is genuinely refilling, so any later red span is covered by the coming
 	yield, not by yesterday's charge — holding current content for it would
 	only block storage room. Several separate red spans before that point
-	(evening red, night red, morning red with non-red gaps between them) are
-	all summed, since nothing refills the battery in between. On a day so
+	(e.g. evening red and night red with a green gap between them) are all
+	summed, since nothing refills the battery in between. On a day so
 	dull that expected PV never exceeds load, no surplus hour exists and all
 	red hours of the rolling 24 h are reserved for — correct, as no refill is
 	coming. 'zones' is a rolling 24-hour array anchored at 'now' (see
@@ -755,43 +752,148 @@ def red_window_demand(basic_load, now, zones, expected_pv):
 	return max(0.0, demand)
 
 
-def dirty_protect_hours(now, zones, basic_load, expected_pv, ratio, reserve):
-	"""The set of hours (hour-of-day integers) between now and the next
-	PV-surplus hour whose discharge must be withheld so their accumulated
-	shortfall covers the red reserve target — used only with SMARD active (a
-	real per-hour dirtiness ranking, see write_dirtiness_to_vz's
-	(1-ratio)*100 convention, is required). Candidate hours are every
-	non-red hour in that window (see _bridge_hours; a red hour always
-	discharges freely regardless, so it is never a candidate) — by
-	construction every candidate is a deficit or exactly-balanced hour,
-	since _bridge_hours itself already stops at the first true surplus hour.
-	Candidates are ranked cleanest first (ratio descending) and each hour's
-	shortfall (basic_load[h] - expected_pv[h], floored at 0) is accumulated
-	in that order — every hour up to and including the one that brings the
-	running total to at least 'reserve' is protected. The selection is not
-	required to be contiguous: a clean hour late in the window can be
-	protected while a dirtier hour earlier in the window stays free, if the
-	dirty hour's own shortfall was not needed to reach the target. If the
-	accumulated total across every candidate never reaches 'reserve', every
-	candidate hour is protected — the selection then simply extends as far
-	into the day's dirtier hours as the window allows, since nothing else is
-	left to draw on. Empty if 'reserve' is 0 (nothing to protect) or the
-	window has no non-red hour. An hour with no ratio value (a gap in
-	SMARD's coverage) ranks as the dirtiest, so it is protected only as a
-	last resort."""
-	candidates = [(h, frac) for h, frac in _bridge_hours(now, zones, basic_load, expected_pv)
-	              if zones[h] != 'red']
-	if reserve <= 0 or not candidates:
-		return set()
-	ranked = sorted(candidates, key=lambda hf: ratio[hf[0]] if ratio[hf[0]] is not None else -1.0,
-	                 reverse=True)								# cleanest (highest ratio) first
-	protect, total = set(), 0.0
-	for h, frac in ranked:
-		protect.add(h)
-		total += max(0.0, basic_load[h] - expected_pv[h]) * frac
-		if total >= reserve:
-			break
-	return protect
+def dirtiest_hour(now, zones, basic_load, expected_pv, ratio):
+	"""The hour-of-day (integer) of the single dirtiest red hour between now
+	and the next PV-surplus hour (see _bridge_hours) — the one hour served
+	unrestricted when the reserve is running short (see main()); every other
+	red hour in the window is capped to basic_load instead. 'Dirtiest' is
+	the lowest ratio (highest dirt%, see write_dirtiness_to_vz); ties go to
+	the chronologically earliest hour in the window (scan order, not the raw
+	hour-of-day number — an hour before now.hour is really tomorrow's
+	occurrence of it, so it is later in the window despite the smaller
+	number). Green hours in the window are never candidates. None if the
+	window has no red hour at all — e.g. the reserve is comfortable enough
+	that main() never calls this, or a dull day's window is entirely red
+	(then the first hour scanned is simply the answer whenever ratios tie
+	throughout)."""
+	candidates = [h for h, _ in _bridge_hours(now, zones, basic_load, expected_pv) if zones[h] == 'red']
+	best_h, best_ratio = None, None
+	for h in candidates:									# already in chronological scan order
+		r = ratio[h] if ratio[h] is not None else -1.0	# an uncovered hour ranks as the dirtiest
+		if best_ratio is None or r < best_ratio:
+			best_h, best_ratio = h, r
+	return best_h
+
+
+def marginal_red_hour(now, zones, basic_load, expected_pv, ratio, content):
+	"""The hour-of-day (integer) of the dirtiest red hour in the window (now
+	up to the next PV-surplus hour, see _bridge_hours) that 'content' does
+	NOT yet fully cover — used only by the optional precharge path (see
+	main()) to find which red hour's dirt% the precharge spread (trigger 1)
+	should be measured against. Candidates are scanned dirtiest-first (the
+	same ranking dirtiest_hour itself would report first); 'content' is
+	consumed against each hour's shortfall (basic_load[h] - expected_pv[h],
+	floored at 0) in that order, exactly mirroring how the reserve itself is
+	built from the same shortfalls. The hour where 'content' runs out is the
+	answer — every dirtier hour before it is already covered by the current
+	charge, so it is the dirtier of those that is not yet safe. This shifts
+	toward cleaner red hours as content grows through successive precharge
+	runs, and the trigger-1 spread shrinks accordingly, so precharging tapers
+	off on its own once only comparatively clean red hours remain uncovered
+	(no longer worth the round-trip loss). None if content already covers
+	every red hour in the window (nothing left to precharge for) or the
+	window has no red hour at all."""
+	candidates = sorted(
+		(h for h, _ in _bridge_hours(now, zones, basic_load, expected_pv) if zones[h] == 'red'),
+		key=lambda h: ratio[h] if ratio[h] is not None else -1.0)		# dirtiest (lowest ratio) first
+	rest = content
+	for h in candidates:
+		shortfall = max(0.0, basic_load[h] - expected_pv[h])
+		if rest < shortfall:
+			return h
+		rest -= shortfall
+	return None
+
+
+def cleanest_green_hour(now, zones, basic_load, expected_pv, ratio):
+	"""The hour-of-day (integer) of the single cleanest green hour between now
+	and the next PV-surplus hour (see _bridge_hours) — the mirror image of
+	dirtiest_hour, used only by the optional precharge path (see main()) to
+	pick which green hour's ac_% may be capped below 100 to divert PV surplus
+	into the battery instead of pvpt. 'Cleanest' is the highest ratio (lowest
+	dirt%); ties go to the chronologically earliest hour in the window (scan
+	order, not the raw hour-of-day number). Red hours in the window are never
+	candidates. None if the window has no green hour at all."""
+	candidates = [h for h, _ in _bridge_hours(now, zones, basic_load, expected_pv) if zones[h] == 'green']
+	best_h, best_ratio = None, None
+	for h in candidates:									# already in chronological scan order
+		r = ratio[h] if ratio[h] is not None else -1.0	# an uncovered hour ranks as the dirtiest, i.e. last choice
+		if best_ratio is None or r > best_ratio:
+			best_h, best_ratio = h, r
+	return best_h
+
+
+def precharge_ac_pct(now, zones, basic_load, expected_pv, ratio, content, reserve):
+	"""The ac_% to write for this run's timer.txt line — 100 (no restriction)
+	unless the optional precharge path (precharge_enabled) is active and every
+	one of its conditions holds; the one deliberate exception to dirt_shift's
+	pvpt guarantee (see write_timer). Only ever considered while the current
+	hour is green (main() only calls this then). Three conditions, all
+	required:
+
+	  1. Worth the round-trip loss: marginal_red_hour finds the dirtiest red
+	     hour in the window that 'content' does not yet cover, and
+	     cleanest_green_hour finds the cleanest green hour in the window; the
+	     dirt% spread between them must exceed the round-trip loss
+	     (100 - PV_to_bat_efficiency * bat_to_AC_efficiency / 100). As content
+	     grows through successive precharge runs, marginal_red_hour shifts to
+	     progressively cleaner red hours, shrinking the spread — precharging
+	     tapers off on its own once only comparatively clean red hours remain
+	     uncovered. No red hour left uncovered at all (marginal_red_hour is
+	     None) means nothing to precharge for.
+
+	  2. Natural surplus alone will not be enough: content plus the natural
+	     surplus (max(0, expected_pv - basic_load)) of every OTHER green hour
+	     in the window must still fall short of 'reserve'. If it would already
+	     be enough without diverting anything extra, no precharge is needed.
+
+	  3. 'now' matches the current candidate: no more than one hour is ever
+	     capped within a single run — only if 'now' equals cleanest_green_hour
+	     does the cap apply; every other green hour stays at ac_% 100 for this
+	     run. This is not a single hour fixed for the whole day: since
+	     cleanest_green_hour is re-derived from the current window on every
+	     run (see marginal_red_hour's own tapering-off note above), an unused
+	     or insufficient candidate hour is simply replaced by the next-best
+	     remaining one on the following run — across several runs, precharge
+	     can therefore throttle several different hours in sequence, one per
+	     run, until condition 1 or 2 no longer holds.
+
+	Where all three hold, the cap is continuous, not stepped: potential =
+	min(expected_pv[now], basic_load[now]) is the most this hour could
+	additionally divert into the battery (the same amount whether the hour is
+	itself a net charging or discharging hour on its own); gap = reserve -
+	content - (the same 'other green hours' surplus sum as condition 2) is
+	what is still needed. ac_% = round(100 * (1 - clamp(gap / potential, 0,
+	1))): 0 if potential does not cover the gap at all, closer to 100 the
+	less is missing. No memory across runs — every call re-derives everything
+	from the current 'content', exactly like the rest of dirt_shift."""
+	if not conf.get('precharge_enabled', False):
+		return 100
+	mh = marginal_red_hour(now, zones, basic_load, expected_pv, ratio, content)
+	if mh is None:
+		return 100												# content already covers every red hour in the window
+	ch = cleanest_green_hour(now, zones, basic_load, expected_pv, ratio)
+	if ch is None or now.hour != ch:
+		return 100												# not this run's candidate hour
+
+	loss_threshold = 100.0 - conf['PV_to_bat_efficiency'] * conf['bat_to_AC_efficiency'] / 100.0
+	dirt_mh = (1.0 - ratio[mh]) * 100.0 if ratio[mh] is not None else 100.0
+	dirt_ch = (1.0 - ratio[ch]) * 100.0 if ratio[ch] is not None else 0.0
+	if dirt_mh - dirt_ch <= loss_threshold:
+		return 100												# not worth the round-trip loss
+
+	other_surplus = sum(max(0.0, expected_pv[h] - basic_load[h])
+	                     for h, _ in _bridge_hours(now, zones, basic_load, expected_pv)
+	                     if zones[h] == 'green' and h != now.hour)
+	gap = reserve - content - other_surplus
+	if gap <= 0:
+		return 100												# the other green hours' natural surplus would be enough
+
+	potential = min(expected_pv[now.hour], basic_load[now.hour])
+	if potential <= 0:
+		return 0												# nothing left to divert this hour: cap fully
+	fraction = max(0.0, min(1.0, gap / potential))
+	return round(100.0 * (1.0 - fraction))
 
 
 def _hourly_debug_table(now, pv_curve, radiation, expected_pv, basic_load, grid_data, dirt_written=None):
@@ -799,22 +901,48 @@ def _hourly_debug_table(now, pv_curve, radiation, expected_pv, basic_load, grid_
 	the shortwave-radiation forecast, the clear-sky index derived from it
 	(see scaled_pv_curve/clear_sky_ghi), expected PV, basic_load, whether
 	that hour charges or discharges, and the SMARD-derived dirtiness/zone
-	(the same rolling array _bridge_hours/red_window_demand/
-	dirty_protect_hours use) — so everything the discharge decision draws on
-	is visible at a glance, in one place instead of six separate lists.
-	'chg' is 'L' (lädt) if expected_pv[h] > basic_load[h], else 'E'
-	(entlädt) — the exact boundary _bridge_hours/red_window_demand scan for
-	(a PV-surplus hour ends their window). 'dirt%' is (1 - ratio) * 100 (see
+	(the same rolling array _bridge_hours/red_window_demand/dirtiest_hour
+	use) — so everything the discharge decision draws on is visible at a
+	glance, in one place instead of six separate lists. 'chg' is 'L' (lädt)
+	if expected_pv[h] > basic_load[h], else 'D' (discharge) — the exact
+	boundary _bridge_hours/red_window_demand scan for (a PV-surplus hour
+	ends their window). 'dirt%' is (1 - ratio) * 100 (see
 	write_dirtiness_to_vz): 0 at ratio 1 (renewables exactly cover load),
 	negative on a renewable surplus (ratio > 1), rising toward 100 as the
 	renewable share drops toward 0. The current hour is marked with '*'. Its
 	dirt% value carries a second marker for the volkszähler write of that
 	same value (see write_dirtiness_to_vz, whose return value 'dirt_written'
 	is passed here): '*' prefix if it reached volkszähler, '!' if the write
-	failed, no prefix if no UUID is configured and nothing was attempted."""
+	failed, no prefix if no UUID is configured and nothing was attempted.
+	The one red hour dirtiest_hour would pick in the window from now up to
+	the next PV-surplus hour (see there) carries a trailing '!' on its 'D'
+	tag — that is the hour served unrestricted if the reserve falls short;
+	every other red hour in the window would be capped instead. The cleanest
+	'L' hour of the full 24-hour table (highest ratio among all charging
+	hours) carries the same trailing '!' on its 'L' tag — purely
+	informational, not read by main()'s decision, since dirtiest_hour's own
+	window never contains an 'L' hour to begin with (it ends at the first
+	one it meets)."""
 	zones = grid_data['zones']
+	ratio = grid_data['ratio']
+	dh = None
+	if expected_pv is not None and basic_load is not None:
+		dh = dirtiest_hour(now, zones, basic_load, expected_pv, ratio)
+	# purely informational (not used by main()'s decision, unlike dh above):
+	# the cleanest charging hour of the day, marked the same way as dh — not
+	# drawn from _bridge_hours' window, since that window ends at the first
+	# surplus hour and so never contains an 'L' hour at all; this instead
+	# looks across the full 24-hour table.
+	cleanest_l = None
+	if expected_pv is not None and basic_load is not None:
+		best_ratio = None
+		for h in range(24):
+			if expected_pv[h] <= basic_load[h] or ratio[h] is None:
+				continue
+			if best_ratio is None or ratio[h] > best_ratio:
+				cleanest_l, best_ratio = h, ratio[h]
 	print('')
-	print('%-3s %8s %8s %5s %8s %8s %3s %6s %-8s' % ('hr', 'PV_curve', 'rad_Wm2', 'clr%', 'exp_PV', 'basic_ld', 'chg', 'dirt%', 'zone'))
+	print('%-3s %8s %8s %5s %8s %8s %4s %6s %-8s' % ('hr', 'PV_curve', 'rad_Wm2', 'clr%', 'exp_PV', 'basic_ld', 'chg', 'dirt%', 'zone'))
 	for h in range(24):
 		pv  = round(pv_curve[h]) if pv_curve is not None else '-'
 		r   = radiation[h] if (radiation is not None and h < len(radiation)) else None
@@ -827,15 +955,17 @@ def _hourly_debug_table(now, pv_curve, radiation, expected_pv, basic_load, grid_
 		exp = round(expected_pv[h]) if expected_pv is not None else '-'
 		bl  = round(basic_load[h]) if basic_load is not None else '-'
 		if expected_pv is not None and basic_load is not None:
-			chg = 'L' if expected_pv[h] > basic_load[h] else 'E'
+			chg = 'L' if expected_pv[h] > basic_load[h] else 'D'
+			if h == dh: chg += '!'								# the dirtiest red hour in the window
+			if h == cleanest_l: chg += '!'							# the cleanest charging hour of the day
 		else:
 			chg = '-'
-		ratio_h = grid_data['ratio'][h]
+		ratio_h = ratio[h]
 		dirt_s = ('%.0f' % ((1.0 - ratio_h) * 100)) if ratio_h is not None else '-'
 		if h == now.hour and dirt_written is not None:
 			dirt_s = ('*' if dirt_written else '!') + dirt_s	# volkszähler write of this hour's value
 		marker = '*' if h == now.hour else ' '
-		print('%2d%s %8s %8s %5s %8s %8s %3s %6s %-8s' % (h, marker, pv, rad_s, clr, exp, bl, chg, dirt_s, zones[h]))
+		print('%2d%s %8s %8s %5s %8s %8s %4s %6s %-8s' % (h, marker, pv, rad_s, clr, exp, bl, chg, dirt_s, zones[h]))
 	print('')
 
 
@@ -845,76 +975,70 @@ def main():
 	now = datetime.now()
 	pv_curve = read_pv_curve()
 	radiation = read_radiation_forecast()
-	expected_pv = scaled_pv_curve(pv_curve, radiation, now)	# drives red_window_demand/dirty_protect_hours below
+	expected_pv = scaled_pv_curve(pv_curve, radiation, now)	# drives red_window_demand/dirtiest_hour below
 	grid_data = read_smard_zones()					# before get_vz_bat_cap, so all cache notices print together
 	if grid_data is None:
 		die('SMARD zone data unavailable (fetch failed, no cache newer than one day)', conf['timer.txt'])
 	_voltage, content = get_vz_bat_cap()
 
-	yellow_cap = conf['yellow_cap']
 	r = grid_data['ratio'][now.hour]
 	dirt_written = write_dirtiness_to_vz((1.0 - r) * 100) if r is not None else None
 	if debug:
 		_hourly_debug_table(now, pv_curve, radiation, expected_pv, basic_load, grid_data, dirt_written)
 
-	# decide this run's discharge mode. A red hour always discharges with no
-	# limit — that is where the reserve is meant to be spent. Outside a red
-	# hour, dirty_protect_hours ranks every non-red hour between now and the
-	# next PV-surplus hour by cleanliness and protects exactly as many of the
-	# cleanest ones as it takes for their accumulated shortfall to cover the
-	# red reserve target — a per-hour ranking across the whole window, so the
-	# outcome rests on the ranking rather than on any single forecast value
-	# (see the reserve_basis line for which hours were selected). The current
-	# hour is protected if it is in that set.
+	# decide this run's discharge mode. Two zones only (see _smard_zones_for_date):
+	# 'green' (cleaner half of the day) and 'red' (dirtier half).
 	#
-	# Without any PV forecast (curve never successfully computed, e.g. on a
-	# fresh install), build_reserve_after (config) is used as a clock cutoff
-	# instead, the reserve then being computed against a zero-PV day.
-	#
-	# Once protected, the zone and current content decide between 'limit'
-	# (still above the reserve — bleed the surplus) and 'stop' (content has
-	# already reached/dropped below it); green always stops once protected,
-	# since it never discharges.
-	zones = grid_data['zones']
-
 	# the red reserve: basic_load demand over every red hour between now and
 	# the next PV surplus phase (see red_window_demand), net of expected PV
-	# during those hours, scaled by reserve_pct.
+	# during those hours, scaled by reserve_pct. Without a PV forecast (curve
+	# never successfully computed, e.g. fresh install), a zero-PV day is
+	# assumed instead — conservative, but keeps the reserve computable.
+	zones = grid_data['zones']
 	pv_for_reserve = expected_pv if expected_pv is not None else [0.0] * 24
 	reserve = conf['reserve_pct'] * 0.01 * red_window_demand(basic_load, now, zones, pv_for_reserve)
-
-	if expected_pv is not None:
-		protect_hours = dirty_protect_hours(now, zones, basic_load, expected_pv, grid_data['ratio'], reserve)
-		protect_reserve = now.hour in protect_hours
-		hours_s = ','.join('%02d' % h for h in sorted(protect_hours)) if protect_hours else '-'
-		reserve_basis = ('dirt-ranked: %.0f Wh reserve target -> protected hours [%s]'
-		                  % (reserve, hours_s))
-	else:
-		after = conf['build_reserve_after']
-		hh, mm = (int(x) for x in after.split(':'))
-		protect_reserve = (now.hour, now.minute) >= (hh, mm)
-		reserve_basis = 'clock fallback: build_reserve_after %s (no PV forecast available)' % after
-
 	zone = zones[now.hour]
-	if not protect_reserve:
-		mode = 'free'										# not protected (a red hour is never a candidate): run the battery down
-	elif zone == 'green':
-		mode = 'stop'										# low intensity: never discharge
-	elif zone != 'red' and content <= reserve:
-		mode = 'stop'										# hold the reserve for the next red span
-	elif zone == 'red':
-		mode = 'free'										# high intensity: no limit
+
+	# green: charge, never discharge, as long as content has not yet reached
+	# the reserve; once it has (content > reserve, strictly — sitting exactly
+	# at the reserve still counts as not yet reached), free discharge resumes
+	# until content drops back to the reserve.
+	#
+	# red: if content already covers the reserve, no restriction is needed —
+	# free. If it falls short, the single dirtiest red hour in the window (see
+	# dirtiest_hour) is served without limit — that is where the reserve, such
+	# as it is, is spent — while every other red hour in the window is capped
+	# to CAP_FACTOR * basic_load[that hour], so only that hour's own ordinary
+	# consumption draws from the battery; anything above it (e.g. EV charging)
+	# is forced onto the grid instead, preserving content for the dirtiest
+	# hour. Since the window is rebuilt fresh every run from the current
+	# 'now', a dirtiest hour already in the past simply falls out of a later
+	# run's window — the next-dirtiest hour remaining becomes free in its own
+	# right, without any extra bookkeeping.
+	if zone == 'green':
+		mode = 'free' if content > reserve else 'stop'
+		reserve_basis = 'green: content %.0f Wh vs reserve %.0f Wh' % (content, reserve)
+		ac_pct = precharge_ac_pct(now, zones, basic_load, pv_for_reserve, grid_data['ratio'], content, reserve)
 	else:
-		mode = 'limit'										# yellow: capped at yellow_cap
+		if content >= reserve:
+			mode = 'free'
+			reserve_basis = 'red: content %.0f Wh >= reserve %.0f Wh (comfortable)' % (content, reserve)
+		else:
+			dh = dirtiest_hour(now, zones, basic_load, pv_for_reserve, grid_data['ratio'])
+			mode = 'free' if dh is None or dh == now.hour else 'limit'
+			reserve_basis = ('red: content %.0f Wh < reserve %.0f Wh -> dirtiest hour %s'
+			                  % (content, reserve, ('%02d:00' % dh) if dh is not None else '-'))
+		ac_pct = 100											# precharge only ever considered in green
 
 	if verbose:
 		print('zone %s   content %d Wh   red reserve(%d%%) %.0f Wh' % (
 			zone, content, conf['reserve_pct'], reserve))
-		print('%s -> reserve %s   => discharge mode: %s' % (
-			reserve_basis, 'protected' if protect_reserve else 'open', mode.upper()))
+		print('%s   => discharge mode: %s' % (reserve_basis, mode.upper()))
+		if ac_pct != 100:
+			print('precharge: ac capped to %d%% this hour (see precharge_ac_pct)' % ac_pct)
 
 	if not conf['disable_zeroinput_timer']:
-		write_timer(mode, now, yellow_cap)
+		write_timer(mode, now, basic_load[now.hour], ac_pct)
 
 	if verbose:
 		print('dirt_shift done.', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
@@ -922,25 +1046,33 @@ def main():
 	return 0
 
 
-def write_timer(mode, now, yellow_cap):
+def write_timer(mode, now, basic_load_now, ac_pct=100):
 	"""Write timer.txt in the zeroinput format:
 	  date time | discharge_W  ac_W  energy_Wh   (<=100 = percent, >100 = watt)
-	Each line carries the real calendar date it was written for. pvpt
-	(ac 100%) is always granted; only battery discharge is steered by 'mode':
-	  free  -> no discharge limit (high-intensity hours)  '100 100 99999'
-	  limit -> capped at yellow_cap W (transition)        '<yellow_cap> 100 99999'
-	  stop  -> no discharge, pvpt only                    '000 100 000'
+	Each line carries the real calendar date it was written for. pvpt (ac
+	100%) is guaranteed EXCEPT for the one deliberate exception: the optional
+	precharge path (precharge_enabled, see main()) may pass ac_pct < 100 for
+	the single cleanest green hour in the window, to divert PV surplus that
+	would otherwise go to pvpt into the battery instead. Outside that path,
+	ac_pct is always 100. Battery discharge is steered by 'mode':
+	  free  -> no discharge limit                              '100 <ac> 99999'
+	  limit -> capped at CAP_FACTOR * basic_load_now (Watt)     '<cap> <ac> 99999'
+	  stop  -> no discharge, pvpt at ac_pct (100 outside precharge) '000 <ac> 000'
 	The energy_Wh field stays unlimited (99999) even in 'limit' mode: the actual
 	energy handed out is bounded by the slot's own Wh budget (computed elsewhere,
-	via the reserve/red-window logic), not by this timer field. yellow_cap only
-	limits the instantaneous power, so short spikes can still be served from the
-	battery without the strict Wh contingent being exceeded for long.
+	via the reserve logic), not by this timer field. The discharge cap only
+	limits the instantaneous power: basic_load_now covers the hour's own
+	ordinary consumption, CAP_FACTOR (2x) leaves headroom for short spikes
+	without inviting inefficient inverter staging, while staying far below any
+	deliberate high-power load (e.g. EV charging), which stays forced onto the
+	grid instead of the battery.
 	dirt_shift is optional and must never block normal operation, so the plan is
 	a short chain re-written every run:
-	  - the current 1/4h slot in the chosen mode;
-	  - if the mode limits/stops discharge, an 'all allowed' line 30 min later as
-	    a failsafe — renewed every run while the script lives, self-lifting after
-	    30 min if it dies.
+	  - the current 1/4h slot in the chosen mode and ac_pct;
+	  - if the mode limits/stops discharge, OR ac_pct is capped, an 'all
+	    allowed' line (discharge and pvpt both unrestricted) 30 min later as
+	    a failsafe — renewed every run while the script lives, self-lifting
+	    after 30 min if it dies.
 	Should dirt_shift stop running altogether, both lines eventually fall into
 	the past; zeroinput's timer parser applies every already-past line in file
 	order and only stops at the first future one, so once none is left in the
@@ -948,15 +1080,17 @@ def write_timer(mode, now, yellow_cap):
 	always the 'all allowed' failsafe line (or the single free-mode line) — so
 	the file settles on the safe, unrestricted state on its own rather than
 	re-arming the same limit every day."""
-	FREE  = '100 100 99999'								# full discharge, full pvpt
-	LIMIT = '%3d 100 99999' % yellow_cap				# yellow-zone power cap
-	STOP  = '000 100 000'								# pvpt only, no discharge
-	payload = {'free': FREE, 'limit': LIMIT, 'stop': STOP}[mode]
+	ac_pct = max(0, min(100, round(ac_pct)))
+	cap = round(CAP_FACTOR * basic_load_now)
+	FREE  = '100 100 99999'								# full discharge, full pvpt — the failsafe line, always fully unrestricted
+	payload = {'free': '100 %3d 99999' % ac_pct,
+	           'limit': '%3d %3d 99999' % (cap, ac_pct),
+	           'stop': '000 %3d 000' % ac_pct}[mode]
 
 	lines = []
 	t = now.replace(second=0, microsecond=0, minute=(now.minute // 15) * 15)
 	lines.append((t, payload))
-	if mode != 'free':									# failsafe: lift any limit/stop after 30 min
+	if mode != 'free' or ac_pct != 100:					# failsafe: lift any limit/stop/ac-cap after 30 min
 		t2 = t + timedelta(minutes=30)
 		lines.append((t2, FREE))
 

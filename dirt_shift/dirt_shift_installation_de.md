@@ -27,7 +27,7 @@ In `zeroinput.conf` muss der Entladetimer aktiv sein:
 "discharge_t_file": "timer.txt",
 ```
 
-`dirt_shift` liest aus `zeroinput.conf` nur den Pfad `discharge_t_file` (relativ zur `zeroinput.conf` aufgelöst) sowie `cell_count`. Dadurch schreibt `dirt_shift` garantiert dieselbe Datei, die zeroinput liest. `zeroinput.conf` wird dabei nur gelesen, nie verändert. Alle `dirt_shift`-eigenen Parameter, darunter der Entlade-Deckel `yellow_cap`, leben ausschließlich in `dirt_shift.conf`.
+`dirt_shift` liest aus `zeroinput.conf` nur den Pfad `discharge_t_file` (relativ zur `zeroinput.conf` aufgelöst) sowie `cell_count`. Dadurch schreibt `dirt_shift` garantiert dieselbe Datei, die zeroinput liest. `zeroinput.conf` wird dabei nur gelesen, nie verändert. Alle `dirt_shift`-eigenen Parameter leben ausschließlich in `dirt_shift.conf`.
 
 ---
 
@@ -65,14 +65,17 @@ Die mitgelieferte `dirt_shift.conf` enthält Platzhalter, die ersetzt werden mü
 - `vz_host_port` — Host und Port des volkszählers (`data.json`-API)
 - `vz_chans` — die Kanal-UUIDs der eigenen Anlage
 
-Die übrigen Schlüssel (`reserve_pct`, `build_reserve_after`, die `latitude`/`longitude` und CO₂-Intensitäts-Parameter, `yellow_cap`, `average_days`, `day_weights_pct`, die Wirkungsgrade, `max_days_empty_battery`) haben brauchbare Vorgabewerte und können zunächst unverändert bleiben.
+Die übrigen Schlüssel (`reserve_pct`, `latitude`/`longitude`, `average_days`, `day_weights_pct`, die Wirkungsgrade, `max_days_empty_battery`) haben brauchbare Vorgabewerte und können zunächst unverändert bleiben.
 
-- `build_reserve_after` (Standard 13:30) legt eine feste Uhrzeit fest, ab der die Rot-Reserve geschützt wird, falls überhaupt keine PV-Prognose zustande kommt. Liegt eine PV-Prognose vor, werden stattdessen gezielt die **saubersten** Stunden bis zur nächsten PV-Überschussstunde geschützt — so viele, wie es braucht, damit ihre aufsummierten Fehlbeträge die Rot-Reserve decken. Die Auswahl folgt strikt der Dreckigkeit, nicht der Uhrzeit.
-- `yellow_cap` (Standard 1000 W) begrenzt die Entladeleistung in der gelben Übergangszone, damit kurzzeitige Lastspitzen die Rot-Reserve nicht anzapfen. Ein fester, bewusst gesetzter Wert — kein aus Prognosedaten abgeleiteter.
+- `reserve_pct` (Standard 90) bestimmt, wie viel Prozent des berechneten roten Bedarfs als Rot-Reserve zurückgehalten wird.
 - Der Standort (`latitude`/`longitude`, Standard ~Mitte Deutschland) steuert das Klarhimmel-Modell und die Strahlungsprognose.
 - `day_weights_pct` gewichtet einzelne Tage des Mittels stärker (chronologisch, Index −1 = gestern, Index 0 = gleicher Wochentag der Vorwoche); die Länge muss `average_days` entsprechen, sonst wird gleich gewichtet.
 
-**SMARD ist Voraussetzung.** `dirt_shift` bezieht reale Day-Ahead-Netzdaten (Bundesnetzagentur, kostenlos, ohne Anmeldung) für heute **und morgen** und leitet daraus die Zonen ab; eine alternative Zonenquelle gibt es nicht. Schlägt die Abfrage fehl, überbrücken die zwischengespeicherten Daten genau **einen Tag**; danach bricht `dirt_shift` ab und hinterlässt einen „Alles-erlaubt"-Timer. Optional kann `vz_dirtiness_uuid` (eine vorher in volkszähler angelegte Kanal-UUID) gesetzt werden, damit `dirt_shift` den aktuellen Dreckigkeitswert bei jedem Lauf per HTTP-POST in volkszähler protokolliert (leer = deaktiviert).
+**Der Deckel `CAP_FACTOR` (Standard 2×) ist keine Konfigurationsoption.** Er steht als benannte Konstante im Code (`dirt_shift.py`) und begrenzt die Entladeleistung in nicht-priorisierten roten Stunden auf `CAP_FACTOR × basic_load` dieser Stunde — bewusst nicht extern konfigurierbar, da es eine feste Sicherheitsmarge ist, kein anlagenspezifischer Wert. Soll er geändert werden, direkt im Code anpassen.
+
+**`precharge_enabled` (Standard `false`, optional/experimentell):** Aktiviert einen zusätzlichen Pfad, der in einer einzelnen grünen Stunde gezielt PV-Überschuss in den Akku statt ins Haus lenkt (`pvpt` wird dort gedrosselt) — die einzige Ausnahme von der sonst uneingeschränkten `pvpt`-Garantie. Greift nur, wenn die natürliche Aufladung sonst nicht reicht und sich der Rundlaufverlust gegenüber der eingesparten CO₂-Last lohnt. Details und die genaue Formel stehen in `dirt_shift_spec_de.md`, Abschnitt „Precharge".
+
+**SMARD ist Voraussetzung.** `dirt_shift` bezieht reale Day-Ahead-Netzdaten (Bundesnetzagentur, kostenlos, ohne Anmeldung) für heute **und morgen** und leitet daraus die Zonen ab (Median-Schnitt: sauberere Tageshälfte grün, dreckigere rot); eine alternative Zonenquelle gibt es nicht. Schlägt die Abfrage fehl, überbrückt der Cache genau **einen Tag**; danach bricht `dirt_shift` ab und hinterlässt einen „Alles-erlaubt"-Timer. Optional kann `vz_dirtiness_uuid` (eine vorher in volkszähler angelegte Kanal-UUID) gesetzt werden, damit `dirt_shift` den aktuellen Dreckigkeitswert bei jedem Lauf per HTTP-POST in volkszähler protokolliert (leer = deaktiviert).
 
 Die Strahlungsprognose (Open-Meteo, `shortwave_radiation`, kostenlos, ohne Anmeldung) skaliert die empirische PV-Referenzkurve auf das tatsächliche Tageswetter (heute und morgen, kein API-Key nötig).
 
@@ -85,12 +88,14 @@ hours['basic_load'][i] = (hours['Import'][i] + abs(hours['Inverter'][i])
                      - hours['Auto'][i])
 ```
 
-Diese Formel bildet eine bestimmte Anlagenkonfiguration ab und muss an die eigene Anlage angepasst werden. Abgezogen werden nur planbare Lasten, die nicht aus der Rot-Reserve gedeckt werden sollen; bedarfsgetriebene Lasten (z. B. eine Klimaanlage) bleiben im Verbrauch. Nicht vorhandene Kanäle werden weggelassen, zusätzliche ergänzt:
+Diese Formel bildet eine bestimmte Anlagenkonfiguration ab und muss an die eigene Anlage angepasst werden. Abgezogen werden nur planbare Lasten, die nicht aus der Rot-Reserve gedeckt werden sollen (das Auto wird gezielt geladen, unabhängig von der Reserve-Rechnung); bedarfsgetriebene Lasten (z. B. eine Klimaanlage) bleiben im Verbrauch. Nicht vorhandene Kanäle werden weggelassen, zusätzliche ergänzt:
 
 - ohne separat erfasste Wallbox entfällt der `Auto`-Term
 - ein weiterer gesondert erfasster Verbraucher (etwa ein PV-Akku-Lader) käme als zusätzlicher Abzugsterm hinzu
 
 Maßgeblich ist, dass `basic_load` am Ende den tatsächlich zu deckenden Hausverbrauch ergibt. Wird ein Kanal aus der Formel entfernt, kann er auch aus `vz_chans` gestrichen werden.
+
+**Wichtig zur Wallbox:** Weil `Auto` bewusst aus `basic_load` ausgeklammert ist, sieht `dirt_shift` eine Wallbox-Ladung nicht direkt. Der Schutz davor, dass eine Wallbox-Spitze den Akku statt des Netzes belastet, kommt stattdessen aus der Zonenlogik selbst — siehe „Entladung nach Zone" in der Spec (grüne Zone stoppt kategorisch, solange die Reserve nicht erreicht ist; rote Zone deckelt außerhalb der dreckigsten Stunde auf `CAP_FACTOR × basic_load`).
 
 ### 4. Trockenlauf zur Prüfung
 
@@ -102,9 +107,9 @@ cd /opt/zeroinput/dirt_shift
 python3 dirt_shift.py -v -debug
 ```
 
-Die ausführliche Ausgabe (`-v`) zeigt Sonnenauf-/-untergang, die aktuelle Intensitätszone (rot/gelb/grün), die Rot-Reserve samt prognostiziertem Aufbau-Zeitpunkt (`>HH:MM`), den Energieinhalt und den gewählten Entlademodus. `-debug` zeigt zusätzlich die stündliche Übersichtstabelle (PV-Referenzkurve, Strahlungsprognose, Klarhimmel-Index, erwartete PV, Dreckigkeit, Zone) sowie die geschriebenen Timer-Zeilen. Mit `-avgnew` werden alle Caches (7-Tage-Mittel, PV-Kurve, Strahlungsprognose, SMARD) verworfen und neu abgefragt.
+Die ausführliche Ausgabe (`-v`) zeigt die aktuelle Zone (rot/grün), den Akkuinhalt, die Rot-Reserve, und bei knapper Reserve die ermittelte dreckigste Stunde im Fenster, sowie den gewählten Entlademodus. `-debug` zeigt zusätzlich die stündliche Übersichtstabelle (PV-Referenzkurve, Strahlungsprognose, Klarhimmel-Index, erwartete PV, `basic_load`, Lade-/Entlade-Markierung, Dreckigkeit, Zone) sowie die geschriebenen Timer-Zeilen. Mit `-avgnew` werden alle Caches (7-Tage-Mittel, PV-Kurve, Strahlungsprognose, SMARD) verworfen und neu abgefragt.
 
-Stimmen die Werte plausibel (Intensitätszone zur Tageszeit passend, Reserve im erwarteten Bereich), kann `disable_zeroinput_timer` wieder auf `false` gesetzt werden.
+Stimmen die Werte plausibel (Zone zur Netzlage passend, Reserve im erwarteten Bereich), kann `disable_zeroinput_timer` wieder auf `false` gesetzt werden.
 
 ### 5. Cron-Eintrag
 
@@ -140,10 +145,10 @@ Bei jedem Lauf wird der frische Energieinhalt abgefragt und die `timer.txt` mit 
 
 ### Fehlerverhalten
 
-Bei einem harten Fehler (volkszähler liefert keine vollständigen Tage, Energieinhalt nicht berechenbar) bricht `dirt_shift` ab, schreibt aber zuvor — sofern der Timer-Pfad bekannt ist — eine „Alles-erlaubt"-Zeile mit dem aktuellen Datum, damit zeroinput nicht durch eine veraltete Begrenzung blockiert wird:
+Bei einem harten Fehler (volkszähler liefert keine vollständigen Tage, Energieinhalt nicht berechenbar, SMARD-Daten weder frisch noch als Ein-Tag-Ersatz verfügbar) bricht `dirt_shift` ab, schreibt aber zuvor — sofern der Timer-Pfad bekannt ist — eine „Alles-erlaubt"-Zeile mit dem aktuellen Datum, damit zeroinput nicht durch eine veraltete Begrenzung blockiert wird:
 
 ```
-2026-07-08 00:00:00 100 100 99999
+2026-07-09 00:00:00 100 100 99999
 ```
 
 Da die Zeile ein echtes Kalenderdatum trägt, bleibt der freie Zustand automatisch dauerhaft bestehen, sobald der Tag vorbei ist — zeroinputs Timer-Parser übernimmt beim Durchlaufen aller bereits vergangenen Zeilen zuletzt genau diese, ohne dass die Datei erneut geschrieben werden müsste.
@@ -162,6 +167,6 @@ Ist nicht einmal die `zeroinput.conf` lesbar (Timer-Pfad unbekannt), bleibt nur 
 
 **Abbruch mit „SMARD zone data unavailable".** Die SMARD-Abfrage schlägt fehl und der Cache ist älter als einen Tag. `dirt_shift` hinterlässt einen „Alles-erlaubt"-Timer, zeroinput läuft also uneingeschränkt weiter. Netzwerkverbindung und Erreichbarkeit von SMARD prüfen; ein Handlauf mit `-v` zeigt den Grund.
 
-**Intensitätszone wirkt falsch (SMARD aktiv).** Mit `-debug` zeigt die stündliche Übersichtstabelle die tatsächliche `dirt%`-Einstufung pro Stunde. SMARDs Perzentil-Einteilung orientiert sich am realen Tagesverlauf, daher kann die rote Phase zu jeder Tageszeit liegen, nicht nur nachts.
+**Zone wirkt falsch, oder es werden noch drei Zonen (inkl. „gelb") angezeigt.** `dirt_shift` kennt seit der Umstellung auf den Median-Schnitt nur noch zwei Zonen (rot/grün). Tauchen weiterhin gelbe Stunden auf, liegt das an einer **veralteten Cache-Datei** (`dirt_smard_cache.json`) aus einem Lauf vor der Umstellung — SMARD wird nur einmal pro Stunde neu abgefragt. Abhilfe: `-avgnew` erzwingt eine sofortige Neuabfrage, oder die Cache-Datei löschen.
 
-**Reserve wird zu früh oder zu spät geschützt.** Die Zeile `forecast: content ... reserve target (>HH:MM)` in der `-v`-Ausgabe zeigt den prognostizierten Zeitpunkt, ab dem der Schutz voraussichtlich einsetzt. Weicht das deutlich von der Erwartung ab, meist verursacht durch eine unpassende `basic_load`-Formel (Schritt 3) oder eine Strahlungsprognose, die nicht zum tatsächlichen Wetter passt (`-debug`-Tabelle, Spalte `clr%`).
+**Reserve wird nicht wie erwartet geschützt.** Mit `-debug` zeigt die stündliche Übersichtstabelle die tatsächliche `dirt%`- und `zone`-Einstufung pro Stunde sowie die `chg`-Spalte (`L`/`D`/`D!`). Die Zeile `red: content ... < reserve ... -> dirtiest hour HH:00` in der `-v`-Ausgabe zeigt, welche Stunde aktuell als dreckigste im Fenster gilt. Weicht das deutlich von der Erwartung ab, meist verursacht durch eine unpassende `basic_load`-Formel (Schritt 3) oder eine Strahlungsprognose, die nicht zum tatsächlichen Wetter passt (`-debug`-Tabelle, Spalte `clr%`).
