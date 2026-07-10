@@ -8,7 +8,7 @@ set power import to zero, using grid inverters and charge controllers
 | [Introduction](about_en.md) - partly outdated | [Vorstellung](about_de.md) - teilweise veraltet |
 
 ### [Screenshots of the webconfig](screenshots.md)
-![scheme](https://github.com/user-attachments/assets/f5ded8a0-bda4-4d94-9d9b-a653b748f641)
+![scheme](https://github.com/user-attachments/assets/ee5862bb-375d-429d-96a0-52863d9d64b7)
 
 This script uses a https://volkszaehler.org/ installation for energy meter input and data display.
 
