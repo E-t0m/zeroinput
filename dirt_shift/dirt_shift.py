@@ -381,7 +381,10 @@ def read_radiation_forecast():
 	which are refetched together once per hour in their own cache file,
 	independent of the averages and the PV curve. An hour missing from
 	tomorrow's forecast (not yet published, or the fetch failed) falls back
-	to today's value for that same hour. Returns None if no forecast has ever
+	to today's value for that same hour — that hour is then really still
+	today's data standing in for tomorrow, not tomorrow's own forecast; the
+	set of such hours is returned alongside the array (see _hourly_debug_table,
+	which marks them with '.'). Returns (None, set()) if no forecast has ever
 	been fetched successfully."""
 	vz_in = {}
 	if not avgnew:
@@ -411,10 +414,11 @@ def read_radiation_forecast():
 
 	today = vz_in.get('today')
 	if today is None:
-		return None
+		return None, set()
 	tomorrow = vz_in.get('tomorrow') or [None] * 24
 	now_hour = datetime.now().hour
-	return [today[h] if h >= now_hour or tomorrow[h] is None else tomorrow[h] for h in range(24)]
+	stale = {h for h in range(now_hour) if tomorrow[h] is None}
+	return [today[h] if h >= now_hour or tomorrow[h] is None else tomorrow[h] for h in range(24)], stale
 
 
 def scaled_pv_curve(pv_curve, radiation, now):
@@ -545,10 +549,13 @@ def read_smard_zones():
 	the cached raw today/tomorrow dicts (see get_smard_zones), which are
 	refetched together once per hour in their own cache file. An hour missing
 	from tomorrow (day-ahead data not yet published, or entirely absent) uses
-	today's classification for that same hour. SMARD is a prerequisite: if the
-	fetch fails, the cached data may substitute for exactly one more day (the
-	cache carries fetch_date; data fetched yesterday still passes — its
-	'tomorrow' half was the day-ahead forecast for what is now today).
+	today's classification for that same hour — that hour is then really
+	still today's classification standing in for tomorrow, not tomorrow's own;
+	the returned dict's 'stale' key holds the set of such hours (see
+	_hourly_debug_table, which marks them with '.'). SMARD is a prerequisite:
+	if the fetch fails, the cached data may substitute for exactly one more
+	day (the cache carries fetch_date; data fetched yesterday still passes —
+	its 'tomorrow' half was the day-ahead forecast for what is now today).
 	Anything older, or no cache at all, returns None — the caller then aborts
 	hard, leaving the all-allowed free timer."""
 	vz_in = {}
@@ -586,6 +593,7 @@ def read_smard_zones():
 	if age_days > 1:
 		if verbose: print('cached SMARD data is from %s — too old to substitute' % fetch_date)
 		return None
+	now_hour = datetime.now().hour
 	if age_days == 1:
 		# fetched yesterday, substituting once: yesterday's 'tomorrow' half was
 		# the day-ahead forecast for what is now today.
@@ -595,11 +603,10 @@ def read_smard_zones():
 	else:
 		tomorrow = vz_in.get('tomorrow')
 	if tomorrow is None:
-		return today									# no tomorrow data: today's classification stands for the whole rolling window
-	now_hour = datetime.now().hour
+		return {'zones': today['zones'], 'ratio': today['ratio'], 'stale': set(range(now_hour))}
 	zones = [today['zones'][h] if h >= now_hour else tomorrow['zones'][h] for h in range(24)]
 	ratio = [today['ratio'][h] if h >= now_hour else tomorrow['ratio'][h] for h in range(24)]
-	return {'zones': zones, 'ratio': ratio}
+	return {'zones': zones, 'ratio': ratio, 'stale': set()}
 
 
 def get_vz_bat_cap():
@@ -896,14 +903,23 @@ def precharge_ac_pct(now, zones, basic_load, expected_pv, ratio, content, reserv
 	return round(100.0 * (1.0 - fraction))
 
 
-def _hourly_debug_table(now, pv_curve, radiation, expected_pv, basic_load, grid_data, dirt_written=None):
+def _hourly_debug_table(now, pv_curve, radiation, expected_pv, basic_load, grid_data, dirt_written=None, radiation_stale=None):
 	"""Print one aligned table (hour 0-23) combining the PV reference curve,
 	the shortwave-radiation forecast, the clear-sky index derived from it
 	(see scaled_pv_curve/clear_sky_ghi), expected PV, basic_load, whether
 	that hour charges or discharges, and the SMARD-derived dirtiness/zone
 	(the same rolling array _bridge_hours/red_window_demand/dirtiest_hour
 	use) — so everything the discharge decision draws on is visible at a
-	glance, in one place instead of six separate lists. 'chg' is 'L' (lädt)
+	glance, in one place instead of six separate lists. 'balance' is
+	expected_pv[h] - basic_load[h] (signed): positive means this hour's own
+	generation exceeds its own consumption (a surplus/charging hour),
+	negative means it falls short (a deficit/discharging hour) — the exact
+	quantity 'chg' derives its L/D verdict from. Left blank ('-') whenever
+	the displayed 'exp_PV' itself rounds to 0 (no meaningful PV, typically
+	overnight) — even if the unrounded value is a nonzero fraction: the
+	balance would then just restate -basic_load[h], already visible in
+	'basic_ld', with a precision the displayed exp_PV doesn't itself carry.
+	'chg' is 'L' (lädt)
 	if expected_pv[h] > basic_load[h], else 'D' (discharge) — the exact
 	boundary _bridge_hours/red_window_demand scan for (a PV-surplus hour
 	ends their window). 'dirt%' is (1 - ratio) * 100 (see
@@ -915,16 +931,26 @@ def _hourly_debug_table(now, pv_curve, radiation, expected_pv, basic_load, grid_
 	is passed here): '*' prefix if it reached volkszähler, '!' if the write
 	failed, no prefix if no UUID is configured and nothing was attempted.
 	The one red hour dirtiest_hour would pick in the window from now up to
-	the next PV-surplus hour (see there) carries a trailing '!' on its 'D'
-	tag — that is the hour served unrestricted if the reserve falls short;
+	the next PV-surplus hour (see there) carries a leading '!' on its 'D'
+	tag (`!D`) — that is the hour served unrestricted if the reserve falls short;
 	every other red hour in the window would be capped instead. The cleanest
 	'L' hour of the full 24-hour table (highest ratio among all charging
-	hours) carries the same trailing '!' on its 'L' tag — purely
+	hours) carries the same leading '!' on its 'L' tag (`!L`) — purely
 	informational, not read by main()'s decision, since dirtiest_hour's own
 	window never contains an 'L' hour to begin with (it ends at the first
-	one it meets)."""
+	one it meets). An hour before now.hour (the rolling array's 'tomorrow'
+	portion, see read_radiation_forecast/read_smard_zones) that is still
+	really today's data standing in because no tomorrow-specific value was
+	available yet carries a leading '.' — on 'rad_Wm2' if it is the radiation
+	forecast that is stale for that hour (radiation_stale, from
+	read_radiation_forecast), on 'dirt%' if it is the SMARD classification
+	(grid_data['stale'], from read_smard_zones). The two are independent and
+	can differ per hour, since they come from separate sources refreshed on
+	separate schedules."""
 	zones = grid_data['zones']
 	ratio = grid_data['ratio']
+	smard_stale = grid_data.get('stale', set())
+	radiation_stale = radiation_stale or set()
 	dh = None
 	if expected_pv is not None and basic_load is not None:
 		dh = dirtiest_hour(now, zones, basic_load, expected_pv, ratio)
@@ -942,30 +968,33 @@ def _hourly_debug_table(now, pv_curve, radiation, expected_pv, basic_load, grid_
 			if best_ratio is None or ratio[h] > best_ratio:
 				cleanest_l, best_ratio = h, ratio[h]
 	print('')
-	print('%-3s %8s %8s %5s %8s %8s %4s %6s %-8s' % ('hr', 'PV_curve', 'rad_Wm2', 'clr%', 'exp_PV', 'basic_ld', 'chg', 'dirt%', 'zone'))
+	print('%-3s %8s %8s %5s %8s %8s %8s %4s %6s %-8s' % ('hr', 'PV_curve', 'rad_Wm2', 'clr%', 'exp_PV', 'basic_ld', 'balance', 'chg', 'dirt%', 'zone'))
 	for h in range(24):
 		pv  = round(pv_curve[h]) if pv_curve is not None else '-'
 		r   = radiation[h] if (radiation is not None and h < len(radiation)) else None
 		if r is not None:
 			csghi = clear_sky_ghi(now, h + 0.5)
-			rad_s = round(r)
+			rad_s = str(round(r))
 			clr   = ('%d' % round(min(100.0, 100.0 * r / csghi))) if csghi > 0 else '-'
 		else:
 			rad_s, clr = '-', '-'
+		if h in radiation_stale: rad_s = '.' + rad_s			# still today's forecast, no tomorrow value yet
 		exp = round(expected_pv[h]) if expected_pv is not None else '-'
 		bl  = round(basic_load[h]) if basic_load is not None else '-'
 		if expected_pv is not None and basic_load is not None:
+			bal = '-' if exp == 0 else '%+d' % (expected_pv[h] - basic_load[h])	# exp_PV shows 0: balance would be -basic_load, redundant
 			chg = 'L' if expected_pv[h] > basic_load[h] else 'D'
-			if h == dh: chg += '!'								# the dirtiest red hour in the window
-			if h == cleanest_l: chg += '!'							# the cleanest charging hour of the day
+			if h == dh: chg = '!' + chg							# the dirtiest red hour in the window
+			if h == cleanest_l: chg = '!' + chg					# the cleanest charging hour of the day
 		else:
-			chg = '-'
+			bal, chg = '-', '-'
 		ratio_h = ratio[h]
 		dirt_s = ('%.0f' % ((1.0 - ratio_h) * 100)) if ratio_h is not None else '-'
 		if h == now.hour and dirt_written is not None:
 			dirt_s = ('*' if dirt_written else '!') + dirt_s	# volkszähler write of this hour's value
+		if h in smard_stale: dirt_s = '.' + dirt_s				# still today's classification, no tomorrow value yet
 		marker = '*' if h == now.hour else ' '
-		print('%2d%s %8s %8s %5s %8s %8s %4s %6s %-8s' % (h, marker, pv, rad_s, clr, exp, bl, chg, dirt_s, zones[h]))
+		print('%2d%s %8s %8s %5s %8s %8s %8s %4s %6s %-8s' % (h, marker, pv, rad_s, clr, exp, bl, bal, chg, dirt_s, zones[h]))
 	print('')
 
 
@@ -974,7 +1003,7 @@ def main():
 	basic_load = vz['basic_load']
 	now = datetime.now()
 	pv_curve = read_pv_curve()
-	radiation = read_radiation_forecast()
+	radiation, radiation_stale = read_radiation_forecast()
 	expected_pv = scaled_pv_curve(pv_curve, radiation, now)	# drives red_window_demand/dirtiest_hour below
 	grid_data = read_smard_zones()					# before get_vz_bat_cap, so all cache notices print together
 	if grid_data is None:
@@ -984,7 +1013,7 @@ def main():
 	r = grid_data['ratio'][now.hour]
 	dirt_written = write_dirtiness_to_vz((1.0 - r) * 100) if r is not None else None
 	if debug:
-		_hourly_debug_table(now, pv_curve, radiation, expected_pv, basic_load, grid_data, dirt_written)
+		_hourly_debug_table(now, pv_curve, radiation, expected_pv, basic_load, grid_data, dirt_written, radiation_stale)
 
 	# decide this run's discharge mode. Two zones only (see _smard_zones_for_date):
 	# 'green' (cleaner half of the day) and 'red' (dirtier half).
@@ -1017,23 +1046,21 @@ def main():
 	# right, without any extra bookkeeping.
 	if zone == 'green':
 		mode = 'free' if content > reserve else 'stop'
-		reserve_basis = 'green: content %.0f Wh vs reserve %.0f Wh' % (content, reserve)
+		detail = ''
 		ac_pct = precharge_ac_pct(now, zones, basic_load, pv_for_reserve, grid_data['ratio'], content, reserve)
 	else:
 		if content >= reserve:
 			mode = 'free'
-			reserve_basis = 'red: content %.0f Wh >= reserve %.0f Wh (comfortable)' % (content, reserve)
+			detail = ' (comfortable)'
 		else:
 			dh = dirtiest_hour(now, zones, basic_load, pv_for_reserve, grid_data['ratio'])
 			mode = 'free' if dh is None or dh == now.hour else 'limit'
-			reserve_basis = ('red: content %.0f Wh < reserve %.0f Wh -> dirtiest hour %s'
-			                  % (content, reserve, ('%02d:00' % dh) if dh is not None else '-'))
+			detail = ' -> dirtiest hour %s' % (('%02d:00' % dh) if dh is not None else '-')
 		ac_pct = 100											# precharge only ever considered in green
 
 	if verbose:
-		print('zone %s   content %d Wh   red reserve(%d%%) %.0f Wh' % (
-			zone, content, conf['reserve_pct'], reserve))
-		print('%s   => discharge mode: %s' % (reserve_basis, mode.upper()))
+		print('zone %s   content %d Wh   red reserve(%d%%) %.0f Wh%s   => discharge mode: %s' % (
+			zone, content, conf['reserve_pct'], reserve, detail, mode.upper()))
 		if ac_pct != 100:
 			print('precharge: ac capped to %d%% this hour (see precharge_ac_pct)' % ac_pct)
 
