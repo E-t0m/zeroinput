@@ -526,7 +526,7 @@ class discharge_times():			# handle timer.txt file
 			self.active		= False		# indicates a invalid timer file!
 			self.battery	= 100
 			self.inverter	= 100
-			self.energy		= 9999
+			self.energy		= -1
 		
 		try:
 			if not times:
@@ -803,7 +803,7 @@ if __name__ =="__main__":
 					else:						max_input = timer.inverter 								# > 100 as W
 					max_input += free_power																# add free power to timer limit
 					
-					if (in_pc/3600) > timer.energy and timer.battery != 0:								# hourly battery discharge limit exceeded
+					if timer.energy >= 0 and (in_pc/3600) > timer.energy and timer.battery != 0:		# hourly battery discharge limit exceeded
 											max_input = pv_power
 											status_text	+= ', battery discharge limit exceeded'
 					
