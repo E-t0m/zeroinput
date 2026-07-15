@@ -47,7 +47,7 @@ from json import load as json_load
 from json import dump as json_dump
 from os.path import join, dirname
 from datetime import datetime, timedelta
-from time import time
+from time import time, sleep
 from requests import get, post
 from sys import argv as sys_argv
 
@@ -78,7 +78,7 @@ def write_free_timer(path):
 		with open(path, 'w') as fo:
 			fo.write('# %s  (dirt_shift FALLBACK — config/data error, no limit)\n'
 			         % datetime.now().strftime('%Y-%m-%dT%H:%M:%S'))
-			fo.write('%s 00:00:00 100 100 99999\n' % datetime.now().strftime('%Y-%m-%d'))
+			fo.write('%s 00:00:00 100 100 -1\n' % datetime.now().strftime('%Y-%m-%d'))
 	except Exception:
 		pass
 
@@ -703,6 +703,177 @@ def write_dirtiness_to_vz(value):
 		return False
 
 
+def tasmota_power(ip, output):
+	"""Query a Tasmota device's current relay state — 'cmnd=Power{output}'
+	with no value is a read, not a write (see tasmota_set_power for that).
+	'output' is the relay number as Tasmota names it ('1', '2', ... — '' for
+	a single-relay device without a number). Returns True (on) / False (off)
+	/ None on any request or parse failure — the caller (wallbox_switch) then
+	treats it the same as 'didn't take effect yet' and retries."""
+	try:
+		key = 'POWER%s' % output if output else 'POWER'
+		resp = get(url='http://%s/cm?cmnd=Power%s' % (ip, output), timeout=10).json()
+		return resp.get(key) == 'ON'
+	except Exception as e:
+		if verbose: print('tasmota status query failed:', e)
+		return None
+
+
+def tasmota_set_power(ip, output, on):
+	"""Send a Tasmota Power Set command ('On'/'Off') for the given relay
+	output — a plain HTTP GET, no retry or verification here (see
+	wallbox_switch for that). Returns True if the HTTP request itself
+	succeeded (status 200); says nothing about whether the relay actually
+	changed — Tasmota accepts the command over HTTP independently of whether
+	the physical relay responds."""
+	try:
+		action = 'On' if on else 'Off'
+		resp = get(url='http://%s/cm?cmnd=Power%s%%20%s' % (ip, output, action), timeout=10)
+		return resp.status_code == 200
+	except Exception as e:
+		if verbose: print('tasmota set command failed:', e)
+		return False
+
+
+def wallbox_switch(ip, output, on):
+	"""Set the wallbox relay to 'on'/'off' and verify it actually took effect
+	by re-querying Tasmota's own relay status (tasmota_power) — up to 3
+	attempts, 30 s apart, since a relay set command failing silently (device
+	briefly unreachable, WiFi hiccup) must not be mistaken for success: the
+	owner marker (see main()) is only ever set after a verified state change,
+	never after just sending the command. Returns True once the verified
+	state matches 'on', False if all 3 attempts failed to produce it."""
+	for attempt in range(3):
+		tasmota_set_power(ip, output, on)
+		actual = tasmota_power(ip, output)
+		if actual == on:
+			return True
+		if attempt < 2:
+			sleep(30)
+	if verbose: print('wallbox switch to %s failed after 3 attempts' % ('on' if on else 'off'))
+	return False
+
+
+def read_wallbox_marker():
+	"""Whether dirt_shift itself is the reason the wallbox relay is currently
+	on — a small persistent marker (see main()), separate from the relay's
+	real state, since dirt_shift may only ever switch off a relay it
+	switched on itself: a manual activation must never be undone by
+	dirt_shift, no matter how dirty the grid gets. Returns False (foreign,
+	untouched) if no marker file exists yet — including on the very first
+	run ever, so an already-on relay found with no prior history is treated
+	as foreign rather than assumed to be dirt_shift's own."""
+	try:
+		with open(join(dirname(__file__), 'dirt_wallbox_marker.json'), 'r') as fi:
+			return bool(json_load(fi).get('dirt_shift_on', False))
+	except Exception:
+		return False
+
+
+def write_wallbox_marker(on):
+	"""Persist whether dirt_shift itself switched the wallbox relay on (see
+	read_wallbox_marker). Best-effort: a failed write only means the next
+	run re-derives the wrong assumption once, not a hard failure — never
+	raises further."""
+	try:
+		with open(join(dirname(__file__), 'dirt_wallbox_marker.json'), 'w') as fo:
+			json_dump({'dirt_shift_on': on}, fo)
+	except Exception as e:
+		if verbose: print('failed to write wallbox marker:', e)
+
+
+def _dirt_median(all_dirt):
+	"""Median of a 24-value dirt% list, ignoring hours with no SMARD coverage
+	(None). None if no hour has a value at all. Shared by
+	wallbox_should_be_on and main()'s -v reporting, so the displayed median
+	is always the exact one the decision itself was made against."""
+	valid = [d for d in all_dirt if d is not None]
+	if not valid:
+		return None
+	n = len(valid)
+	s = sorted(valid)
+	return s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2.0
+
+
+def wallbox_should_be_on(dirt_now, all_dirt, mode):
+	"""The dirt%-based half of the switch-on decision (see wallbox_decide,
+	which combines this with the energy-based half and is what main()
+	actually calls): the current hour's dirtiness must be within
+	wallbox_median_fraction percent of the day's median dirt% AND at or
+	below the absolute wallbox_absolute_max, AND the discharge mode must be
+	'free' — which covers both a comfortably covered red reserve and,
+	deliberately, the single dirtiest red hour itself (where 'free' is
+	forced regardless of content, see main()): on a night dirty enough that
+	no hour clears the two dirt% limits, the wallbox may still end up
+	charging in that one reddest hour, since 'free' holds there too. This is
+	an accepted consequence of reusing 'free' rather than a flaw —
+	reserve_pct and CAP_FACTOR already handle the reserve itself; the
+	wallbox is not held to a stricter standard than the battery is.
+	Precharge (see precharge_ac_pct) never enters this decision — the two
+	are fully independent. False if dirt_now or every entry in all_dirt is
+	unavailable (no SMARD coverage for that hour)."""
+	median = _dirt_median(all_dirt)
+	if dirt_now is None or median is None:
+		return False
+	return (dirt_now <= conf['wallbox_median_fraction'] * 0.01 * median
+	        and dirt_now <= conf['wallbox_absolute_max']
+	        and mode == 'free')
+
+
+def wallbox_decide(dirt_now, all_dirt, mode, content, owned, now, zones, basic_load, expected_pv):
+	"""Whether the wallbox should be on this run — genuinely different
+	depending on whether dirt_shift currently owns the relay ('owned'), not
+	a single symmetric threshold checked both ways. The energy side of the
+	decision uses its OWN reserve estimate — reserve_pct * upcoming_red_demand
+	(now, zones, basic_load, expected_pv) — in place of the main reserve
+	variable red_window_demand computes elsewhere in main(): that one
+	deliberately reads 0 for as long as 'now' itself sits within an assumed
+	PV-surplus stretch, which would make the wallbox's own energy check a
+	rubber stamp exactly when it matters most — a running wallbox can draw
+	far more than the day's actual remaining surplus (see upcoming_red_demand),
+	quietly eating into stored content the main reserve figure is trusting
+	will refill on its own. upcoming_red_demand's rough, always-available
+	estimate closes that gap by never reading 0 just because 'now' happens
+	to be a surplus hour. Compared directly against current content, with no
+	projected future surplus added on top — deliberately conservative, since
+	any assumed surplus between now and red is exactly what a running
+	wallbox could itself consume before it ever reaches the battery. This
+	replacement is scoped to the wallbox only; the main reserve variable and
+	the rest of main()'s mode decision are untouched.
+
+	NOT currently owned: switches on if EITHER the existing dirt%-based
+	condition holds (wallbox_should_be_on: both dirt% limits AND
+	mode == 'free') OR there is simply enough battery content to spare —
+	(content - wallbox_typical_power * 0.25) > this wallbox-specific
+	reserve, i.e. even a full quarter-hour of typical wallbox draw would not
+	touch it. This second path lets a comfortably full battery get used
+	even during an hour that would not otherwise qualify on cleanliness
+	alone — the point is to actually exploit surplus content, not leave it
+	sitting unused just because the current hour happens to be dirty.
+
+	Currently owned: stays on regardless of dirt% — the dirt%-based
+	thresholds are deliberately not re-checked once running, only the
+	energy safety net is: switches off once (content - wallbox_typical_power
+	* 0.25) would drop to or below the wallbox-specific reserve, i.e. one
+	more quarter-hour of typical draw would start eating into it. Note this
+	does NOT reliably subsume the old 'limit'/'stop' mode -> off rule: when
+	several red blocks lie before the next true surplus hour,
+	upcoming_red_demand (only the first block) can be smaller than the main
+	reserve (all of them summed), so the wallbox-specific check can in that
+	case be looser than the main mode's own protection — an accepted
+	trade-off of a deliberately rough, single-block estimate, not a
+	guarantee.
+
+	Precharge (see precharge_ac_pct) never enters this decision either way —
+	the two remain fully independent."""
+	wallbox_reserve = conf['reserve_pct'] * 0.01 * upcoming_red_demand(now, zones, basic_load, expected_pv)
+	margin = conf['wallbox_typical_power'] * 0.25
+	energy_ok = (content - margin) > wallbox_reserve
+	if owned:
+		return energy_ok
+	return wallbox_should_be_on(dirt_now, all_dirt, mode) or energy_ok
+
+
 def _bridge_hours(now, zones, basic_load, expected_pv):
 	"""Hours (as (hour, fraction) pairs), from now up to (not including) the
 	first PV-surplus hour — the same boundary red_window_demand's scan stops
@@ -757,6 +928,36 @@ def red_window_demand(basic_load, now, zones, expected_pv):
 			demand += basic_load[h] - pv
 		h = (h + 1) % 24
 	return max(0.0, demand)
+
+
+def upcoming_red_demand(now, zones, basic_load, expected_pv):
+	"""Rough advance estimate of the very next red span's total demand —
+	summed even while 'now' itself sits within an ongoing PV-surplus
+	stretch, unlike red_window_demand, which stops at the first surplus
+	hour and so reads 0 for as long as 'now' remains inside one. Scans
+	forward from now, skipping every hour before the next red hour without
+	accumulating — surplus hours in between do NOT end the scan here, that
+	is the whole point — then sums basic_load[h] - expected_pv[h] (floored
+	at 0 per hour, still net of pvpt during the red hours themselves) for
+	every red hour of that next contiguous red block, stopping at its end.
+	Deliberately does not look past that first block into any further,
+	separate red span later in the rolling day — a rough same-night
+	estimate, not the full red_window_demand accounting. Meant to be
+	compared against current battery content directly, with no projected
+	future surplus added on top (see wallbox_decide) — the conservative
+	choice, since any assumed surplus between now and red is exactly what a
+	running wallbox could itself consume before it ever reaches the
+	battery. Wraps past midnight. 0 if no red hour exists anywhere in the
+	next 24 hours."""
+	demand, h, in_block = 0.0, now.hour, False
+	for _ in range(24):
+		if zones[h] == 'red':
+			in_block = True
+			demand += max(0.0, basic_load[h] - expected_pv[h])
+		elif in_block:
+			break
+		h = (h + 1) % 24
+	return demand
 
 
 def dirtiest_hour(now, zones, basic_load, expected_pv, ratio):
@@ -946,7 +1147,11 @@ def _hourly_debug_table(now, pv_curve, radiation, expected_pv, basic_load, grid_
 	read_radiation_forecast), on 'dirt%' if it is the SMARD classification
 	(grid_data['stale'], from read_smard_zones). The two are independent and
 	can differ per hour, since they come from separate sources refreshed on
-	separate schedules."""
+	separate schedules. A final line sums expected_pv and basic_load each
+	across all 24 hours, their difference (the day's net balance), and the
+	unweighted average dirt% across every SMARD-covered hour — a quick
+	overall read on the day's expected yield, consumption, and cleanliness,
+	rolling window included."""
 	zones = grid_data['zones']
 	ratio = grid_data['ratio']
 	smard_stale = grid_data.get('stale', set())
@@ -973,7 +1178,8 @@ def _hourly_debug_table(now, pv_curve, radiation, expected_pv, basic_load, grid_
 		pv  = round(pv_curve[h]) if pv_curve is not None else '-'
 		r   = radiation[h] if (radiation is not None and h < len(radiation)) else None
 		if r is not None:
-			csghi = clear_sky_ghi(now, h + 0.5)
+			d = now if h >= now.hour else now + timedelta(days=1)		# same rolling-date rule as scaled_pv_curve
+			csghi = clear_sky_ghi(d, h + 0.5)
 			rad_s = str(round(r))
 			clr   = ('%d' % round(min(100.0, 100.0 * r / csghi))) if csghi > 0 else '-'
 		else:
@@ -995,6 +1201,20 @@ def _hourly_debug_table(now, pv_curve, radiation, expected_pv, basic_load, grid_
 		if h in smard_stale: dirt_s = '.' + dirt_s				# still today's classification, no tomorrow value yet
 		marker = '*' if h == now.hour else ' '
 		print('%2d%s %8s %8s %5s %8s %8s %8s %4s %6s %-8s' % (h, marker, pv, rad_s, clr, exp, bl, bal, chg, dirt_s, zones[h]))
+	if expected_pv is not None or basic_load is not None or any(r is not None for r in ratio):
+		dash8 = '-' * 8
+		print('%-3s %8s %8s %5s %8s %8s %8s' % ('', '', '', '', dash8, dash8, dash8))
+		exp_sum = sum(expected_pv) if expected_pv is not None else None
+		bl_sum  = sum(basic_load) if basic_load is not None else None
+		bal_sum = (exp_sum - bl_sum) if (exp_sum is not None and bl_sum is not None) else None
+		valid_ratio = [r for r in ratio if r is not None]
+		dirt_avg = sum((1.0 - r) * 100.0 for r in valid_ratio) / len(valid_ratio) if valid_ratio else None
+		print('%-3s %8s %8s %5s %8s %8s %8s %4s %6s' % (
+			'', '', '', '',
+			('%.0f' % exp_sum) if exp_sum is not None else '-',
+			('%.0f' % bl_sum) if bl_sum is not None else '-',
+			('%+.0f' % bal_sum) if bal_sum is not None else '-',
+			'', ('Ø %.0f' % dirt_avg) if dirt_avg is not None else '-'))
 	print('')
 
 
@@ -1055,17 +1275,41 @@ def main():
 		else:
 			dh = dirtiest_hour(now, zones, basic_load, pv_for_reserve, grid_data['ratio'])
 			mode = 'free' if dh is None or dh == now.hour else 'limit'
-			detail = ' -> dirtiest hour %s' % (('%02d:00' % dh) if dh is not None else '-')
+			detail = ' -> dirtiest  %s' % (('%02d:00' % dh) if dh is not None else '-')
 		ac_pct = 100											# precharge only ever considered in green
 
 	if verbose:
-		print('zone %s   content %d Wh   red reserve(%d%%) %.0f Wh%s   => discharge mode: %s' % (
-			zone, content, conf['reserve_pct'], reserve, detail, mode.upper()))
+		print('content %d Wh   reserve(%d%%) %.0f Wh%s   =>  mode: %s' % (
+			content, conf['reserve_pct'], reserve, detail, mode.upper()))
 		if ac_pct != 100:
 			print('precharge: ac capped to %d%% this hour (see precharge_ac_pct)' % ac_pct)
 
 	if not conf['disable_zeroinput_timer']:
 		write_timer(mode, now, basic_load[now.hour], ac_pct)
+
+	if conf.get('wallbox_enabled', False):
+		dirt_now = (1.0 - r) * 100 if r is not None else None
+		all_dirt = [(1.0 - x) * 100 if x is not None else None for x in grid_data['ratio']]
+		marker = read_wallbox_marker()
+		should_on = wallbox_decide(dirt_now, all_dirt, mode, content, marker, now, zones, basic_load, pv_for_reserve)
+		action = 'none'
+		if should_on and not marker:
+			action = 'switch on (verified)' if wallbox_switch(conf['wallbox_ip'], conf['wallbox_output'], True) else 'switch on FAILED'
+			if action.endswith('(verified)'): write_wallbox_marker(True)
+		elif not should_on and marker:
+			action = 'switch off (verified)' if wallbox_switch(conf['wallbox_ip'], conf['wallbox_output'], False) else 'switch off FAILED'
+			if action.endswith('(verified)'): write_wallbox_marker(False)
+		if verbose:
+			median = _dirt_median(all_dirt)
+			pct_median = (dirt_now / median * 100.0) if (dirt_now is not None and median) else None
+			margin = conf['wallbox_typical_power'] * 0.25
+			wallbox_reserve = conf['reserve_pct'] * 0.01 * upcoming_red_demand(now, zones, basic_load, pv_for_reserve)
+			print('wallbox: dirt%% %s (<%g)   %%median %s (<%g%%)' % (
+				('%.0f' % dirt_now) if dirt_now is not None else '-', conf['wallbox_absolute_max'],
+				('%.0f' % pct_median) if pct_median is not None else '-', conf['wallbox_median_fraction']))
+			print('wallbox: content %.0f - reserve %.0f - margin %.0f = %.0f Wh' % (
+				content, wallbox_reserve, margin, content - wallbox_reserve - margin))
+			print('wallbox: should_on %s   marker(before) %s   action: %s' % (should_on, marker, action))
 
 	if verbose:
 		print('dirt_shift done.', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
@@ -1082,17 +1326,25 @@ def write_timer(mode, now, basic_load_now, ac_pct=100):
 	the single cleanest green hour in the window, to divert PV surplus that
 	would otherwise go to pvpt into the battery instead. Outside that path,
 	ac_pct is always 100. Battery discharge is steered by 'mode':
-	  free  -> no discharge limit                              '100 <ac> 99999'
-	  limit -> capped at CAP_FACTOR * basic_load_now (Watt)     '<cap> <ac> 99999'
+	  free  -> no discharge limit                              '100 <ac> -1'
+	  limit -> capped at CAP_FACTOR * basic_load_now (Watt)     '<cap> <ac> -1'
 	  stop  -> no discharge, pvpt at ac_pct (100 outside precharge) '000 <ac> 000'
-	The energy_Wh field stays unlimited (99999) even in 'limit' mode: the actual
-	energy handed out is bounded by the slot's own Wh budget (computed elsewhere,
-	via the reserve logic), not by this timer field. The discharge cap only
-	limits the instantaneous power: basic_load_now covers the hour's own
-	ordinary consumption, CAP_FACTOR (2x) leaves headroom for short spikes
-	without inviting inefficient inverter staging, while staying far below any
-	deliberate high-power load (e.g. EV charging), which stays forced onto the
-	grid instead of the battery.
+	The energy_Wh field is -1 (a sentinel zeroinput's discharge_times.update()
+	treats as 'no energy cap at all', skipping the hourly-budget check
+	entirely — see zeroinput.py) in both 'free' and 'limit' mode: the actual
+	energy handed out is bounded by the slot's own Wh budget (computed
+	elsewhere, via the reserve logic), not by this timer field. A merely
+	large but finite placeholder would eventually be exhausted by real
+	accumulated discharge if dirt_shift ever stopped running for an
+	extended stretch — the energy counter only resets when the timer file's
+	last line changes, which stops happening once dirt_shift is no longer
+	rewriting it — silently turning the failsafe line itself into a
+	discharge block after enough elapsed time; -1 has no such expiry. The
+	discharge cap only limits the instantaneous power: basic_load_now covers
+	the hour's own ordinary consumption, CAP_FACTOR (2x) leaves headroom for
+	short spikes without inviting inefficient inverter staging, while
+	staying far below any deliberate high-power load (e.g. EV charging),
+	which stays forced onto the grid instead of the battery.
 	dirt_shift is optional and must never block normal operation, so the plan is
 	a short chain re-written every run:
 	  - the current 1/4h slot in the chosen mode and ac_pct;
@@ -1109,9 +1361,9 @@ def write_timer(mode, now, basic_load_now, ac_pct=100):
 	re-arming the same limit every day."""
 	ac_pct = max(0, min(100, round(ac_pct)))
 	cap = round(CAP_FACTOR * basic_load_now)
-	FREE  = '100 100 99999'								# full discharge, full pvpt — the failsafe line, always fully unrestricted
-	payload = {'free': '100 %3d 99999' % ac_pct,
-	           'limit': '%3d %3d 99999' % (cap, ac_pct),
+	FREE  = '100 100 -1'									# full discharge, full pvpt, no energy cap — the failsafe line, always fully unrestricted
+	payload = {'free': '100 %3d -1' % ac_pct,
+	           'limit': '%3d %3d -1' % (cap, ac_pct),
 	           'stop': '000 %3d 000' % ac_pct}[mode]
 
 	lines = []
@@ -1126,11 +1378,11 @@ def write_timer(mode, now, basic_load_now, ac_pct=100):
 		fo.write('# real calendar date per line, space or tab separated\n')
 		fo.write('#                   battery discharge W if > 100, percentage if <= 100\n')
 		fo.write('# date     time     |   ac inverter power W if > 100, percentage if <= 100\n')
-		fo.write('# |        |        |   |   energy limit in Wh\n')
+		fo.write('# |        |        |   |   energy limit in Wh, -1 = unlimited\n')
 		for lt, p in lines:
 			line = '%s %02d:%02d:00 %s' % (lt.strftime('%Y-%m-%d'), lt.hour, lt.minute, p)
 			fo.write(line + '\n')
-			if debug: print(line)
+			if debug: print('timer:', line)
 
 
 exit(main())

@@ -97,6 +97,8 @@ Maßgeblich ist, dass `basic_load` am Ende den tatsächlich zu deckenden Hausver
 
 **Wichtig zur Wallbox:** Weil `Auto` bewusst aus `basic_load` ausgeklammert ist, sieht `dirt_shift` eine Wallbox-Ladung nicht direkt. Der Schutz davor, dass eine Wallbox-Spitze den Akku statt des Netzes belastet, kommt stattdessen aus der Zonenlogik selbst — siehe „Entladung nach Zone" in der Spec (grüne Zone stoppt kategorisch, solange die Reserve nicht erreicht ist; rote Zone deckelt außerhalb der dreckigsten Stunde auf `CAP_FACTOR × basic_load`).
 
+**Optional: aktive Wallbox-Steuerung (`wallbox_enabled`, Standard `false`).** Unabhängig von der passiven Ausklammerung oben kann `dirt_shift` das Relais einer Wallbox über ein Tasmota-Gerät aktiv schalten — eingeschaltet, sobald die aktuelle Stunde zwei konfigurierbare Sauberkeits-Schwellen (`wallbox_median_fraction`, `wallbox_absolute_max`) sowie `mode == free` erfüllt. Ausgeschaltet wird nur, was `dirt_shift` selbst eingeschaltet hat (manuelle Aktivierung bleibt unangetastet, siehe Spec-Abschnitt „Wallbox"). Details, inklusive der Retry-/Verifikationslogik beim Schalten, stehen in `dirt_shift_spec_de.md`.
+
 ### 4. Trockenlauf zur Prüfung
 
 Vor der Aktivierung empfiehlt sich ein Lauf ohne Schreiben der Timer-Datei:
@@ -148,7 +150,7 @@ Bei jedem Lauf wird der frische Energieinhalt abgefragt und die `timer.txt` mit 
 Bei einem harten Fehler (volkszähler liefert keine vollständigen Tage, Energieinhalt nicht berechenbar, SMARD-Daten weder frisch noch als Ein-Tag-Ersatz verfügbar) bricht `dirt_shift` ab, schreibt aber zuvor — sofern der Timer-Pfad bekannt ist — eine „Alles-erlaubt"-Zeile mit dem aktuellen Datum, damit zeroinput nicht durch eine veraltete Begrenzung blockiert wird:
 
 ```
-2026-07-09 00:00:00 100 100 99999
+2026-07-09 00:00:00 100 100 -1
 ```
 
 Da die Zeile ein echtes Kalenderdatum trägt, bleibt der freie Zustand automatisch dauerhaft bestehen, sobald der Tag vorbei ist — zeroinputs Timer-Parser übernimmt beim Durchlaufen aller bereits vergangenen Zeilen zuletzt genau diese, ohne dass die Datei erneut geschrieben werden müsste.
@@ -169,4 +171,4 @@ Ist nicht einmal die `zeroinput.conf` lesbar (Timer-Pfad unbekannt), bleibt nur 
 
 **Zone wirkt falsch, oder es werden noch drei Zonen (inkl. „gelb") angezeigt.** `dirt_shift` kennt seit der Umstellung auf den Median-Schnitt nur noch zwei Zonen (rot/grün). Tauchen weiterhin gelbe Stunden auf, liegt das an einer **veralteten Cache-Datei** (`dirt_smard_cache.json`) aus einem Lauf vor der Umstellung — SMARD wird nur einmal pro Stunde neu abgefragt. Abhilfe: `-avgnew` erzwingt eine sofortige Neuabfrage, oder die Cache-Datei löschen.
 
-**Reserve wird nicht wie erwartet geschützt.** Mit `-debug` zeigt die stündliche Übersichtstabelle die tatsächliche `dirt%`- und `zone`-Einstufung pro Stunde sowie die `chg`-Spalte (`L`/`D`/`!D`/`!L`). Die Zeile `red: content ... < reserve ... -> dirtiest hour HH:00` in der `-v`-Ausgabe zeigt, welche Stunde aktuell als dreckigste im Fenster gilt. Weicht das deutlich von der Erwartung ab, meist verursacht durch eine unpassende `basic_load`-Formel (Schritt 3) oder eine Strahlungsprognose, die nicht zum tatsächlichen Wetter passt (`-debug`-Tabelle, Spalte `clr%`).
+**Reserve wird nicht wie erwartet geschützt.** Mit `-debug` zeigt die stündliche Übersichtstabelle die tatsächliche `dirt%`- und `zone`-Einstufung pro Stunde sowie die `chg`-Spalte (`L`/`D`/`!D`/`!L`). Die Zeile `content ... Wh   reserve(...%) ... Wh -> dirtiest  HH:MM   =>  mode: ...` in der `-v`-Ausgabe zeigt, welche Stunde aktuell als dreckigste im Fenster gilt. Weicht das deutlich von der Erwartung ab, meist verursacht durch eine unpassende `basic_load`-Formel (Schritt 3) oder eine Strahlungsprognose, die nicht zum tatsächlichen Wetter passt (`-debug`-Tabelle, Spalte `clr%`).

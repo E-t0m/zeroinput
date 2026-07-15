@@ -94,7 +94,7 @@ If current content does not cover the reserve (`content < reserve`), every red h
 
 The window is rebuilt fresh from the current time on **every** run — an already-past dirtiest hour simply falls out of the (now shorter) window on the next run, and the dirtiest hour remaining then automatically becomes free, without any special-case rule needed for that. Green hours within the window do not count either way — only red hours are compared against each other.
 
-The `-v` output shows the identified dirtiest hour in the line `red: content ... < reserve ... -> dirtiest hour HH:00`; in the `-debug` table, that same hour carries a leading `!` on its `chg` tag (`!D`, versus plain `D` for every other discharging hour). The `chg` column also shows `L` for every charging hour (`exp_PV > basic_load`), with the same `!` marker (`!L`) for the cleanest charging hour of the whole day — purely informational, no effect on the decision. A separate `balance` column shows `exp_PV − basic_load`, signed (blank when `exp_PV = 0`, since it would then just restate `basic_load`). Hours that the rolling array is meant to represent as "tomorrow" but that still fall back to today's values for lack of a real tomorrow-specific value yet (see CO₂-intensity profile and Radiation-forecast scaling) carry a leading `.` — independently on `rad_Wm2` (radiation forecast) and `dirt%` (SMARD classification), depending on which of the two sources still lacks real tomorrow data for that hour.
+The `-v` output shows the identified dirtiest hour in the line `content ... Wh   reserve(...%) ... Wh -> dirtiest  HH:MM   =>  mode: ...`; in the `-debug` table, that same hour carries a leading `!` on its `chg` tag (`!D`, versus plain `D` for every other discharging hour). The `chg` column also shows `L` for every charging hour (`exp_PV > basic_load`), with the same `!` marker (`!L`) for the cleanest charging hour of the whole day — purely informational, no effect on the decision. A separate `balance` column shows `exp_PV − basic_load`, signed (blank when `exp_PV = 0`, since it would then just restate `basic_load`). Hours that the rolling array is meant to represent as "tomorrow" but that still fall back to today's values for lack of a real tomorrow-specific value yet (see CO₂-intensity profile and Radiation-forecast scaling) carry a leading `.` — independently on `rad_Wm2` (radiation forecast) and `dirt%` (SMARD classification), depending on which of the two sources still lacks real tomorrow data for that hour. A final line sums `exp_PV` and `basic_load` each across all 24 hours, their difference (the day's net balance), and the unweighted `dirt%` average (`Ø`) across every SMARD-covered hour.
 
 The priority acts at exactly one point: which hour gets `free` instead of `limit`. It does not reserve any Wh explicitly for the dirtiest hour against the other red hours in the same window — a non-priority red hour stays open up to `CAP_FACTOR × basic_load` (default 2×), not capped to `1× basic_load` as the reserve calculation itself assumes (`red_window_demand`/`marginal_red_hour` both assume 1× basic_load per hour). If a non-priority hour genuinely draws more, less is left for the dirtiest hour than the reserve calculation assumed.
 
@@ -133,9 +133,74 @@ The failsafe (see there) applies here too: a plain `ac_%` cap without a simultan
 
 ---
 
+## Wallbox (optional, off by default)
+
+With `wallbox_enabled: true`, `dirt_shift` switches an EV wallbox's relay via a Tasmota device — a mechanism independent of the existing `basic_load` exclusion (see Discharge by zone) and additional to it.
+
+**No presence or charging-state detection.** Without feedback on the vehicle's state of charge (no SoC), no meaningful daily target can be formed — `dirt_shift` does not even attempt one. The relay is simply held closed whenever the conditions are met; if no vehicle is connected, nothing happens at all (no charging current, no harm).
+
+**Switching on and switching off are not opposites of each other** — the criteria depend on whether `dirt_shift` currently owns the relay (see Owner marker below):
+
+### Switching on (relay not currently owned)
+
+Either of two conditions is enough:
+
+**a) Dirtiness thresholds met** — two limits, both must hold:
+```
+dirt%[now] ≤ wallbox_median_fraction % × the day's median dirt%   AND
+dirt%[now] ≤ wallbox_absolute_max
+```
+`wallbox_median_fraction` (default `30`, in percent) is its own, tighter cut than the general red/green median — it adapts to that particular day's spread. `wallbox_absolute_max` (default `50`) keeps the relative threshold alone from still letting a meaningfully dirty hour through on a uniformly dirty day (high median). The median is computed across all 24 hours of the rolling day (see CO₂-intensity profile), not just the remaining ones.
+
+The discharge mode must additionally be `free` here — this implicitly covers that neither `limit` (see Red reserve and the dirtiest hour: `basic_load` itself is already capped, the wallbox must not compete for that same budget) nor `stop` (green zone, reserve not yet reached) applies.
+
+**b) Enough energy to spare, independent of dirtiness:**
+```
+content − wallbox_typical_power × 0.25 h  >  reserve_pct × upcoming_red_demand
+```
+This does **not** use the regular `reserve` (the one used everywhere else in `dirt_shift`), but a separate, wallbox-specific calculation: `upcoming_red_demand` roughly estimates the demand of the **next** contiguous red span — unlike `red_window_demand`, its scan does **not** stop at the first surplus hour, it deliberately keeps looking forward to the next red hour instead. The reason: as long as `now` itself sits within an ongoing surplus stretch, the regular `reserve` reads `0` — not because nothing is needed tonight, but because the model assumes the still-upcoming surplus will refill the battery on its own. If the wallbox runs at typical power during that same assumed-surplus stretch, it can draw more than the actual remaining surplus provides — the battery would then net-discharge while `reserve` keeps showing `0`, making the old energy condition effectively a rubber stamp right when it mattered most.
+
+`upcoming_red_demand` is deliberately compared **directly against current `content`**, with no projected future surplus added on top — that assumed surplus is exactly what a running wallbox could itself consume before it ever reaches the battery. The estimate only covers the **one** next red block, not every separate red span up to the next true surplus hour the way `red_window_demand` does — deliberately rough, in exchange for being available at any time, even mid-surplus.
+
+### Switching off (only while `dirt_shift` owns the relay itself)
+
+The dirtiness thresholds above are **deliberately not re-checked** while the relay is running — once started, it stays on however dirty the grid gets in the meantime. Only the same energy condition as above decides, now reversed:
+```
+content − wallbox_typical_power × 0.25 h  ≤  reserve_pct × upcoming_red_demand  →  switch off
+```
+One more quarter-hour of typical draw would touch or breach this wallbox-specific reserve.
+
+**An important limitation, not an oversight:** this wallbox-specific reserve **replaces** the regular `reserve` entirely for the wallbox — it does **not** reliably cover `limit`/`stop` as a side effect. When several separate red spans lie before the next true surplus hour, the regular `reserve` sums all of them, while `upcoming_red_demand` only covers the first and so can come out **smaller**. In that case the wallbox-specific check can end up looser than the regular `limit`/`stop` protection — a deliberately accepted consequence of a rough, single-block estimate.
+
+One boundary condition follows from reusing `free` for switching on: in the red zone, `free` also holds at the **dirtiest hour itself** (where the reserve is meant to be deliberately spent), regardless of battery content. On a uniformly "deep red" night where no hour clears both dirtiness thresholds on its own, the wallbox may therefore still start charging during that one reddest hour, provided it itself stays under `wallbox_absolute_max` — a deliberately accepted boundary condition, not a gap.
+
+**Precharge (see there) has no bearing on the wallbox** — the two mechanisms run fully independently of each other.
+
+### Owner marker
+
+`dirt_shift` may only switch the relay off if it is itself the reason it is currently on — a manual activation is never undone, however dirty the grid gets. A small persistent file (`dirt_wallbox_marker.json`) tracks whether `dirt_shift` currently has the relay switched on:
+
+- **Switching on** is always unproblematic (a no-op if already on) — the marker is set to `true`.
+- **Switching off** only happens if the marker is `true`.
+- **The very first run with no history**: if the relay is already on at that point, it is treated as foreign by default (marker `false`) — `dirt_shift` leaves it alone.
+
+**Consequence for manual intervention:** if someone switches the relay on manually while it is currently dirty, it stays untouched — across multiple runs, if needed. But as soon as the **next** hour arrives that meets the conditions, `dirt_shift` silently "adopts" the relay (sets the marker to `true`, without actually changing anything — it was already running). From that point on it counts as dirt_shift's own again and can be switched off normally at the next dirty hour. The manual protection therefore only covers the currently ongoing dirty stretch, not permanently.
+
+This detection has a known limit: if someone switches manually **while** the marker is already `true`, `dirt_shift` cannot distinguish that from its own prior action — Tasmota's status shows only the state, not who caused it. That remains an accepted limitation, not a gap still to be closed.
+
+### Switching with verification
+
+Switching uses a direct Tasmota `Power{output}` command (HTTP GET), **not** a Tasmota timer — unlike `tib_zero_tas`, whose price-driven schedule is known in advance. Here, every run needs to be able to react (a zone change, a mode change), which only fits a direct command issued during the run itself.
+
+The command alone is not enough: Tasmota accepts an HTTP command even if the device becomes unreachable afterwards, or the switch does not actually take effect. So after every set command, the actual relay status is re-queried (`Power{output}` with no value) — up to **3 attempts**, **30 seconds** apart. The owner marker is only updated after a **verified** state change; if all 3 attempts fail, the marker is left unchanged.
+
+**Runs at the very end of `main()`**, after `write_timer` and the dirtiness export — deliberately placed there so that a hung or unreachable Tasmota device (up to ~90 seconds in the worst case, from the retry delays) never delays writing `timer.txt`. Neither success nor failure affects `dirt_shift`'s return value — both are only reported under `-v`, exactly like the dirtiness-value export.
+
+---
+
 ## Failsafe
 
-`dirt_shift` is optional and must never block zeroinput's normal operation. If a run limits or stops discharge, or caps `ac_%` below 100 (see Precharge), it additionally writes an "all-allowed" line (`100 100 99999`) 30 minutes later. As long as the script keeps running, the restriction is renewed every 15 minutes; if it stops running (cron failure, volkszähler unreachable, crash), the restriction lifts itself after 30 minutes, and zeroinput discharges freely again, as if `dirt_shift` did not exist. In free mode without a precharge cap, everything is already allowed, so the one line suffices there.
+`dirt_shift` is optional and must never block zeroinput's normal operation. If a run limits or stops discharge, or caps `ac_%` below 100 (see Precharge), it additionally writes an "all-allowed" line (`100 100 -1`) 30 minutes later. As long as the script keeps running, the restriction is renewed every 15 minutes; if it stops running (cron failure, volkszähler unreachable, crash), the restriction lifts itself after 30 minutes, and zeroinput discharges freely again, as if `dirt_shift` did not exist. In free mode without a precharge cap, everything is already allowed, so the one line suffices there.
 
 ---
 
@@ -158,9 +223,9 @@ YYYY-MM-DD HH:MM:00  <discharge-W>  <ac-%>  <energy-Wh>
 - Each line carries the real calendar date it was written for.
 - **discharge-W** — discharge cap; `100` (percent) = no limit, `CAP_FACTOR × basic_load` (watts) = capped, `000` = no battery discharge (stop).
 - **ac-%** — inverter pass-through, `100` (pvpt guaranteed), except during an active precharge cap (see there): then a continuous value between `0` and `100` for exactly the one cleanest green candidate hour.
-- **energy-Wh** — energy budget; `99999` = practically unlimited (discharge allowed), `000` = no budget (stop).
+- **energy-Wh** — energy budget; `-1` = genuinely unlimited (a sentinel `zeroinput.py`'s `discharge_times.update()` recognises and skips the budget check for entirely — not just a large placeholder that would eventually be exhausted by enough accumulated discharge), `000` = no budget (stop).
 
-The three modes are thus: `100 100 99999` (no limit), `<CAP_FACTOR×basic_load> 100 99999` (capped), `000 100 000` (stop). The energy_Wh field stays unlimited (`99999`) even in capped mode — the actual energy handed out is not bounded by this field, it follows from the reserve logic itself. The cap only limits instantaneous power: `basic_load` covers that hour's ordinary consumption, `CAP_FACTOR` (default 2×) leaves headroom for short spikes without provoking inefficient inverter staging — while staying far below any deliberately high load (e.g. EV charging), which is thereby reliably drawn from the grid instead of the battery.
+The three modes are thus: `100 100 -1` (no limit), `<CAP_FACTOR×basic_load> 100 -1` (capped), `000 100 000` (stop). The energy_Wh field stays unlimited (`-1`) even in capped mode — the actual energy handed out is not bounded by this field, it follows from the reserve logic itself. A merely large but finite placeholder would exhaust itself if `dirt_shift` ever stopped running for long enough: `zeroinput.py`'s energy counter only resets when the timer file's last line changes — once `dirt_shift` stops rewriting it, that stops happening, and enough genuinely discharged energy would eventually block even the failsafe line itself. `-1` is anchored as a real sentinel in `zeroinput.py` itself and has no such expiry — the budget check is skipped entirely for this value, regardless of how long or how much is discharged. The cap only limits instantaneous power: `basic_load` covers that hour's ordinary consumption, `CAP_FACTOR` (default 2×) leaves headroom for short spikes without provoking inefficient inverter staging — while staying far below any deliberately high load (e.g. EV charging), which is thereby reliably drawn from the grid instead of the battery.
 
 Values > 100 are interpreted as watts, values ≤ 100 as percent — as in the existing zeroinput timer format. zeroinput's `discharge_times` parser reads the lines in order and applies each line's values as long as its timestamp is in the past, stopping at the first line whose timestamp is still in the future (that is where it breaks) — the active state is always that of the last already-past line. Once dirt_shift stops running and both lines eventually fall into the past, the loop no longer breaks and runs through to the end instead, so the state settles on the **last** line in the file. Since that last line is always the failsafe line (`FREE`), or the single, already-free line in 'free' mode, the state settles into 'all allowed' on its own — without the file needing to be rewritten again.
 
@@ -191,6 +256,12 @@ dirt_shift's own keys in `dirt_shift.conf`:
 - `max_days_empty_battery` — how many days back to search for an 'empty' state
 - `disable_zeroinput_timer` — set to `true` to compute and print without writing the timer file (dry run)
 - `precharge_enabled` — optional, default `false`. Enables the precharge path (see there), which may cap `ac_%` below 100 for a single green hour to deliberately divert PV surplus into the battery instead of the house.
+- `wallbox_enabled` — optional, default `false`. Enables wallbox control (see there).
+- `wallbox_ip` — IP address of the Tasmota device switching the wallbox relay.
+- `wallbox_output` — Tasmota relay/output number (default `"1"`).
+- `wallbox_median_fraction` — relative dirtiness threshold for the wallbox, in percent of the day's median (default `30`).
+- `wallbox_absolute_max` — absolute dirtiness threshold for the wallbox, in `dirt%` (default `50`).
+- `wallbox_typical_power` — typical wallbox charging power in watts (default `2000`), used only for the quarter-hour look-ahead of the energy condition (see Wallbox) — not a metered value, a safety margin.
 
 `CAP_FACTOR` (default 2) is **not** a configuration option, but a named constant in the code (see Output: timer.txt) — deliberately not externally configurable, since it is a fixed, documented safety margin, not an installation-specific value.
 
@@ -199,7 +270,7 @@ dirt_shift's own keys in `dirt_shift.conf`:
 On a hard error (volkszähler returns no complete days, energy content not computable, SMARD data neither fresh nor available as a one-day substitute), `dirt_shift` aborts, but first — if the timer path is known — writes an "all-allowed" line so zeroinput is not blocked by a stale or missing limit:
 
 ```
-2026-07-09 00:00:00 100 100 99999
+2026-07-09 00:00:00 100 100 -1
 ```
 
 (full discharge, full pass-through, effectively unlimited energy budget, dated with the current date). If not even `zeroinput.conf` is readable (timer path unknown), only the abort with an error message remains.

@@ -97,6 +97,8 @@ What matters is that `basic_load` ends up as the actual house consumption to be 
 
 **Important regarding the wallbox:** because `Auto` is deliberately excluded from `basic_load`, `dirt_shift` does not see wallbox charging directly. Protection against a wallbox spike draining the battery instead of the grid instead comes from the zone logic itself — see "Discharge by zone" in the spec (green stops categorically as long as the reserve has not been reached; red caps to `CAP_FACTOR × basic_load` outside the dirtiest hour).
 
+**Optional: active wallbox control (`wallbox_enabled`, default `false`).** Independent of the passive exclusion above, `dirt_shift` can actively switch a wallbox's relay via a Tasmota device — switched on once the current hour meets two configurable dirtiness thresholds (`wallbox_median_fraction`, `wallbox_absolute_max`) plus `mode == free`. Only ever switches off what it switched on itself (a manual activation is left untouched, see the spec's "Wallbox" section). Details, including the retry/verification logic for switching, are in `dirt_shift_spec_en.md`.
+
 ### 4. Dry run to verify
 
 Before activation, a run without writing the timer file is recommended:
@@ -148,7 +150,7 @@ On each run the fresh energy content is fetched and `timer.txt` is rewritten wit
 On a hard error (volkszähler returns no complete days, energy content not computable, SMARD data neither fresh nor available as a one-day substitute), `dirt_shift` aborts, but first — if the timer path is known — writes an "all-allowed" line dated with the current date, so zeroinput is not blocked by a stale limit:
 
 ```
-2026-07-09 00:00:00 100 100 99999
+2026-07-09 00:00:00 100 100 -1
 ```
 
 Because the line carries a real calendar date, the free state persists on its own once the day is over — zeroinput's timer parser, walking through every already-past line, ends up keeping exactly this one, without the file needing to be rewritten again.
@@ -169,4 +171,4 @@ If not even `zeroinput.conf` is readable (timer path unknown), only the abort wi
 
 **Zone looks wrong, or three zones (including "yellow") still show up.** Since the switch to the median cut, `dirt_shift` only knows two zones (red/green). If yellow hours still appear, that is a **stale cache file** (`dirt_smard_cache.json`) from a run before the switch — SMARD is only refetched once per hour. Fix: `-avgnew` forces an immediate refetch, or delete the cache file.
 
-**Reserve is not protected as expected.** With `-debug`, the hourly overview table shows the actual `dirt%` and `zone` classification per hour, plus the `chg` column (`L`/`D`/`!D`/`!L`). The `red: content ... < reserve ... -> dirtiest hour HH:00` line in the `-v` output shows which hour currently counts as the dirtiest in the window. If that deviates noticeably from expectations, the usual cause is an ill-fitting `basic_load` formula (step 3), or a radiation forecast that doesn't match the actual weather (`-debug` table, `clr%` column).
+**Reserve is not protected as expected.** With `-debug`, the hourly overview table shows the actual `dirt%` and `zone` classification per hour, plus the `chg` column (`L`/`D`/`!D`/`!L`). The `content ... Wh   reserve(...%) ... Wh -> dirtiest  HH:MM   =>  mode: ...` line in the `-v` output shows which hour currently counts as the dirtiest in the window. If that deviates noticeably from expectations, the usual cause is an ill-fitting `basic_load` formula (step 3), or a radiation forecast that doesn't match the actual weather (`-debug` table, `clr%` column).
