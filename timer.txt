@@ -1,7 +1,7 @@
 # 0000-00-00 for daily repeating, space or tab separated
 #                   battery discharge W if > 100, percentage if <= 100
 # date     time     |   ac inverter power W if > 100, percentage if <= 100
-# |        |        |   |   energy limit in Wh
+# |        |        |   |   energy limit in Wh, -1 = unlimited
 0000-00-00 00:00:00 500 100 9990
 0000-00-00 06:00:00 100 100 9991
 0000-00-00 09:00:00 500 100 9992
