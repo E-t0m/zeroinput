@@ -557,7 +557,15 @@ def read_smard_zones():
 	day (the cache carries fetch_date; data fetched yesterday still passes —
 	its 'tomorrow' half was the day-ahead forecast for what is now today).
 	Anything older, or no cache at all, returns None — the caller then aborts
-	hard, leaving the all-allowed free timer."""
+	hard, leaving the all-allowed free timer.
+	The returned dict also carries 'backdate_ratio': the previous hour's
+	ratio (from the cache as it stood just before this call's refresh), only
+	ever non-None on the one run per hour that actually triggers a refresh —
+	every later run within the same hour finds the cache already current and
+	so has nothing to backdate. Purely for write_dirtiness_to_vz's backdated
+	point (see main()), letting volkszähler show a flat step up to the hour
+	boundary instead of interpolating a ramp between two hourly values; not
+	used anywhere else."""
 	vz_in = {}
 	if not avgnew:
 		try:
@@ -570,7 +578,13 @@ def read_smard_zones():
 	needs_refresh = (avgnew or last_ts is None or
 	                  datetime.fromtimestamp(last_ts).strftime('%Y-%m-%d %H') != datetime.now().strftime('%Y-%m-%d %H'))
 
+	backdate_ratio = None
 	if needs_refresh:
+		old_today = vz_in.get('today')
+		if old_today is not None:
+			prev_hour = (datetime.now().hour - 1) % 24
+			backdate_ratio = old_today['ratio'][prev_hour]			# value that was valid up to this hour's boundary
+
 		today, tomorrow = get_smard_zones()
 		if today is not None:
 			vz_in['today'] = today
@@ -603,10 +617,11 @@ def read_smard_zones():
 	else:
 		tomorrow = vz_in.get('tomorrow')
 	if tomorrow is None:
-		return {'zones': today['zones'], 'ratio': today['ratio'], 'stale': set(range(now_hour))}
+		return {'zones': today['zones'], 'ratio': today['ratio'], 'stale': set(range(now_hour)),
+		        'backdate_ratio': backdate_ratio}
 	zones = [today['zones'][h] if h >= now_hour else tomorrow['zones'][h] for h in range(24)]
 	ratio = [today['ratio'][h] if h >= now_hour else tomorrow['ratio'][h] for h in range(24)]
-	return {'zones': zones, 'ratio': ratio, 'stale': set()}
+	return {'zones': zones, 'ratio': ratio, 'stale': set(), 'backdate_ratio': backdate_ratio}
 
 
 def get_vz_bat_cap():
@@ -672,7 +687,7 @@ def get_vz_bat_cap():
 
 # ── dirt_shift core logic (verified separately) ───────────────────────────────
 
-def write_dirtiness_to_vz(value):
+def write_dirtiness_to_vz(value, ts_ms=None):
 	"""Best-effort: POST the current grid dirtiness value directly to
 	volkszähler's middleware API, once per run — no local file, no vzlogger
 	meter involved: POST http://{vz_host_port}/data/{vz_dirtiness_uuid}.json
@@ -689,13 +704,18 @@ def write_dirtiness_to_vz(value):
 	Returns True if the value reached volkszähler, False if the write was
 	attempted and failed, None if no UUID is configured (nothing attempted).
 	The debug table marks the written hour accordingly (see
-	_hourly_debug_table)."""
+	_hourly_debug_table). ts_ms is the volkszähler timestamp in milliseconds;
+	defaults to the real current time, but main() also calls this with an
+	explicit slot-boundary timestamp (and, once per hour, a second call 1s
+	before the boundary with the previous hour's value) so volkszähler shows
+	a flat step at the quarter-hour instead of interpolating a ramp between
+	two hourly values — see read_smard_zones' 'backdate_ratio'."""
 	uuid = conf.get('vz_dirtiness_uuid', '')
 	if not uuid:
 		return None
 	try:
 		url = 'http://%s/data/%s.json' % (conf['vz_host_port'], uuid)
-		resp = post(url=url, params={'value': value, 'ts': int(time() * 1000)}, timeout=10)
+		resp = post(url=url, params={'value': value, 'ts': ts_ms if ts_ms is not None else int(time() * 1000)}, timeout=10)
 		resp.raise_for_status()
 		return True
 	except Exception as e:
@@ -820,19 +840,28 @@ def wallbox_should_be_on(dirt_now, all_dirt, mode):
 	        and mode == 'free')
 
 
-def wallbox_decide(dirt_now, all_dirt, mode, content, owned, now, zones, basic_load, expected_pv):
-	"""Whether the wallbox should be on this run — genuinely different
-	depending on whether dirt_shift currently owns the relay ('owned'), not
-	a single symmetric threshold checked both ways. The energy side of the
-	decision uses its OWN reserve estimate — reserve_pct * upcoming_red_demand
-	(now, zones, basic_load, expected_pv) — in place of the main reserve
-	variable red_window_demand computes elsewhere in main(): that one
-	deliberately reads 0 for as long as 'now' itself sits within an assumed
-	PV-surplus stretch, which would make the wallbox's own energy check a
-	rubber stamp exactly when it matters most — a running wallbox can draw
-	far more than the day's actual remaining surplus (see upcoming_red_demand),
-	quietly eating into stored content the main reserve figure is trusting
-	will refill on its own. upcoming_red_demand's rough, always-available
+def wallbox_decide(dirt_now, all_dirt, mode, content, now, zones, basic_load, expected_pv):
+	"""Whether the wallbox should be on this run — one formula, checked the
+	same way regardless of whether dirt_shift currently owns the relay (see
+	main(), which still uses the owner marker separately to decide whether
+	an actual switch command is needed). Both paths run continuously side by
+	side, not just at switch-on:
+
+	  should_on = wallbox_should_be_on(dirt_now, all_dirt, mode) OR energy_ok
+
+	dirt%-based path (wallbox_should_be_on): both dirt% limits AND
+	mode == 'free'.
+
+	Energy-based path: (content - wallbox_typical_power * 0.25) > a
+	wallbox-specific reserve — reserve_pct * upcoming_red_demand(now, zones,
+	basic_load, expected_pv), in place of the main reserve variable
+	red_window_demand computes elsewhere in main(): that one deliberately
+	reads 0 for as long as 'now' itself sits within an assumed PV-surplus
+	stretch, which would make the wallbox's own energy check a rubber stamp
+	exactly when it matters most — a running wallbox can draw far more than
+	the day's actual remaining surplus (see upcoming_red_demand), quietly
+	eating into stored content the main reserve figure is trusting will
+	refill on its own. upcoming_red_demand's rough, always-available
 	estimate closes that gap by never reading 0 just because 'now' happens
 	to be a surplus hour. Compared directly against current content, with no
 	projected future surplus added on top — deliberately conservative, since
@@ -841,36 +870,30 @@ def wallbox_decide(dirt_now, all_dirt, mode, content, owned, now, zones, basic_l
 	replacement is scoped to the wallbox only; the main reserve variable and
 	the rest of main()'s mode decision are untouched.
 
-	NOT currently owned: switches on if EITHER the existing dirt%-based
-	condition holds (wallbox_should_be_on: both dirt% limits AND
-	mode == 'free') OR there is simply enough battery content to spare —
-	(content - wallbox_typical_power * 0.25) > this wallbox-specific
-	reserve, i.e. even a full quarter-hour of typical wallbox draw would not
-	touch it. This second path lets a comfortably full battery get used
-	even during an hour that would not otherwise qualify on cleanliness
-	alone — the point is to actually exploit surplus content, not leave it
-	sitting unused just because the current hour happens to be dirty.
+	Because both paths run continuously, a relay dirt_shift itself switched
+	on via one path stays on as long as EITHER path still holds — it only
+	switches off once both fail at the same time. This deliberately differs
+	from a relay switched on manually: that one is left alone entirely,
+	however dirty or energy-short it gets, for as long as dirt_shift never
+	owns it (see the marker logic in main()) — a completely separate
+	protection, not implemented via this function at all.
 
-	Currently owned: stays on regardless of dirt% — the dirt%-based
-	thresholds are deliberately not re-checked once running, only the
-	energy safety net is: switches off once (content - wallbox_typical_power
-	* 0.25) would drop to or below the wallbox-specific reserve, i.e. one
-	more quarter-hour of typical draw would start eating into it. Note this
-	does NOT reliably subsume the old 'limit'/'stop' mode -> off rule: when
-	several red blocks lie before the next true surplus hour,
-	upcoming_red_demand (only the first block) can be smaller than the main
-	reserve (all of them summed), so the wallbox-specific check can in that
-	case be looser than the main mode's own protection — an accepted
-	trade-off of a deliberately rough, single-block estimate, not a
-	guarantee.
+	Note this does NOT reliably subsume the old 'limit'/'stop' mode -> off
+	rule via the energy path alone: when several red blocks lie before the
+	next true surplus hour, upcoming_red_demand (only the first block) can
+	be smaller than the main reserve (all of them summed), so the
+	wallbox-specific energy check can in that case be looser than the main
+	mode's own protection — an accepted trade-off of a deliberately rough,
+	single-block estimate, not a guarantee. The dirt%-based path still
+	requires mode == 'free', though, which 'limit'/'stop' both violate by
+	definition — so a relay kept on purely via the dirt%-based path is
+	unaffected by this gap; it only applies to the energy-based path.
 
 	Precharge (see precharge_ac_pct) never enters this decision either way —
 	the two remain fully independent."""
 	wallbox_reserve = conf['reserve_pct'] * 0.01 * upcoming_red_demand(now, zones, basic_load, expected_pv)
 	margin = conf['wallbox_typical_power'] * 0.25
 	energy_ok = (content - margin) > wallbox_reserve
-	if owned:
-		return energy_ok
 	return wallbox_should_be_on(dirt_now, all_dirt, mode) or energy_ok
 
 
@@ -1231,7 +1254,12 @@ def main():
 	_voltage, content = get_vz_bat_cap()
 
 	r = grid_data['ratio'][now.hour]
-	dirt_written = write_dirtiness_to_vz((1.0 - r) * 100) if r is not None else None
+	slot = now.replace(second=0, microsecond=0, minute=(now.minute // 15) * 15)
+	slot_ms = int(slot.timestamp() * 1000)
+	backdate_ratio = grid_data.get('backdate_ratio')
+	if backdate_ratio is not None:
+		write_dirtiness_to_vz((1.0 - backdate_ratio) * 100, slot_ms - 1000)	# flat step: previous hour's value, 1s before the boundary
+	dirt_written = write_dirtiness_to_vz((1.0 - r) * 100, slot_ms) if r is not None else None
 	if debug:
 		_hourly_debug_table(now, pv_curve, radiation, expected_pv, basic_load, grid_data, dirt_written, radiation_stale)
 
@@ -1291,7 +1319,7 @@ def main():
 		dirt_now = (1.0 - r) * 100 if r is not None else None
 		all_dirt = [(1.0 - x) * 100 if x is not None else None for x in grid_data['ratio']]
 		marker = read_wallbox_marker()
-		should_on = wallbox_decide(dirt_now, all_dirt, mode, content, marker, now, zones, basic_load, pv_for_reserve)
+		should_on = wallbox_decide(dirt_now, all_dirt, mode, content, now, zones, basic_load, pv_for_reserve)
 		action = 'none'
 		if should_on and not marker:
 			action = 'switch on (verified)' if wallbox_switch(conf['wallbox_ip'], conf['wallbox_output'], True) else 'switch on FAILED'
