@@ -37,9 +37,14 @@
 #      red: free discharge if content already covers the reserve. If it
 #      falls short, the single dirtiest red hour in the window is served
 #      unrestricted (see dirtiest_hour) — every other red hour in the window
-#      is capped to CAP_FACTOR * basic_load for that hour instead, so a load
-#      above ordinary consumption (e.g. EV charging) is forced onto the grid,
-#      preserving content for the dirtiest hour.
+#      is capped by two independent limits at once instead: a discharge-rate
+#      cap (limit_discharge_rate, Watt, config) and a fixed quarter-hour
+#      energy budget (1/4 * (reserve_pct * basic_load - expected PV) for
+#      that hour, Wh — scaled by reserve_pct like the reserve itself, net
+#      of the PV still expected in it). Together they
+#      force both a brief high-power spike (e.g. EV charging) and a smaller
+#      but sustained excess load onto the grid, preserving content for the
+#      dirtiest hour.
 #   4. pvpt (direct PV pass-through) is always granted, independent of all this.
 #   5. runs every 1/4h, re-writing timer.txt with fresh battery content and zone.
 
@@ -64,7 +69,6 @@ CLEAR_SKY_B          = 0.059	# Haurwitz clear-sky GHI model exponent coefficient
 SMARD_REGION        = 'DE'		# SMARD region code (see the SMARD API's region parameter)
 SMARD_FILTER_WIND_SOLAR = 5097	# 'Prognostizierte Erzeugung: Wind und Photovoltaik' (day-ahead, combined)
 SMARD_FILTER_LOAD       = 411	# 'Prognostizierter Verbrauch' (day-ahead) — less firmly confirmed than the generation filter, but the fallback below covers a wrong/broken value
-CAP_FACTOR = 2	# discharge cap while withholding a non-priority red hour: CAP_FACTOR * basic_load[hour] — enough headroom for ordinary short spikes without inviting inefficient inverter staging, still far below any deliberate high-power load (e.g. EV charging), which stays forced onto the grid
 
 def write_free_timer(path):
 	"""On any hard error, write an 'all allowed' timer so zeroinput is never
@@ -103,9 +107,10 @@ except Exception:
 # pull shared values from zeroinput.conf (read-only, never duplicated here):
 #   discharge_t_file           — the timer file zeroinput reads (we write it)
 #   cell_count                 — battery cell count for the empty-voltage anchor
-# (the discharge cap for a non-priority red hour is CAP_FACTOR * basic_load,
-# a local constant — unrelated to any inverter staging threshold in
-# zeroinput.conf.)
+# (the discharge cap for a non-priority red hour combines limit_discharge_rate
+# from dirt_shift.conf with a fixed quarter-hour energy budget, 1/4 *
+# (reserve_pct * basic_load - expected PV) — unrelated to any inverter
+# staging threshold in zeroinput.conf.)
 try:
 	_zi_path = join(dirname(__file__), conf['zeroinput_conf'])
 	with open(_zi_path, 'r') as fi:
@@ -827,7 +832,8 @@ def wallbox_should_be_on(dirt_now, all_dirt, mode):
 	no hour clears the two dirt% limits, the wallbox may still end up
 	charging in that one reddest hour, since 'free' holds there too. This is
 	an accepted consequence of reusing 'free' rather than a flaw —
-	reserve_pct and CAP_FACTOR already handle the reserve itself; the
+	reserve_pct and the discharge limit (limit_discharge_rate plus the
+	quarter-hour energy budget) already handle the reserve itself; the
 	wallbox is not held to a stricter standard than the battery is.
 	Precharge (see precharge_ac_pct) never enters this decision — the two
 	are fully independent. False if dirt_now or every entry in all_dirt is
@@ -1285,13 +1291,17 @@ def main():
 	# free. If it falls short, the single dirtiest red hour in the window (see
 	# dirtiest_hour) is served without limit — that is where the reserve, such
 	# as it is, is spent — while every other red hour in the window is capped
-	# to CAP_FACTOR * basic_load[that hour], so only that hour's own ordinary
-	# consumption draws from the battery; anything above it (e.g. EV charging)
-	# is forced onto the grid instead, preserving content for the dirtiest
-	# hour. Since the window is rebuilt fresh every run from the current
-	# 'now', a dirtiest hour already in the past simply falls out of a later
-	# run's window — the next-dirtiest hour remaining becomes free in its own
-	# right, without any extra bookkeeping.
+	# by two independent limits at once (see write_timer): a discharge-rate
+	# cap (limit_discharge_rate, Watt, config) and a fixed quarter-hour
+	# energy budget (1/4 * (reserve_pct * basic_load[that hour] - expected
+	# PV), Wh — scaled by reserve_pct and net of the PV still expected in
+	# it, the same reserve_pct and netting red_window_demand already
+	# applies to the reserve above). Anything above either
+	# limit (e.g. EV charging) is forced onto the grid instead, preserving
+	# content for the dirtiest hour. Since the window is rebuilt fresh every
+	# run from the current 'now', a dirtiest hour already in the past simply
+	# falls out of a later run's window — the next-dirtiest hour remaining
+	# becomes free in its own right, without any extra bookkeeping.
 	if zone == 'green':
 		mode = 'free' if content > reserve else 'stop'
 		detail = ''
@@ -1313,7 +1323,7 @@ def main():
 			print('precharge: ac capped to %d%% this hour (see precharge_ac_pct)' % ac_pct)
 
 	if not conf['disable_zeroinput_timer']:
-		write_timer(mode, now, basic_load[now.hour], ac_pct)
+		write_timer(mode, now, basic_load[now.hour], ac_pct, pv_for_reserve[now.hour])
 
 	if conf.get('wallbox_enabled', False):
 		dirt_now = (1.0 - r) * 100 if r is not None else None
@@ -1345,7 +1355,7 @@ def main():
 	return 0
 
 
-def write_timer(mode, now, basic_load_now, ac_pct=100):
+def write_timer(mode, now, basic_load_now, ac_pct=100, expected_pv_now=0.0):
 	"""Write timer.txt in the zeroinput format:
 	  date time | discharge_W  ac_W  energy_Wh   (<=100 = percent, >100 = watt)
 	Each line carries the real calendar date it was written for. pvpt (ac
@@ -1354,25 +1364,35 @@ def write_timer(mode, now, basic_load_now, ac_pct=100):
 	the single cleanest green hour in the window, to divert PV surplus that
 	would otherwise go to pvpt into the battery instead. Outside that path,
 	ac_pct is always 100. Battery discharge is steered by 'mode':
-	  free  -> no discharge limit                              '100 <ac> -1'
-	  limit -> capped at CAP_FACTOR * basic_load_now (Watt)     '<cap> <ac> -1'
+	  free  -> no discharge limit                            '100 <ac> -1'
+	  limit -> two independent caps apply together (below)   '<rate> <ac> <budget>'
 	  stop  -> no discharge, pvpt at ac_pct (100 outside precharge) '000 <ac> 000'
-	The energy_Wh field is -1 (a sentinel zeroinput's discharge_times.update()
-	treats as 'no energy cap at all', skipping the hourly-budget check
-	entirely — see zeroinput.py) in both 'free' and 'limit' mode: the actual
-	energy handed out is bounded by the slot's own Wh budget (computed
-	elsewhere, via the reserve logic), not by this timer field. A merely
-	large but finite placeholder would eventually be exhausted by real
-	accumulated discharge if dirt_shift ever stopped running for an
-	extended stretch — the energy counter only resets when the timer file's
-	last line changes, which stops happening once dirt_shift is no longer
-	rewriting it — silently turning the failsafe line itself into a
-	discharge block after enough elapsed time; -1 has no such expiry. The
-	discharge cap only limits the instantaneous power: basic_load_now covers
-	the hour's own ordinary consumption, CAP_FACTOR (2x) leaves headroom for
-	short spikes without inviting inefficient inverter staging, while
-	staying far below any deliberate high-power load (e.g. EV charging),
-	which stays forced onto the grid instead of the battery.
+	'limit' combines two caps that each close a gap the other leaves open:
+	  - a discharge-RATE cap, limit_discharge_rate (Watt, dirt_shift.conf) —
+	    a fixed, installation-specific ceiling on instantaneous power. Set it
+	    very high to make this cap effectively unrestricted, leaving only
+	    the energy budget below in effect.
+	  - an ENERGY budget for the current 1/4h slot only, round(0.25 *
+	    max(0, reserve_pct * basic_load_now * 0.01 - expected_pv_now)) Wh —
+	    the hour's own ordinary quarter-hour share, scaled by reserve_pct
+	    (dirt_shift.conf) exactly like the reserve itself, and net of the
+	    PV still expected in it (pvpt covers that part directly, so it need
+	    not also come from the battery — the same reserve_pct scaling and
+	    PV netting red_window_demand already applies to the reserve itself,
+	    see main()). Not a config value of its own. A rate cap alone
+	    would still let a load that is small but sustained drain the
+	    battery over the full hour; an energy budget alone would still let
+	    a brief high-power spike through before it is exhausted. Together
+	    neither gets through.
+	A single slot's budget is enough: dirt_shift rewrites timer.txt every 1/4h
+	with a fresh budget for the new slot, and zeroinput's energy counter
+	resets whenever the timer file's last line changes (see
+	discharge_times.update() in zeroinput.py) — which happens on every run
+	while 'limit' is in effect, since the failsafe line 30 min out (below)
+	moves forward with 'now' each time. The energy_Wh field is -1 (a
+	sentinel discharge_times.update() treats as 'no energy cap at all',
+	skipping the budget check entirely) only in 'free' mode, where none is
+	needed.
 	dirt_shift is optional and must never block normal operation, so the plan is
 	a short chain re-written every run:
 	  - the current 1/4h slot in the chosen mode and ac_pct;
@@ -1388,10 +1408,11 @@ def write_timer(mode, now, basic_load_now, ac_pct=100):
 	the file settles on the safe, unrestricted state on its own rather than
 	re-arming the same limit every day."""
 	ac_pct = max(0, min(100, round(ac_pct)))
-	cap = round(CAP_FACTOR * basic_load_now)
+	rate   = round(conf['limit_discharge_rate'])
+	budget = round(0.25 * max(0.0, basic_load_now * conf['reserve_pct'] * 0.01 - expected_pv_now))
 	FREE  = '100 100 -1'									# full discharge, full pvpt, no energy cap — the failsafe line, always fully unrestricted
 	payload = {'free': '100 %3d -1' % ac_pct,
-	           'limit': '%3d %3d -1' % (cap, ac_pct),
+	           'limit': '%d %3d %d' % (rate, ac_pct, budget),
 	           'stop': '000 %3d 000' % ac_pct}[mode]
 
 	lines = []

@@ -74,7 +74,7 @@ Pro Lauf (¼-stündlich) bestimmen die aktuelle Zone, der Akkuinhalt im Vergleic
 - **grün, Inhalt ≤ Reserve** → **kein Akku-Entladen**: nur `pvpt` (`000 100 000`). Der genaue Gleichstand (Inhalt exakt gleich der Reserve) zählt als „noch nicht erreicht" — Stopp, nicht frei.
 - **rot, Inhalt ≥ Reserve** → **kein Limit**: die Reserve reicht komfortabel, keine Drosselung nötig.
 - **rot, Inhalt < Reserve, laufende Stunde ist die dreckigste im Fenster** → **kein Limit**: hier wird die (unzureichende) Reserve bewusst verbraucht.
-- **rot, Inhalt < Reserve, laufende Stunde ist *nicht* die dreckigste im Fenster** → **gedeckelt** auf `CAP_FACTOR × basic_load` dieser Stunde (siehe Rot-Reserve und dreckigste Stunde).
+- **rot, Inhalt < Reserve, laufende Stunde ist *nicht* die dreckigste im Fenster** → **gedeckelt** auf `limit_discharge_rate` (Watt, Konfiguration) **und gleichzeitig** auf ein Viertelstunden-Energiebudget von `¼ × (reserve_pct × basic_load − erwartete PV)` dieser Stunde (siehe Rot-Reserve und dreckigste Stunde).
 
 `pvpt` (direkte PV-Durchleitung) läuft in jedem Fall in allen Zonen weiter; `dirt_shift` steuert ausschließlich die Batterieentladung.
 
@@ -90,13 +90,13 @@ Zur Netto-Rechnung: `pvpt` deckt einen Teil dieses Bedarfs bereits direkt ab (an
 
 ### Wenn die Reserve knapp wird: die dreckigste Stunde zuerst
 
-Reicht der aktuelle Inhalt nicht für die Reserve (`content < reserve`), wird nicht mehr pauschal jede rote Stunde unbegrenzt bedient. Stattdessen wird im selben Fenster (jetzt bis zur nächsten Überschussstunde) die **eine** rote Stunde mit dem höchsten `dirt%` bestimmt — bei gleichauf zählt die chronologisch früheste im Fenster. Nur diese Stunde bleibt unbegrenzt; jede andere rote Stunde im Fenster wird auf `CAP_FACTOR × basic_load` dieser Stunde gedeckelt (siehe Entladung nach Zone).
+Reicht der aktuelle Inhalt nicht für die Reserve (`content < reserve`), wird nicht mehr pauschal jede rote Stunde unbegrenzt bedient. Stattdessen wird im selben Fenster (jetzt bis zur nächsten Überschussstunde) die **eine** rote Stunde mit dem höchsten `dirt%` bestimmt — bei gleichauf zählt die chronologisch früheste im Fenster. Nur diese Stunde bleibt unbegrenzt; jede andere rote Stunde im Fenster wird gleichzeitig auf `limit_discharge_rate` (Watt) **und** auf `¼ × (reserve_pct × basic_load − erwartete PV)` dieser Stunde (Wh, Viertelstunden-Energiebudget) gedeckelt (siehe Entladung nach Zone).
 
 Das Fenster wird bei **jedem** Lauf frisch ab der aktuellen Uhrzeit neu aufgebaut — eine bereits vergangene dreckigste Stunde fällt beim nächsten Lauf einfach aus dem (jetzt kürzeren) Fenster heraus, und die dann verbleibend dreckigste Stunde wird automatisch frei, ohne dass dafür eine gesonderte Regel nötig wäre. Grüne Stunden innerhalb des Fensters zählen dabei nicht mit — nur rote Stunden werden untereinander verglichen.
 
 Die `-v`-Ausgabe zeigt die ermittelte dreckigste Stunde in der Zeile `content ... Wh   reserve(...%) ... Wh -> dirtiest  HH:MM   =>  mode: ...`; in der `-debug`-Tabelle trägt dieselbe Stunde ein führendes `!` an ihrer `chg`-Markierung (`!D`, gegenüber schlichtem `D` für jede andere Entlade-Stunde). Die `chg`-Spalte zeigt außerdem `L` für jede Ladestunde (`exp_PV > basic_load`), mit derselben `!`-Markierung (`!L`) für die sauberste Ladestunde des ganzen Tages — rein informativ, ohne Einfluss auf die Entscheidung. Eine eigene `balance`-Spalte zeigt `exp_PV − basic_load` vorzeichenbehaftet (leer bei `exp_PV = 0`, da dann redundant zu `basic_load`). Stunden, die im rollierenden Array eigentlich „morgen" abbilden sollen, aber mangels echter Morgen-Daten noch auf heutige Werte zurückgreifen (siehe CO₂-Intensitätsprofil und Wetterprognose-Skalierung), tragen ein führendes `.` — unabhängig voneinander auf `rad_Wm2` (Strahlungsprognose) und `dirt%` (SMARD-Einstufung), je nachdem welche der beiden Quellen für diese Stunde noch keine echten Morgen-Daten hatte. Eine abschließende Zeile summiert `exp_PV` und `basic_load` je über alle 24 Stunden, bildet deren Differenz (die Tagesbilanz) sowie den unbewichteten `dirt%`-Durchschnitt (`Ø`) über alle SMARD-abgedeckten Stunden.
 
-Die Priorisierung wirkt an genau einer Stelle: welche Stunde `free` statt `limit` bekommt. Sie reserviert keine Wh explizit für die dreckigste Stunde gegenüber den anderen roten Stunden im selben Fenster — eine nicht-priorisierte rote Stunde bleibt bis `CAP_FACTOR × basic_load` (Standard 2×) offen, nicht auf `1× basic_load` begrenzt, wie es die Reserve-Rechnung selbst voraussetzt (`red_window_demand`/`marginal_red_hour` gehen von `1× basic_load` je Stunde aus). Zieht eine nicht-priorisierte Stunde real mehr, bleibt für die dreckigste Stunde entsprechend weniger übrig, als die Reserve-Rechnung unterstellt.
+Die Priorisierung wirkt an genau einer Stelle: welche Stunde `free` statt `limit` bekommt. Sie reserviert keine Wh explizit für die dreckigste Stunde gegenüber den anderen roten Stunden im selben Fenster — eine nicht-priorisierte rote Stunde ist stattdessen über das Viertelstunden-Energiebudget selbst begrenzt: auf `reserve_pct × basic_load − erwartete PV` je Stunde (vier Viertelstunden zu je `¼` davon). `reserve_pct` skaliert dabei denselben Anteil des Bedarfs wie bei der Reserve-Berechnung selbst; die erwartete PV wird unabhängig davon in voller Höhe abgezogen, da sie ohnehin unbegrenzt per `pvpt` fließt und daher nicht anteilig „reserviert" werden muss. Der zusätzliche `limit_discharge_rate`-Deckel (Watt) begrenzt dabei nur die Momentanleistung innerhalb der Viertelstunde, nicht die insgesamt entnommene Energiemenge.
 
 ---
 
@@ -141,11 +141,15 @@ Mit `wallbox_enabled: true` schaltet `dirt_shift` das Relais einer E-Auto-Wallbo
 
 **Einschalten und Ausschalten sind keine Gegenteile voneinander** — je nachdem, ob `dirt_shift` das Relais gerade selbst besitzt (siehe Besitzer-Merker unten), gelten unterschiedliche Kriterien:
 
-### Einschalten (Relais nicht in eigenem Besitz)
+### Ein einziges Kriterium, durchgehend geprüft
 
-Eine von zwei Bedingungen reicht:
+Anders als man vermuten könnte, gibt es **keine** unterschiedlichen Kriterien fürs Ein- und fürs Ausschalten — dieselbe Formel gilt fortlaufend, bei jedem Lauf neu, unabhängig davon, ob `dirt_shift` das Relais gerade schon besitzt:
 
-**a) Sauberkeits-Schwellen erfüllt** — zwei Grenzwerte, beide müssen zutreffen:
+```
+should_on = Sauberkeits-Bedingung   ODER   Energie-Bedingung
+```
+
+**Sauberkeits-Bedingung** — zwei Grenzwerte, beide müssen zutreffen:
 ```
 dirt%[jetzt] ≤ wallbox_median_fraction % × Median-dirt% des Tages   UND
 dirt%[jetzt] ≤ wallbox_absolute_max
@@ -154,7 +158,7 @@ dirt%[jetzt] ≤ wallbox_absolute_max
 
 Zusätzlich muss dabei der Entlademodus `free` sein — das deckt implizit ab, dass weder `limit` (siehe Rot-Reserve und dreckigste Stunde: `basic_load` selbst ist schon gedeckelt, die Wallbox darf dieses Budget nicht zusätzlich beanspruchen) noch `stop` (grüne Zone, Reserve noch nicht erreicht) vorliegt.
 
-**b) Genug Energie übrig, unabhängig von der Sauberkeit:**
+**Energie-Bedingung** — unabhängig von der Sauberkeit:
 ```
 content − wallbox_typical_power × 0,25 h  >  reserve_pct × upcoming_red_demand
 ```
@@ -162,17 +166,11 @@ Hier zählt **nicht** die reguläre `reserve` (die überall sonst in `dirt_shift
 
 `upcoming_red_demand` wird bewusst **direkt gegen den aktuellen `content`** verglichen, ohne einen erwarteten künftigen Überschuss dazuzurechnen — genau der Überschuss, auf den man sich sonst verlassen würde, ist ja derjenige, den die Wallbox selbst aufzehren könnte. Die Schätzung deckt dabei nur den **einen** nächsten roten Block ab, nicht mehrere getrennte rote Phasen bis zur nächsten echten Überschussstunde wie `red_window_demand` — bewusst grob, dafür jederzeit verfügbar, auch mitten in einer Überschussphase.
 
-### Ausschalten (nur wenn `dirt_shift` das Relais selbst besitzt)
+**Warum beide Bedingungen durchgehend gelten, nicht nur beim Einschalten:** Weil beide Pfade gleichberechtigt und gleichzeitig laufen sollen — eine Stunde, die sauber genug ist, darf laden, auch wenn die Energie-Bedingung (noch) nicht erfüllt ist, und umgekehrt darf ein komfortabel gefüllter Akku laden, auch wenn es gerade dreckig ist. Ein Relais, das `dirt_shift` selbst eingeschaltet hat, bleibt deshalb an, solange **mindestens eine** der beiden Bedingungen weiter zutrifft, und schaltet erst ab, wenn **beide gleichzeitig** nicht mehr erfüllt sind.
 
-Die Sauberkeits-Schwellen von oben werden **bewusst nicht erneut geprüft**, solange das Relais läuft — einmal gestartet, bleibt es an, egal wie dreckig es zwischenzeitlich wird. Einzig dieselbe Energie-Bedingung wie oben entscheidet, jetzt umgekehrt:
-```
-content − wallbox_typical_power × 0,25 h  ≤  reserve_pct × upcoming_red_demand  →  ausschalten
-```
-Eine weitere Viertelstunde typischer Last würde diese wallbox-eigene Reserve antasten oder unterschreiten.
+**Wichtige Einschränkung, kein Versehen:** Die wallbox-eigene Energie-Bedingung deckt `limit`/`stop` nicht zuverlässig mit ab, wenn man sich allein auf sie verlässt. Liegen mehrere getrennte rote Phasen vor der nächsten echten Überschussstunde, summiert die reguläre `reserve` alle davon, während `upcoming_red_demand` nur die erste erfasst und deshalb **kleiner** ausfallen kann. Die Sauberkeits-Bedingung verlangt aber ohnehin `mode == free`, was `limit`/`stop` per Definition ausschließt — betroffen ist also nur der Fall, dass ein Relais **ausschließlich** über die Energie-Bedingung am Laufen gehalten wird, während `limit`/`stop` gilt.
 
-**Wichtige Einschränkung, kein Versehen:** Diese wallbox-eigene Reserve **ersetzt** die reguläre `reserve` für die Wallbox vollständig — sie deckt `limit`/`stop` deshalb **nicht zuverlässig** mit ab. Liegen mehrere getrennte rote Phasen vor der nächsten echten Überschussstunde, summiert die reguläre `reserve` alle davon, während `upcoming_red_demand` nur die erste erfasst und deshalb **kleiner** ausfallen kann. In einem solchen Fall kann die wallbox-eigene Prüfung lockerer ausfallen als der reguläre `limit`/`stop`-Schutz — eine bewusst in Kauf genommene Folge der groben, auf nur einen Block beschränkten Schätzung.
-
-Eine Randbedingung, die aus der Wiederverwendung von `free` beim Einschalten folgt: In der roten Zone gilt `free` auch an der **dreckigsten Stunde selbst** (dort soll die Reserve bewusst verbraucht werden), unabhängig vom Akkuinhalt. In einer durchgehend „tiefroten" Nacht, in der keine Stunde die beiden Sauberkeits-Schwellen von sich aus erreicht, kann die Wallbox deshalb ausnahmsweise doch in der roten dreckigsten Stunde zu laden beginnen, sofern diese selbst noch unter `wallbox_absolute_max` bleibt — eine bewusst akzeptierte Randbedingung, keine Lücke.
+Eine Randbedingung, die aus der Sauberkeits-Bedingung folgt: In der roten Zone gilt `free` auch an der **dreckigsten Stunde selbst** (dort soll die Reserve bewusst verbraucht werden), unabhängig vom Akkuinhalt. In einer durchgehend „tiefroten" Nacht, in der keine Stunde die beiden Sauberkeits-Schwellen von sich aus erreicht, kann die Wallbox deshalb ausnahmsweise doch in der roten dreckigsten Stunde zu laden beginnen, sofern diese selbst noch unter `wallbox_absolute_max` bleibt — eine bewusst akzeptierte Randbedingung, keine Lücke.
 
 **Precharge (siehe dort) hat keinen Einfluss auf die Wallbox** — beide Mechanismen laufen vollständig unabhängig nebeneinander.
 
@@ -221,11 +219,13 @@ YYYY-MM-DD HH:MM:00  <entlade-W>  <ac-%>  <energie-Wh>
 ```
 
 - Jede Zeile trägt das reale Kalenderdatum, an dem sie geschrieben wurde.
-- **entlade-W** — Entlade-Deckel; `100` (Prozent) = kein Limit, `CAP_FACTOR × basic_load` (Watt) = gedeckelt, `000` = kein Akku-Entladen (Stopp).
+- **entlade-W** — Entlade-Deckel; `100` (Prozent) = kein Limit, `limit_discharge_rate` (Watt, Konfiguration) = gedeckelt, `000` = kein Akku-Entladen (Stopp).
 - **ac-%** — Wechselrichter-Durchleitung, `100` (pvpt garantiert), außer während einer aktiven Precharge-Drosselung (siehe dort): dann für genau die eine sauberste grüne Kandidatenstunde ein stetiger Wert zwischen `0` und `100`.
-- **energie-Wh** — Energiebudget; `-1` = echt unbegrenzt (ein Sentinel, den `zeroinput.py`s `discharge_times.update()` erkennt und den Budget-Check dafür komplett überspringt — kein bloß großer Platzhalterwert, der bei genug akkumulierter Entladung doch irgendwann aufgebraucht wäre), `000` = kein Budget (Stopp).
+- **energie-Wh** — Energiebudget; im gedeckelten Modus `¼ × (reserve_pct × basic_load − erwartete PV)` dieser Stunde, mindestens 0 (die tatsächliche Wh-Zuteilung für genau die laufende Viertelstunde), sonst `-1` = echt unbegrenzt (ein Sentinel, den `zeroinput.py`s `discharge_times.update()` erkennt und den Budget-Check dafür komplett überspringt), `000` = kein Budget (Stopp).
 
-Die drei Modi sind also: `100 100 -1` (kein Limit), `<CAP_FACTOR×basic_load> 100 -1` (gedeckelt), `000 100 000` (Stopp). Das Wh-Energiefeld bleibt auch im gedeckelten Modus unbegrenzt (`-1`) — die tatsächlich abgegebene Energiemenge wird nicht hierüber begrenzt, sondern ergibt sich aus der Reserve-Logik selbst. Ein bloß großer, aber endlicher Platzhalterwert würde sich bei einem lang genug ausgefallenen `dirt_shift` selbst erschöpfen: `zeroinput.py`s Energiezähler wird nur zurückgesetzt, wenn sich die letzte Zeile der Timer-Datei ändert — schreibt `dirt_shift` nicht mehr, passiert das nicht mehr, und genug real entladene Energie würde irgendwann sogar die Ausfallsicherungs-Zeile selbst blockieren. `-1` ist als echter Sentinel in `zeroinput.py` selbst verankert und kennt diese Erschöpfung nicht — der Budget-Check wird für diesen Wert komplett übersprungen, unabhängig davon, wie lange oder wie hoch entladen wird. Der Deckel begrenzt nur die Momentanleistung: `basic_load` deckt den gewöhnlichen Verbrauch dieser Stunde, `CAP_FACTOR` (Standard 2×) lässt Spielraum für kurze Lastspitzen, ohne eine ineffiziente Wechselrichter-Stufenschaltung zu provozieren — bleibt aber weit unter jeder bewusst hohen Last (z. B. E-Auto-Ladung), die dadurch zuverlässig aus dem Netz statt aus dem Akku gedeckt wird.
+Die drei Modi sind also: `100 100 -1` (kein Limit), `<limit_discharge_rate> 100 <¼×(reserve_pct×basic_load−PV)>` (gedeckelt), `000 100 000` (Stopp). Im gedeckelten Modus wirken zwei Deckel gleichzeitig und schließen sich gegenseitig die Lücke: `limit_discharge_rate` begrenzt nur die Momentanleistung — eine dauerhaft erhöhte, aber unterhalb dieser Schwelle bleibende Last liefe daran vorbei unbegrenzt weiter. Das Wh-Feld begrenzt dagegen die insgesamt entnommene Energiemenge dieser Viertelstunde auf `¼ × (reserve_pct × basic_load − erwartete PV)` — `reserve_pct` (Standard 90 %) skaliert dabei denselben Anteil des Bedarfs, den auch die Reserve-Berechnung ansetzt, statt nicht-priorisierten Stunden den vollen Bedarf zu erlauben; die PV wird davon unabhängig in voller Höhe abgezogen, weil `pvpt` sie in dieser Stunde ohnehin schon direkt durchleitet und sie nicht zusätzlich aus dem Akku kommen muss. Eine Stunde lang genug (Watt) und hoch genug (Wh) zu ziehen, umgeht daher keinen der beiden Deckel. `limit_discharge_rate` ist eine anlagenspezifische Konfiguration; das Wh-Budget ist fest und braucht keinen eigenen Konfigurationseintrag, da es sich direkt aus `basic_load`, `reserve_pct` und der Strahlungsprognose ergibt. Ein Handlauf setzt `limit_discharge_rate` sehr hoch, um den Leistungsdeckel de facto zu deaktivieren und ausschließlich über das Energiebudget zu begrenzen.
+
+Da `dirt_shift` jede Viertelstunde neu schreibt und sich damit die letzte Zeile der Timer-Datei bei jedem Lauf ändert, reicht ein einzelnes Viertelstunden-Budget je Lauf aus: `zeroinput.py`s Energiezähler wird genau dann zurückgesetzt (siehe `discharge_times.update()`), sodass die nächste Viertelstunde ihr eigenes frisches Budget bekommt. Nur wenn `dirt_shift` selbst ausfällt, bleibt die letzte geschriebene Zeile stehen und der Zähler läuft nicht mehr leer — dafür sorgt dann die Ausfallsicherung (siehe dort), die nach 30 Minuten ohnehin auf „alles erlaubt" umschaltet.
 
 Werte > 100 werden als Watt interpretiert, Werte ≤ 100 als Prozent — wie im bestehenden zeroinput-Timer-Format. zeroinputs `discharge_times`-Parser liest die Zeilen der Reihe nach und übernimmt für jede Zeile mit Zeitstempel in der Vergangenheit deren Werte, bis er auf die erste Zeile mit Zeitstempel in der Zukunft trifft (dort bricht er ab) — der aktive Zustand ist damit immer der der letzten bereits vergangenen Zeile. Läuft `dirt_shift` nicht mehr und liegen irgendwann beide Zeilen in der Vergangenheit, bricht die Schleife nicht mehr ab, sondern läuft bis zum Ende durch — der Zustand landet dann bei der **letzten** Zeile der Datei. Da diese letzte Zeile bei `dirt_shift` immer die Ausfallsicherungs-Zeile (`FREE`) bzw. bei Modus `free` die einzige, ohnehin freie Zeile ist, stellt sich der Zustand von selbst dauerhaft auf „alles erlaubt" — ohne dass die Datei erneut geschrieben werden muss.
 
@@ -250,7 +250,8 @@ dirt_shift-eigene Schlüssel in `dirt_shift.conf`:
 - `vz_dirtiness_uuid` — echte volkszähler-Kanal-UUID für den Dreckigkeitswert-Export per HTTP-POST (siehe Netz-Dreckigkeit exportieren). Leer deaktiviert den Export.
 - `average_days` — Tage für das Stundenmittel (Standard 7)
 - `day_weights_pct` — Tagesgewichtung in Prozent für das Mittel, chronologisch: Index 0 = ältester Tag (heute minus `average_days`, also der gleiche Wochentag der Vorwoche), Index −1 = gestern. Gestern und der Vorwochentag stärker zu gewichten fängt den jüngsten Trend und die Wochentagsstruktur ein. Die Länge muss `average_days` entsprechen; bei Abweichung werden alle Tage gleich gewichtet. Alle 100 = neutral.
-- `reserve_pct` — Prozent des `basic_load`-Bedarfs über das rote Fenster, der reserviert wird (Standard 90)
+- `reserve_pct` — Prozent des `basic_load`-Bedarfs über das rote Fenster, der reserviert wird (Standard 90); skaliert außerdem das Viertelstunden-Energiebudget nicht-priorisierter roter Stunden (siehe Ausgabe: timer.txt) sowie die wallbox-eigene Reserveschätzung (siehe Wallbox)
+- `limit_discharge_rate` — Watt-Deckel auf die Entladeleistung in einer nicht-priorisierten roten Stunde (Standard 3000); anlagenspezifisch, an die eigene gewöhnliche Spitzenlast anzupassen. Gilt zusammen mit dem festen Viertelstunden-Energiebudget (`¼ × (reserve_pct × basic_load − erwartete PV)`, mindestens 0, keine eigene Konfiguration). Sehr hoch gesetzt wirkt der Leistungsdeckel de facto nicht mehr, nur das Energiebudget bleibt wirksam.
 - `latitude`, `longitude` — Standort der Anlage (Dezimalgrad) für das Klarhimmel-Modell und die Strahlungsprognose; Standard ~Mitte Deutschland (51,0 / 10,0)
 - `PV_to_bat_efficiency`, `bat_to_AC_efficiency` — Wirkungsgrade für die Rekonstruktion des Energieinhalts
 - `max_days_empty_battery` — wie viele Tage rückwärts nach einem „leer"-Zustand gesucht wird
@@ -263,7 +264,7 @@ dirt_shift-eigene Schlüssel in `dirt_shift.conf`:
 - `wallbox_absolute_max` — absolute Sauberkeits-Schwelle für die Wallbox in `dirt%` (Standard `50`).
 - `wallbox_typical_power` — typische Wallbox-Ladeleistung in Watt (Standard `2000`), nur für die Viertelstunden-Vorausschau der Energie-Bedingung genutzt (siehe Wallbox) — keine gemessene Größe, eine Sicherheitsmarge.
 
-`CAP_FACTOR` (Standard 2) ist **keine** Konfigurationsoption, sondern eine benannte Konstante im Code (siehe Ausgabe: timer.txt) — bewusst nicht extern konfigurierbar, da sie eine feste, dokumentierte Sicherheitsmarge ist, kein anlagenspezifischer Wert.
+Das Viertelstunden-Energiebudget (`¼ × (reserve_pct × basic_load − erwartete PV)`, siehe Ausgabe: timer.txt) ist **keine eigene** Konfigurationsoption — es ergibt sich direkt aus `basic_load`, `reserve_pct` und der Strahlungsprognose und braucht deshalb keinen eigenen Wert in `dirt_shift.conf`.
 
 ### Fehlerverhalten
 
