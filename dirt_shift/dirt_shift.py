@@ -50,11 +50,12 @@
 
 from json import load as json_load
 from json import dump as json_dump
-from os.path import join, dirname
+from os.path import join, dirname, isabs
 from datetime import datetime, timedelta
 from time import time, sleep
 from requests import get, post
 from sys import argv as sys_argv
+import sys
 
 if '-h' in sys_argv or '--help' in sys_argv:
 	print(' -v\t\tverbose console output\n', '-html\t\thtml header/footer\n',
@@ -104,6 +105,37 @@ except Exception:
 	print('dirt_shift: error reading config file dirt_shift.conf')
 	exit(1)
 
+
+class _Tee:
+	"""File-like object duplicating every write to the console and an
+	optional logfile — this is the only place logging is handled, so every
+	existing print() (-v, -debug, -html, error messages, all of it) is
+	captured automatically without touching any call site. A write that
+	fails against the logfile (disk full, permission lost mid-run, ...)
+	falls back to the console alone rather than aborting the run — an
+	unwritable logfile must never be the reason timer.txt doesn't get
+	written."""
+	def __init__(self, console, logfile):
+		self.console, self.logfile = console, logfile
+	def write(self, data):
+		self.console.write(data)
+		try: self.logfile.write(data)
+		except Exception: pass
+	def flush(self):
+		self.console.flush()
+		try: self.logfile.flush()
+		except Exception: pass
+
+
+if conf.get('logfile'):
+	try:
+		_log_path = conf['logfile'] if isabs(conf['logfile']) else join(dirname(__file__), conf['logfile'])
+		_log_fh = open(_log_path, 'a', encoding='utf-8')
+		_log_fh.write('\n=== %s ===\n' % datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+		sys.stdout = _Tee(sys.stdout, _log_fh)			# from here on every print() is mirrored to the logfile — appended, never rotated or truncated by dirt_shift itself
+	except Exception as e:
+		print('dirt_shift: warning: cannot open logfile %r (%s) — continuing without it' % (conf['logfile'], e))
+
 # pull shared values from zeroinput.conf (read-only, never duplicated here):
 #   discharge_t_file           — the timer file zeroinput reads (we write it)
 #   cell_count                 — battery cell count for the empty-voltage anchor
@@ -123,7 +155,7 @@ except Exception as e:
 	print('dirt_shift: cannot read zeroinput.conf (%s): %s' % (conf.get('zeroinput_conf', '?'), e))
 	exit(1)
 
-verbose = '-v' in sys_argv
+verbose = ('-v' in sys_argv) or bool(conf.get('logfile'))	# a configured logfile is itself the request for the verbose record — no need to also remember -v on every cron line
 avgnew  = '-avgnew' in sys_argv
 html    = '-html' in sys_argv
 if '-debug' in sys_argv: verbose = True; debug = True
