@@ -3,12 +3,52 @@
 # zeroinput - webconfig HTTP server v2.2
 # started as thread in zeroinput.py when conf['webconfig_port'] > 0
 import json
+import re
 import subprocess
+from datetime import datetime, timedelta
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from os.path import join, dirname, abspath, exists
 
 BASE_DIR = dirname(abspath(__file__))
 DIRT_SHIFT_CONF = join(BASE_DIR, 'dirt_shift', 'dirt_shift.conf')
+DIRT_SHIFT_LOG  = join(BASE_DIR, 'dirt_shift', 'dirt_shift.log')
+
+_DIRT_LOG_TS_RE = re.compile(
+	r'^(?:===\s*(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s*==='			# cron wrapper marker
+	r'|dirt_shift\s+(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}))', re.M)		# dirt_shift's own verbose header
+
+def _dirt_shift_log_last_24h(path):
+	"""Return the tail of dirt_shift.log covering roughly the last 24 hours.
+	Two timestamp anchors are recognised: a cron wrapper's '=== <timestamp> ==='
+	marker line, and dirt_shift's own 'dirt_shift  <timestamp>' verbose header.
+	The wrapper marker keeps the filter working even when the cron job runs
+	without -v, since dirt_shift then prints almost nothing itself. This scans
+	for those anchors and cuts the file just before the first one still within
+	24 hours of now, so whole runs are kept intact (a run's output printed
+	before its own anchor line is not split off). If every anchor is older than
+	24 hours the result is empty; if the file has no anchors at all it is
+	returned unfiltered, since there is nothing to filter by."""
+	text = _read(path)
+	if text is None:
+		return None
+	cutoff = datetime.now() - timedelta(hours=24)
+	matches = list(_DIRT_LOG_TS_RE.finditer(text))
+	if not matches:
+		return text
+	keep_from = 0
+	for m in matches:
+		stamp = m.group(1) or m.group(2)			# whichever anchor form matched
+		try:
+			ts = datetime.strptime(stamp, '%Y-%m-%d %H:%M:%S')
+		except (ValueError, TypeError):
+			continue
+		if ts >= cutoff:
+			keep_from = m.start()
+			break
+	else:
+		keep_from = len(text)			# every anchor is older than 24h
+	return text[keep_from:]
+
 
 def _read(path):
 	try:
@@ -120,6 +160,11 @@ class WebconfigHandler(BaseHTTPRequestHandler):
 			self._send_json(200 if content is not None else 500,
 				{'content': content} if content is not None else {'error': 'read failed'})
 
+		elif path == '/api/dirtshiftlog':
+			content = _dirt_shift_log_last_24h(DIRT_SHIFT_LOG)
+			self._send_json(200 if content is not None else 500,
+				{'content': content} if content is not None else {'error': 'read failed'})
+
 		elif path == '/api/restart':
 			from urllib.parse import urlparse, parse_qs
 			service = parse_qs(urlparse(self.path).query).get('service', ['zeroinput'])[0]
@@ -134,7 +179,9 @@ class WebconfigHandler(BaseHTTPRequestHandler):
 			self._send_json(200, {'status': 'ok'})
 
 		elif path == '/api/flags':
-			self._send_json(200, {'web_stats': self.web_stats, 'dirt_shift_available': exists(DIRT_SHIFT_CONF)})
+			self._send_json(200, {'web_stats': self.web_stats,
+				'dirt_shift_available': exists(DIRT_SHIFT_CONF),
+				'dirt_shift_log_available': exists(DIRT_SHIFT_LOG)})
 
 		else:
 			self._send_json(404, {'error': 'not found'})
