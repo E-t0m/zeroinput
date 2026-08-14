@@ -129,6 +129,7 @@
 	<a onclick="tab('vz_conf')"   id="tab_vz_conf">vz channels</a>
 	<a onclick="tab('timer')"     id="tab_timer">timer.txt</a>
 	<a onclick="tab('dirtshift')" id="tab_dirtshift" style="display:none">dirt shift</a>
+	<a onclick="tab('dirtshiftlog')" id="tab_dirtshiftlog" style="display:none">dirt shift log</a>
 	<a onclick="tab('restart')"   id="tab_restart">restart</a>
 	<a onclick="location.reload()" id="tab_status" style="display:none">status</a>
 </nav>
@@ -206,7 +207,7 @@
 		⚠ discharge_timer is <strong>disabled</strong> in zeroinput.conf — the timer file is saved but has no effect until enabled.
 	</div>
 	<p style="font-size:13px;color:var(--muted);margin-bottom:12px;">Format: <code>YYYY-MM-DD HH:MM:SS &lt;battery%&gt; &lt;inverter%&gt; &lt;energy_Wh&gt;</code> — use <code>0000-00-00</code> for today.</p>
-	<textarea id="timer_ta" spellcheck="false"></textarea>
+	<textarea id="timer_ta" spellcheck="false" style="font-size:200%;height:calc(100vh - 200px - 1.6em);"></textarea>
 	<div class="btn-row">
 		<button onclick="saveTimer()">Save timer.txt</button>
 		<button class="sec" onclick="loadTimer()">Reset</button>
@@ -219,6 +220,15 @@
 	<div class="btn-row">
 		<button onclick="saveDirtShift()">Save dirt_shift.conf</button>
 		<button class="sec" onclick="loadDirtShift()">Reset</button>
+	</div>
+</div>
+
+<!-- dirt shift log tab -->
+<div id="pane_dirtshiftlog" class="container">
+	<p style="font-size:13px;color:var(--muted);margin-bottom:12px;">Last 24 hours of <code>dirt_shift/dirt_shift.log</code>, read-only. Runs are located by their timestamp — either a <code>=== &lt;timestamp&gt; ===</code> marker written by the cron wrapper, or dirt_shift's own header line when invoked with <code>-v</code>. Without either, the whole file is shown unfiltered.</p>
+	<pre id="dirtshiftlog_pre" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;max-height:calc(100vh - 200px - 1.6em);overflow:auto;white-space:pre-wrap;font-size:200%;line-height:1.5;"></pre>
+	<div class="btn-row">
+		<button onclick="loadDirtShiftLog()">Refresh</button>
 	</div>
 </div>
 
@@ -305,13 +315,14 @@ function msg(text, type) {
 }
 
 function tab(name) {
-	['conf','chargers','inverters','alarms','vz_conf','timer','dirtshift','restart','status'].forEach(t => {
+	['conf','chargers','inverters','alarms','vz_conf','timer','dirtshift','dirtshiftlog','restart','status'].forEach(t => {
 		document.getElementById('tab_' + t).classList.toggle('active', t === name);
 		document.getElementById('pane_' + t).classList.toggle('active', t === name);
 	});
 	if (name === 'alarms')    renderAlarms();
 	if (name === 'chargers')  chRender();
 	if (name === 'inverters') invRender();
+	if (name === 'dirtshiftlog') scrollDirtShiftLogToEnd();
 }
 
 function parseHelp(data) {
@@ -702,6 +713,28 @@ async function saveDirtShift() {
 		if (d.ok) { msg('dirt_shift.conf saved', 'ok'); dirtShiftData = updated; }
 		else msg('Error: ' + d.error, 'err');
 	} catch(e) { msg('Error: ' + e, 'err'); }
+}
+
+// ── dirt shift log tab ───────────────────────────────────────────────────────
+
+async function loadDirtShiftLog() {
+	try {
+		const r = await fetch(API + '/api/dirtshiftlog');
+		const d = await r.json();
+		document.getElementById('dirtshiftlog_pre').textContent =
+			d.content || (d.error ? 'Error: ' + d.error : '(empty — no entries in the last 24 hours)');
+	} catch(e) {
+		document.getElementById('dirtshiftlog_pre').textContent = 'Error: ' + e;
+	}
+	scrollDirtShiftLogToEnd();
+}
+
+// the newest entries are at the bottom, so jump there. Panes are display:none
+// until their tab is active, and a hidden element has no scrollHeight — hence
+// this also runs from tab(), for the initial load that happens while hidden.
+function scrollDirtShiftLogToEnd() {
+	const pre = document.getElementById('dirtshiftlog_pre');
+	if (pre) pre.scrollTop = pre.scrollHeight;
 }
 
 // ── restart tab ───────────────────────────────────────────────────────────────
@@ -1601,6 +1634,10 @@ fetch(API + '/api/flags').then(r => r.json()).then(d => {
 	if (d.dirt_shift_available) {
 		document.getElementById('tab_dirtshift').style.display = '';
 		loadDirtShift();
+	}
+	if (d.dirt_shift_log_available) {
+		document.getElementById('tab_dirtshiftlog').style.display = '';
+		loadDirtShiftLog();
 	}
 }).catch(() => {});
 </script>
