@@ -70,6 +70,9 @@ CLEAR_SKY_B          = 0.059	# Haurwitz clear-sky GHI model exponent coefficient
 SMARD_REGION        = 'DE'		# SMARD region code (see the SMARD API's region parameter)
 SMARD_FILTER_WIND_SOLAR = 5097	# 'Prognostizierte Erzeugung: Wind und Photovoltaik' (day-ahead, combined)
 SMARD_FILTER_LOAD       = 411	# 'Prognostizierter Verbrauch' (day-ahead) — less firmly confirmed than the generation filter, but the fallback below covers a wrong/broken value
+WALLBOX_V_ON_PER_CELL  = 3.375	# per-cell voltage the battery must not have dropped below over WALLBOX_V_WINDOW_MIN for the voltage path to switch the wallbox ON (54.0 V at 16S) — a full battery under no meaningful discharge load
+WALLBOX_V_OFF_PER_CELL = 3.25	# per-cell voltage the voltage path releases at once engaged (52.0 V at 16S) — the lower half of the hysteresis, without which the wallbox's own load would drop the voltage below the ON threshold and switch itself off again on the very next run
+WALLBOX_V_WINDOW_MIN   = 15		# minutes of battery voltage history the ON/OFF thresholds are checked against (the minimum over that span, not the latest sample): 'never dropped below' captures a full battery AND the absence of a real discharge load in one test, which a momentary reading taken mid-spike would not
 
 def write_free_timer(path):
 	"""On any hard error, write an 'all allowed' timer so zeroinput is never
@@ -811,6 +814,74 @@ def wallbox_switch(ip, output, on):
 	return False
 
 
+def battery_min_voltage(minutes):
+	"""Lowest battery voltage volkszähler reports over the last 'minutes'
+	(the Vbat channel already configured for get_vz_bat_cap). Used only by
+	the wallbox voltage path — a failure returns None rather than dying,
+	since an unavailable reading must only disable that one optional path,
+	never the run itself."""
+	end   = datetime.today().replace(microsecond=0)
+	begin = end - timedelta(minutes=minutes)
+	url = ('http://' + conf['vz_host_port'] + '/data.json?from='
+	       + str(int(begin.timestamp())).ljust(13, '0') + '&to='
+	       + str(int(end.timestamp())).ljust(13, '0') + '&uuid[]=' + conf['vz_chans']['Vbat'])
+	try:
+		row = get(url=url).json()['data'][0]
+		if row.get('min'):
+			return row['min'][1]
+		return min(v for _ts, v, _s in row['tuples'])	# no aggregate min: derive it from the raw samples
+	except Exception as e:
+		if verbose: print('wallbox: battery voltage unavailable (%s) — voltage path skipped' % e)
+		return None
+
+
+def wallbox_voltage_ok(min_v, engaged):
+	"""The voltage-based half of the wallbox switch-on decision (see
+	wallbox_decide): True while the battery has not dropped below the
+	threshold over the last WALLBOX_V_WINDOW_MIN minutes — a full battery
+	still absorbing PV, where a wallbox can charge on surplus that would
+	otherwise go to waste.
+
+	Two thresholds, not one: 'engaged' selects the lower WALLBOX_V_OFF
+	value once this path is itself what is holding the wallbox on. Without
+	that hysteresis the path would oscillate at the quarter-hour, since the
+	wallbox's own load is exactly what pulls the voltage back under the ON
+	threshold it just cleared.
+
+	'engaged' deliberately tracks THIS path only (see
+	read_wallbox_voltage_engaged), not the shared owner marker: keying the
+	lower threshold to the marker would let it hold on a relay the dirt%
+	path switched on for a clean grid, long after that grid turned dirty.
+
+	Both thresholds are per-cell and scaled by cell_count, like the
+	empty-battery anchor in get_vz_bat_cap — a fixed pack voltage would
+	silently mean something different on a battery that is not 16S."""
+	if min_v is None:
+		return False
+	per_cell = WALLBOX_V_OFF_PER_CELL if engaged else WALLBOX_V_ON_PER_CELL
+	return min_v >= per_cell * conf.get('cell_count', 16)
+
+
+def _read_marker_file():
+	"""Raw contents of the wallbox marker file (see read_wallbox_marker and
+	read_wallbox_voltage_engaged, which each read one key out of it).
+	Missing/unreadable file returns an empty dict, so every key falls back
+	to its own default."""
+	try:
+		with open(join(dirname(__file__), 'dirt_wallbox_marker.json'), 'r') as fi:
+			return json_load(fi)
+	except Exception:
+		return {}
+
+
+def read_wallbox_voltage_engaged():
+	"""Whether the voltage path itself is currently what holds the wallbox
+	on — the hysteresis state for wallbox_voltage_ok, kept separate from the
+	ownership marker on purpose (see wallbox_voltage_ok). False when absent,
+	so a first run starts on the higher ON threshold."""
+	return bool(_read_marker_file().get('voltage_on', False))
+
+
 def read_wallbox_marker():
 	"""Whether dirt_shift itself is the reason the wallbox relay is currently
 	on — a small persistent marker (see main()), separate from the relay's
@@ -820,21 +891,23 @@ def read_wallbox_marker():
 	untouched) if no marker file exists yet — including on the very first
 	run ever, so an already-on relay found with no prior history is treated
 	as foreign rather than assumed to be dirt_shift's own."""
-	try:
-		with open(join(dirname(__file__), 'dirt_wallbox_marker.json'), 'r') as fi:
-			return bool(json_load(fi).get('dirt_shift_on', False))
-	except Exception:
-		return False
+	return bool(_read_marker_file().get('dirt_shift_on', False))
 
 
-def write_wallbox_marker(on):
-	"""Persist whether dirt_shift itself switched the wallbox relay on (see
-	read_wallbox_marker). Best-effort: a failed write only means the next
-	run re-derives the wrong assumption once, not a hard failure — never
-	raises further."""
+def write_wallbox_marker(on=None, voltage_on=None):
+	"""Persist the wallbox marker file — the ownership flag (see
+	read_wallbox_marker) and the voltage path's own hysteresis state (see
+	read_wallbox_voltage_engaged). Either may be omitted, in which case its
+	stored value is kept: the two are written at different points of a run
+	and must not clobber one another. Best-effort: a failed write only means
+	the next run re-derives the wrong assumption once, not a hard failure —
+	never raises further."""
+	data = _read_marker_file()
+	if on is not None: data['dirt_shift_on'] = bool(on)
+	if voltage_on is not None: data['voltage_on'] = bool(voltage_on)
 	try:
 		with open(join(dirname(__file__), 'dirt_wallbox_marker.json'), 'w') as fo:
-			json_dump({'dirt_shift_on': on}, fo)
+			json_dump(data, fo)
 	except Exception as e:
 		if verbose: print('failed to write wallbox marker:', e)
 
@@ -878,17 +951,29 @@ def wallbox_should_be_on(dirt_now, all_dirt, mode):
 	        and mode == 'free')
 
 
-def wallbox_decide(dirt_now, all_dirt, mode, content, now, zones, basic_load, expected_pv):
+def wallbox_decide(dirt_now, all_dirt, mode, content, now, zones, basic_load, expected_pv, voltage_ok=False):
 	"""Whether the wallbox should be on this run — one formula, checked the
 	same way regardless of whether dirt_shift currently owns the relay (see
 	main(), which still uses the owner marker separately to decide whether
 	an actual switch command is needed). Both paths run continuously side by
 	side, not just at switch-on:
 
-	  should_on = wallbox_should_be_on(dirt_now, all_dirt, mode) OR energy_ok
+	  should_on = wallbox_should_be_on(dirt_now, all_dirt, mode)
+	              OR energy_ok OR voltage_ok
 
 	dirt%-based path (wallbox_should_be_on): both dirt% limits AND
 	mode == 'free'.
+
+	Voltage-based path (wallbox_voltage_ok): the battery has not dropped
+	below a per-cell threshold over the last quarter hour — a full battery
+	with PV surplus that would otherwise be wasted. This does not merely
+	restate the energy path: exactly when a long dirty stretch lies ahead,
+	upcoming_red_demand (and with it the wallbox reserve) is large enough
+	that energy_ok stays False even though the battery is physically full
+	and cannot absorb another Wh. It is also a direct measurement, so it
+	does not inherit any drift in content's integration since the last
+	empty anchor. Carries its own hysteresis state (see
+	wallbox_voltage_ok).
 
 	Energy-based path: (content - wallbox_typical_power * 0.25) > a
 	wallbox-specific reserve — reserve_pct * upcoming_red_demand(now, zones,
@@ -932,7 +1017,7 @@ def wallbox_decide(dirt_now, all_dirt, mode, content, now, zones, basic_load, ex
 	wallbox_reserve = conf['reserve_pct'] * 0.01 * upcoming_red_demand(now, zones, basic_load, expected_pv)
 	margin = conf['wallbox_typical_power'] * 0.25
 	energy_ok = (content - margin) > wallbox_reserve
-	return wallbox_should_be_on(dirt_now, all_dirt, mode) or energy_ok
+	return wallbox_should_be_on(dirt_now, all_dirt, mode) or energy_ok or voltage_ok
 
 
 def _bridge_hours(now, zones, basic_load, expected_pv):
@@ -1361,7 +1446,11 @@ def main():
 		dirt_now = (1.0 - r) * 100 if r is not None else None
 		all_dirt = [(1.0 - x) * 100 if x is not None else None for x in grid_data['ratio']]
 		marker = read_wallbox_marker()
-		should_on = wallbox_decide(dirt_now, all_dirt, mode, content, now, zones, basic_load, pv_for_reserve)
+		v_engaged = read_wallbox_voltage_engaged()
+		min_v = battery_min_voltage(WALLBOX_V_WINDOW_MIN)
+		voltage_ok = wallbox_voltage_ok(min_v, v_engaged)
+		write_wallbox_marker(voltage_on=voltage_ok)		# hysteresis state, tracked whether or not the relay itself changes
+		should_on = wallbox_decide(dirt_now, all_dirt, mode, content, now, zones, basic_load, pv_for_reserve, voltage_ok)
 		action = 'none'
 		if should_on and not marker:
 			action = 'switch on (verified)' if wallbox_switch(conf['wallbox_ip'], conf['wallbox_output'], True) else 'switch on FAILED'
@@ -1374,12 +1463,20 @@ def main():
 			pct_median = (dirt_now / median * 100.0) if (dirt_now is not None and median) else None
 			margin = conf['wallbox_typical_power'] * 0.25
 			wallbox_reserve = conf['reserve_pct'] * 0.01 * upcoming_red_demand(now, zones, basic_load, pv_for_reserve)
-			print('wallbox: dirt%% %s (<%g)   %%median %s (<%g%%)' % (
+			# each path reports its own verdict first, then the values it was reached from,
+			# so the three lines read the same way and should_on below is just their OR
+			print('wallbox: dirt_ok    %-5s   dirt%% %s (<%g)   %%median %s (<%g%%)   mode %s' % (
+				wallbox_should_be_on(dirt_now, all_dirt, mode),
 				('%.0f' % dirt_now) if dirt_now is not None else '-', conf['wallbox_absolute_max'],
-				('%.0f' % pct_median) if pct_median is not None else '-', conf['wallbox_median_fraction']))
-			print('wallbox: content %.0f - reserve %.0f - margin %.0f = %.0f Wh' % (
+				('%.0f' % pct_median) if pct_median is not None else '-', conf['wallbox_median_fraction'], mode))
+			print('wallbox: energy_ok  %-5s   content %.0f - reserve %.0f - margin %.0f = %.0f Wh' % (
+				(content - margin) > wallbox_reserve,
 				content, wallbox_reserve, margin, content - wallbox_reserve - margin))
-			print('wallbox: should_on %s   marker(before) %s   action: %s' % (should_on, marker, action))
+			_v_thr = (WALLBOX_V_OFF_PER_CELL if v_engaged else WALLBOX_V_ON_PER_CELL) * conf.get('cell_count', 16)
+			print('wallbox: voltage_ok %-5s   min %s V over %d min (>=%.2f V, %s)' % (
+				voltage_ok, ('%.1f' % min_v) if min_v is not None else '-',
+				WALLBOX_V_WINDOW_MIN, _v_thr, 'engaged' if v_engaged else 'idle'))
+			print('wallbox: should_on  %-5s   marker(before) %s   action: %s' % (should_on, marker, action))
 
 	if verbose:
 		print('dirt_shift done.', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))

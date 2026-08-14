@@ -146,7 +146,7 @@ Mit `wallbox_enabled: true` schaltet `dirt_shift` das Relais einer E-Auto-Wallbo
 Anders als man vermuten könnte, gibt es **keine** unterschiedlichen Kriterien fürs Ein- und fürs Ausschalten — dieselbe Formel gilt fortlaufend, bei jedem Lauf neu, unabhängig davon, ob `dirt_shift` das Relais gerade schon besitzt:
 
 ```
-should_on = Sauberkeits-Bedingung   ODER   Energie-Bedingung
+should_on = Sauberkeits-Bedingung   ODER   Energie-Bedingung   ODER   Spannungs-Bedingung
 ```
 
 **Sauberkeits-Bedingung** — zwei Grenzwerte, beide müssen zutreffen:
@@ -166,9 +166,24 @@ Hier zählt **nicht** die reguläre `reserve` (die überall sonst in `dirt_shift
 
 `upcoming_red_demand` wird bewusst **direkt gegen den aktuellen `content`** verglichen, ohne einen erwarteten künftigen Überschuss dazuzurechnen — genau der Überschuss, auf den man sich sonst verlassen würde, ist ja derjenige, den die Wallbox selbst aufzehren könnte. Die Schätzung deckt dabei nur den **einen** nächsten roten Block ab, nicht mehrere getrennte rote Phasen bis zur nächsten echten Überschussstunde wie `red_window_demand` — bewusst grob, dafür jederzeit verfügbar, auch mitten in einer Überschussphase.
 
-**Warum beide Bedingungen durchgehend gelten, nicht nur beim Einschalten:** Weil beide Pfade gleichberechtigt und gleichzeitig laufen sollen — eine Stunde, die sauber genug ist, darf laden, auch wenn die Energie-Bedingung (noch) nicht erfüllt ist, und umgekehrt darf ein komfortabel gefüllter Akku laden, auch wenn es gerade dreckig ist. Ein Relais, das `dirt_shift` selbst eingeschaltet hat, bleibt deshalb an, solange **mindestens eine** der beiden Bedingungen weiter zutrifft, und schaltet erst ab, wenn **beide gleichzeitig** nicht mehr erfüllt sind.
+**Spannungs-Bedingung** — der volle Akku:
+```
+min(Vbat über die letzten 15 min)  ≥  Schwelle × cell_count
+Schwelle = 3,375 V/Zelle beim Einschalten  |  3,25 V/Zelle solange dieser Pfad selbst hält
+```
+Ist die Batteriespannung über die vergangene Viertelstunde **nicht** unter die Schwelle gefallen, gilt der Akku als voll und weiterhin von PV gespeist — Überschuss, der sonst ungenutzt bliebe, kann ins Auto. Die Prüfung auf das **Minimum** eines Fensters statt auf den Momentanwert testet dabei zwei Dinge zugleich: hoher Ladestand *und* keine nennenswerte Entladelast in dieser Zeit. Ein einzelner Messwert könnte zufällig mitten in einer kurzen Lastspitze abgelesen werden.
 
-**Wichtige Einschränkung, kein Versehen:** Die wallbox-eigene Energie-Bedingung deckt `limit`/`stop` nicht zuverlässig mit ab, wenn man sich allein auf sie verlässt. Liegen mehrere getrennte rote Phasen vor der nächsten echten Überschussstunde, summiert die reguläre `reserve` alle davon, während `upcoming_red_demand` nur die erste erfasst und deshalb **kleiner** ausfallen kann. Die Sauberkeits-Bedingung verlangt aber ohnehin `mode == free`, was `limit`/`stop` per Definition ausschließt — betroffen ist also nur der Fall, dass ein Relais **ausschließlich** über die Energie-Bedingung am Laufen gehalten wird, während `limit`/`stop` gilt.
+Beide Schwellen sind **pro Zelle** definiert und werden mit `cell_count` skaliert, genau wie der Leer-Anker der Energieinhalts-Rechnung (siehe Datenquellen) — bei 16S also 54,0 V bzw. 52,0 V. Sie sind benannte Konstanten im Code, keine Konfigurationsoption.
+
+**Warum zwei Schwellen (Hysterese):** Die Spannung bleibt ja auch deshalb hoch, *weil* die Wallbox aus ist. Schaltet sie ein, zieht sie Last, die Spannung sackt — und ohne die tiefere Halteschwelle würde genau die Bedingung wegfallen, die eben noch eingeschaltet hat: ein Flattern im Viertelstundentakt. Einmal eingeschaltet hält der Pfad deshalb bis 3,25 V/Zelle; erst danach braucht es wieder die volle Erholung auf 3,375 V/Zelle.
+
+Dieser Hysterese-Zustand wird **getrennt vom Besitzer-Merker** geführt (Schlüssel `voltage_on` in derselben Datei, siehe unten). Andernfalls würde die tiefere Halteschwelle auch für ein Relais gelten, das die Sauberkeits-Bedingung bei sauberem Netz eingeschaltet hat — es bliebe dann über die Spannung weiter an, lange nachdem das Netz dreckig geworden ist.
+
+**Die Spannungs-Bedingung wiederholt nicht einfach die Energie-Bedingung.** Gerade wenn eine lange dreckige Strecke bevorsteht, ist `upcoming_red_demand` und damit die wallbox-eigene Reserve groß — die Energie-Bedingung bleibt dann unerfüllt, obwohl der Akku physisch voll ist und keine Wh mehr aufnehmen kann. Genau diese Lücke schließt die Spannungsmessung. Sie ist zudem ein **direkter Messwert** und erbt damit keine Drift der `content`-Schätzung, die seit dem letzten Leer-Anker integriert wird. Ist die Spannung nicht abrufbar, gilt dieser Pfad schlicht als nicht erfüllt — der Lauf selbst läuft normal weiter.
+
+**Warum alle Bedingungen durchgehend gelten, nicht nur beim Einschalten:** Weil die Pfade gleichberechtigt und gleichzeitig laufen sollen — eine Stunde, die sauber genug ist, darf laden, auch wenn die Energie-Bedingung (noch) nicht erfüllt ist; ein komfortabel gefüllter Akku darf laden, auch wenn es gerade dreckig ist; und ein voller Akku darf seinen sonst verschenkten Überschuss abgeben, auch wenn beide anderen Bedingungen dagegen sprechen. Ein Relais, das `dirt_shift` selbst eingeschaltet hat, bleibt deshalb an, solange **mindestens eine** der drei Bedingungen weiter zutrifft, und schaltet erst ab, wenn **alle gleichzeitig** nicht mehr erfüllt sind.
+
+**Wichtige Einschränkung, kein Versehen:** Die wallbox-eigene Energie-Bedingung deckt `limit`/`stop` nicht zuverlässig mit ab, wenn man sich allein auf sie verlässt. Liegen mehrere getrennte rote Phasen vor der nächsten echten Überschussstunde, summiert die reguläre `reserve` alle davon, während `upcoming_red_demand` nur die erste erfasst und deshalb **kleiner** ausfallen kann. Die Sauberkeits-Bedingung verlangt aber ohnehin `mode == free`, was `limit`/`stop` per Definition ausschließt — betroffen ist also nur der Fall, dass ein Relais **ausschließlich** über die Energie-Bedingung am Laufen gehalten wird, während `limit`/`stop` gilt. Für die Spannungs-Bedingung gilt dasselbe, dort aber bewusst: Ein voller Akku soll seinen Überschuss auch dann abgeben dürfen, wenn `limit`/`stop` gilt — das ist gerade der Fall, den sie abdecken soll (siehe unten). Ihre eigene Halteschwelle begrenzt das: Sackt die Spannung unter 3,25 V/Zelle, fällt der Pfad weg.
 
 Eine Randbedingung, die aus der Sauberkeits-Bedingung folgt: In der roten Zone gilt `free` auch an der **dreckigsten Stunde selbst** (dort soll die Reserve bewusst verbraucht werden), unabhängig vom Akkuinhalt. In einer durchgehend „tiefroten" Nacht, in der keine Stunde die beiden Sauberkeits-Schwellen von sich aus erreicht, kann die Wallbox deshalb ausnahmsweise doch in der roten dreckigsten Stunde zu laden beginnen, sofern diese selbst noch unter `wallbox_absolute_max` bleibt — eine bewusst akzeptierte Randbedingung, keine Lücke.
 
@@ -185,6 +200,8 @@ Eine Randbedingung, die aus der Sauberkeits-Bedingung folgt: In der roten Zone g
 **Konsequenz für manuelles Eingreifen:** Schaltet jemand das Relais manuell ein, während es gerade dreckig ist, bleibt es unangetastet — auch über mehrere Läufe hinweg. Sobald aber die **nächste** Stunde eintritt, die die Bedingungen erfüllt, „adoptiert" `dirt_shift` das Relais stillschweigend (setzt den Marker auf `true`, ohne real etwas zu ändern — es lief ja schon). Ab diesem Moment gilt es wieder als eigenes und kann bei der nächsten dreckigen Stunde regulär abgeschaltet werden. Der manuelle Schutz gilt also nur für die gerade laufende dreckige Phase, nicht dauerhaft.
 
 Diese Erkennung hat eine bekannte Grenze: Schaltet jemand manuell **während** der Marker schon `true` ist, kann `dirt_shift` das nicht von einer eigenen Aktion unterscheiden — der Tasmota-Status zeigt nur den Zustand, nicht den Verursacher. Das bleibt eine akzeptierte Einschränkung, keine Lücke, die noch geschlossen werden müsste.
+
+Dieselbe Datei führt einen **zweiten, unabhängigen Schlüssel** `voltage_on`: den Hysterese-Zustand der Spannungs-Bedingung (siehe oben). Er sagt nur aus, ob dieser eine Pfad gerade selbst hält, und wird bei **jedem** Lauf neu geschrieben — auch dann, wenn sich am Relais nichts ändert. Beide Schlüssel werden unabhängig voneinander geschrieben, ohne sich gegenseitig zu überschreiben. Fehlt `voltage_on` (etwa in einer Merker-Datei aus einem früheren Lauf), gilt er als `false`, der Spannungs-Pfad startet dann also auf der höheren Einschaltschwelle.
 
 ### Schalten mit Verifikation
 

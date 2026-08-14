@@ -146,7 +146,7 @@ With `wallbox_enabled: true`, `dirt_shift` switches an EV wallbox's relay via a 
 Unlike one might expect, there are **no** separate criteria for switching on versus switching off — the same formula applies continuously, freshly on every run, regardless of whether `dirt_shift` already owns the relay:
 
 ```
-should_on = dirtiness condition   OR   energy condition
+should_on = dirtiness condition   OR   energy condition   OR   voltage condition
 ```
 
 **Dirtiness condition** — two limits, both must hold:
@@ -166,9 +166,24 @@ This does **not** use the regular `reserve` (the one used everywhere else in `di
 
 `upcoming_red_demand` is deliberately compared **directly against current `content`**, with no projected future surplus added on top — that assumed surplus is exactly what a running wallbox could itself consume before it ever reaches the battery. The estimate only covers the **one** next red block, not every separate red span up to the next true surplus hour the way `red_window_demand` does — deliberately rough, in exchange for being available at any time, even mid-surplus.
 
-**Why both conditions apply continuously, not just at switch-on:** because both paths are meant to run side by side, on equal footing — an hour clean enough may charge even if the energy condition doesn't (yet) hold, and conversely a comfortably full battery may charge even during a dirty hour. A relay `dirt_shift` itself switched on therefore stays on as long as **at least one** of the two conditions still holds, and only switches off once **both** fail at the same time.
+**Voltage condition** — the full battery:
+```
+min(Vbat over the last 15 min)  ≥  threshold × cell_count
+threshold = 3.375 V/cell to switch on  |  3.25 V/cell while this path is itself holding
+```
+If battery voltage has **not** dropped below the threshold over the past quarter hour, the battery counts as full and still being fed by PV — surplus that would otherwise go to waste can go into the car instead. Testing the **minimum** over a window rather than the instantaneous value checks two things at once: high state of charge *and* the absence of any meaningful discharge load during that time. A single sample could happen to be read in the middle of a brief load spike.
 
-**An important limitation, not an oversight:** the wallbox-specific energy condition does not reliably cover `limit`/`stop` on its own. When several separate red spans lie before the next true surplus hour, the regular `reserve` sums all of them, while `upcoming_red_demand` only covers the first and so can come out **smaller**. The dirtiness condition already requires `mode == free`, though, which `limit`/`stop` violate by definition — so this only matters for a relay kept running **solely** via the energy condition while `limit`/`stop` applies.
+Both thresholds are defined **per cell** and scaled by `cell_count`, exactly like the empty anchor of the energy-content calculation (see Data sources) — so 54.0 V and 52.0 V respectively at 16S. They are named constants in the code, not a configuration option.
+
+**Why two thresholds (hysteresis):** voltage also stays high precisely *because* the wallbox is off. Once it switches on it draws load, voltage sags — and without the lower holding threshold the very condition that just switched it on would fall away: a flapping at the quarter hour. Once engaged, the path therefore holds down to 3.25 V/cell; only after that does it need the full recovery to 3.375 V/cell again.
+
+This hysteresis state is tracked **separately from the owner marker** (key `voltage_on` in the same file, see below). Otherwise the lower holding threshold would also apply to a relay the dirtiness condition switched on during a clean grid — it would then stay on via voltage long after the grid turned dirty.
+
+**The voltage condition does not simply restate the energy condition.** Precisely when a long dirty stretch lies ahead, `upcoming_red_demand` and with it the wallbox-specific reserve is large — the energy condition then stays unmet even though the battery is physically full and cannot absorb another Wh. That is the gap the voltage measurement closes. It is also a **direct measurement**, so it inherits none of the drift in the `content` estimate integrated since the last empty anchor. If the voltage cannot be fetched, this path simply counts as unmet — the run itself continues normally.
+
+**Why all conditions apply continuously, not just at switch-on:** because the paths are meant to run side by side, on equal footing — an hour clean enough may charge even if the energy condition doesn't (yet) hold; a comfortably full battery may charge even during a dirty hour; and a full battery may hand over its otherwise wasted surplus even when both other conditions argue against it. A relay `dirt_shift` itself switched on therefore stays on as long as **at least one** of the three conditions still holds, and only switches off once **all** fail at the same time.
+
+**An important limitation, not an oversight:** the wallbox-specific energy condition does not reliably cover `limit`/`stop` on its own. When several separate red spans lie before the next true surplus hour, the regular `reserve` sums all of them, while `upcoming_red_demand` only covers the first and so can come out **smaller**. The dirtiness condition already requires `mode == free`, though, which `limit`/`stop` violate by definition — so this only matters for a relay kept running **solely** via the energy condition while `limit`/`stop` applies. The same holds for the voltage condition, but there it is deliberate: a full battery should be allowed to hand over its surplus even under `limit`/`stop` — that is precisely the case it exists for (see below). Its own holding threshold bounds this: once voltage sags below 3.25 V/cell, the path falls away.
 
 One boundary condition follows from the dirtiness condition: in the red zone, `free` also holds at the **dirtiest hour itself** (where the reserve is meant to be deliberately spent), regardless of battery content. On a uniformly "deep red" night where no hour clears both dirtiness thresholds on its own, the wallbox may therefore still start charging during that one reddest hour, provided it itself stays under `wallbox_absolute_max` — a deliberately accepted boundary condition, not a gap.
 
@@ -185,6 +200,8 @@ One boundary condition follows from the dirtiness condition: in the red zone, `f
 **Consequence for manual intervention:** if someone switches the relay on manually while it is currently dirty, it stays untouched — across multiple runs, if needed. But as soon as the **next** hour arrives that meets the conditions, `dirt_shift` silently "adopts" the relay (sets the marker to `true`, without actually changing anything — it was already running). From that point on it counts as dirt_shift's own again and can be switched off normally at the next dirty hour. The manual protection therefore only covers the currently ongoing dirty stretch, not permanently.
 
 This detection has a known limit: if someone switches manually **while** the marker is already `true`, `dirt_shift` cannot distinguish that from its own prior action — Tasmota's status shows only the state, not who caused it. That remains an accepted limitation, not a gap still to be closed.
+
+The same file carries a **second, independent key** `voltage_on`: the hysteresis state of the voltage condition (see above). It says only whether that one path is currently holding, and is rewritten on **every** run — including runs where the relay itself does not change. Both keys are written independently, without overwriting one another. If `voltage_on` is absent (e.g. in a marker file from an earlier run), it counts as `false`, so the voltage path starts on the higher switch-on threshold.
 
 ### Switching with verification
 
