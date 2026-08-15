@@ -225,7 +225,7 @@
 
 <!-- dirt shift log tab -->
 <div id="pane_dirtshiftlog" class="container">
-	<p style="font-size:13px;color:var(--muted);margin-bottom:12px;">Last 24 hours of <code>dirt_shift/dirt_shift.log</code>, read-only. Runs are located by their timestamp — either a <code>=== &lt;timestamp&gt; ===</code> marker written by the cron wrapper, or dirt_shift's own header line when invoked with <code>-v</code>. Without either, the whole file is shown unfiltered.</p>
+	<p style="font-size:13px;color:var(--muted);margin-bottom:12px;">Last 24 hours of the log dirt_shift writes, read-only. The path comes from the <code>logfile</code> key in dirt_shift.conf; this tab is hidden when logging is disabled there. Runs are located by their timestamp — the <code>=== &lt;timestamp&gt; ===</code> separator dirt_shift writes to the file at the start of every run, or its own header line. Without either, the whole file is shown unfiltered.</p>
 	<pre id="dirtshiftlog_pre" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;max-height:calc(100vh - 200px - 1.6em);overflow:auto;white-space:pre-wrap;font-size:200%;line-height:1.5;"></pre>
 	<div class="btn-row">
 		<button onclick="loadDirtShiftLog()">Refresh</button>
@@ -601,13 +601,13 @@ document.getElementById('timer_ta').addEventListener('keydown', e => {
 const DIRTSHIFT_SECTIONS = {
 	'Data source':                   ['zeroinput_conf', 'vz_host_port', 'vz_chans'],
 	'Averaging':                     ['average_days', 'day_weights_pct'],
-	'Reserve':                       ['reserve_pct'],
+	'Reserve':                       ['reserve_pct', 'limit_discharge_rate'],
 	'Grid intensity':                ['vz_dirtiness_uuid'],
 	'Location (PV forecast)':        ['latitude', 'longitude'],
 	'Battery energy':                ['PV_to_bat_efficiency', 'bat_to_AC_efficiency', 'max_days_empty_battery'],
 	'Precharge':                     ['precharge_enabled'],
 	'Wallbox':                       ['wallbox_enabled', 'wallbox_ip', 'wallbox_output', 'wallbox_median_fraction', 'wallbox_absolute_max', 'wallbox_typical_power'],
-	'Other':                         ['disable_zeroinput_timer'],
+	'Other':                         ['disable_zeroinput_timer', 'logfile'],
 };
 
 let dirtShiftData = {}, dirtShiftHelp = {};

@@ -10,24 +10,45 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from os.path import join, dirname, abspath, exists
 
 BASE_DIR = dirname(abspath(__file__))
-DIRT_SHIFT_CONF = join(BASE_DIR, 'dirt_shift', 'dirt_shift.conf')
-DIRT_SHIFT_LOG  = join(BASE_DIR, 'dirt_shift', 'dirt_shift.log')
+DIRT_SHIFT_DIR  = join(BASE_DIR, 'dirt_shift')
+DIRT_SHIFT_CONF = join(DIRT_SHIFT_DIR, 'dirt_shift.conf')
+
+
+def _dirt_shift_log_path():
+	"""Path of the log dirt_shift writes, taken from its own 'logfile' key so
+	the two cannot drift apart — the key is what enables the logging in the
+	first place, and it accepts any path. Resolved relative to the dirt_shift
+	directory unless absolute, exactly as dirt_shift itself resolves it.
+	None when logging is disabled (empty/missing key) or the conf is
+	unreadable, which is also what hides the log tab (see /api/flags)."""
+	raw = _read(DIRT_SHIFT_CONF)
+	if raw is None:
+		return None
+	try:
+		p = json.loads(raw).get('logfile', '')
+	except Exception:
+		return None
+	if not p:
+		return None
+	return p if p.startswith('/') else join(DIRT_SHIFT_DIR, p)
 
 _DIRT_LOG_TS_RE = re.compile(
-	r'^(?:===\s*(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s*==='			# cron wrapper marker
-	r'|dirt_shift\s+(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}))', re.M)		# dirt_shift's own verbose header
+	r'^(?:===\s*(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s*==='			# dirt_shift's own per-run separator, written straight to the logfile
+	r'|dirt_shift\s+(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}))', re.M)		# dirt_shift's verbose header line
 
 def _dirt_shift_log_last_24h(path):
-	"""Return the tail of dirt_shift.log covering roughly the last 24 hours.
-	Two timestamp anchors are recognised: a cron wrapper's '=== <timestamp> ==='
-	marker line, and dirt_shift's own 'dirt_shift  <timestamp>' verbose header.
-	The wrapper marker keeps the filter working even when the cron job runs
-	without -v, since dirt_shift then prints almost nothing itself. This scans
-	for those anchors and cuts the file just before the first one still within
-	24 hours of now, so whole runs are kept intact (a run's output printed
-	before its own anchor line is not split off). If every anchor is older than
-	24 hours the result is empty; if the file has no anchors at all it is
-	returned unfiltered, since there is nothing to filter by."""
+	"""Return the tail of the dirt_shift log covering roughly the last 24
+	hours. Two timestamp anchors are recognised: the '=== <timestamp> ==='
+	separator dirt_shift writes to the logfile at the start of every run, and
+	its own 'dirt_shift  <timestamp>' verbose header. The separator goes only
+	into the file (never to the console) and is written before anything else,
+	so it anchors a run even if that run then fails early and prints nothing.
+	This scans for those anchors and cuts the file just before the first one
+	still within 24 hours of now, so whole runs are kept intact (a run's
+	output printed before its own anchor line is not split off). If every
+	anchor is older than 24 hours the result is empty; if the file has no
+	anchors at all it is returned unfiltered, since there is nothing to filter
+	by."""
 	text = _read(path)
 	if text is None:
 		return None
@@ -161,7 +182,11 @@ class WebconfigHandler(BaseHTTPRequestHandler):
 				{'content': content} if content is not None else {'error': 'read failed'})
 
 		elif path == '/api/dirtshiftlog':
-			content = _dirt_shift_log_last_24h(DIRT_SHIFT_LOG)
+			log_path = _dirt_shift_log_path()
+			if log_path is None:
+				self._send_json(400, {'error': 'no logfile configured in dirt_shift.conf'})
+				return
+			content = _dirt_shift_log_last_24h(log_path)
 			self._send_json(200 if content is not None else 500,
 				{'content': content} if content is not None else {'error': 'read failed'})
 
@@ -179,9 +204,12 @@ class WebconfigHandler(BaseHTTPRequestHandler):
 			self._send_json(200, {'status': 'ok'})
 
 		elif path == '/api/flags':
+			# the log tab is offered only when logging is actually configured AND
+			# the file exists — a tab that can only ever show an error helps nobody
+			_log = _dirt_shift_log_path()
 			self._send_json(200, {'web_stats': self.web_stats,
 				'dirt_shift_available': exists(DIRT_SHIFT_CONF),
-				'dirt_shift_log_available': exists(DIRT_SHIFT_LOG)})
+				'dirt_shift_log_available': bool(_log) and exists(_log)})
 
 		else:
 			self._send_json(404, {'error': 'not found'})
