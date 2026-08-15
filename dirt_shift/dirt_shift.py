@@ -73,6 +73,7 @@ SMARD_FILTER_LOAD       = 411	# 'Prognostizierter Verbrauch' (day-ahead) — les
 WALLBOX_V_ON_PER_CELL  = 3.375	# per-cell voltage the battery must not have dropped below over WALLBOX_V_WINDOW_MIN for the voltage path to switch the wallbox ON (54.0 V at 16S) — a full battery under no meaningful discharge load
 WALLBOX_V_OFF_PER_CELL = 3.25	# per-cell voltage the voltage path releases at once engaged (52.0 V at 16S) — the lower half of the hysteresis, without which the wallbox's own load would drop the voltage below the ON threshold and switch itself off again on the very next run
 WALLBOX_V_WINDOW_MIN   = 15		# minutes of battery voltage history the ON/OFF thresholds are checked against (the minimum over that span, not the latest sample): 'never dropped below' captures a full battery AND the absence of a real discharge load in one test, which a momentary reading taken mid-spike would not
+WALLBOX_ENERGY_ON_FACTOR = 2	# multiple of 'margin' (a quarter hour of wallbox_typical_power) the energy path demands as headroom to switch the wallbox ON, dropped back to a single margin once it is itself holding — the hysteresis of that path. Without it, switching on with only a few Wh to spare is self-defeating: the wallbox draws roughly one margin plus house load per run, so the next run 15 min later finds the check failed and switches straight back off. Expressed as a factor rather than a fixed Wh value so it scales with the actual wallbox power — the flapping period is the run interval, so the headroom that matters is measured in run-lengths of charging.
 
 def write_free_timer(path):
 	"""On any hard error, write an 'all allowed' timer so zeroinput is never
@@ -835,6 +836,48 @@ def battery_min_voltage(minutes):
 		return None
 
 
+def wallbox_energy_ok(content, wallbox_reserve, margin, engaged):
+	"""The energy-based half of the wallbox switch-on decision (see
+	wallbox_decide): current content, less a quarter hour of wallbox draw,
+	must clear the wallbox-specific reserve — plus WALLBOX_ENERGY_SOCKET_WH
+	on top while this path is not yet what holds the wallbox on.
+
+	That socket is this path's hysteresis, and it exists for the same
+	reason the voltage path has two thresholds: the wallbox's own draw is
+	precisely what invalidates the condition that let it start. Clearing
+	the reserve by a hair is not a reason to begin charging — a quarter
+	hour later the same check fails by construction and the relay drops
+	out again. Requiring the socket first means a switch-on implies enough
+	surplus for a session, not for a single slot.
+
+	'engaged' deliberately tracks THIS path only (see
+	read_wallbox_energy_engaged), not the shared owner marker: keyed to the
+	marker, the socket-free variant would apply to a relay some other path
+	switched on, silently lowering this path's bar in a situation it never
+	approved of."""
+	socket = 0.0 if engaged else WALLBOX_ENERGY_SOCKET_WH
+	return (content - margin - socket) > wallbox_reserve
+
+
+def wallbox_energy_ok(content, wallbox_reserve, margin, engaged):
+	"""The energy-based part of the wallbox switch-on decision (see
+	wallbox_decide): whether enough battery content is left over the
+	wallbox-specific reserve.
+
+	Two thresholds, like the voltage path: switching ON demands
+	WALLBOX_ENERGY_ON_FACTOR margins of headroom, holding only one. A single
+	margin is exactly one run's worth of wallbox draw, so a switch-on decided
+	on less than that is undone by its own consequence at the very next run —
+	the wallbox would flap on and off at the quarter hour without ever
+	charging anything worth the name.
+
+	'engaged' tracks THIS path only (see read_wallbox_energy_engaged), not
+	the shared owner marker: the lower holding threshold must not prop up a
+	relay some other path switched on."""
+	headroom = margin if engaged else WALLBOX_ENERGY_ON_FACTOR * margin
+	return (content - headroom) > wallbox_reserve
+
+
 def wallbox_voltage_ok(min_v, engaged):
 	"""The voltage-based half of the wallbox switch-on decision (see
 	wallbox_decide): True while the battery has not dropped below the
@@ -874,6 +917,14 @@ def _read_marker_file():
 		return {}
 
 
+def read_wallbox_energy_engaged():
+	"""Whether the energy path itself is currently what holds the wallbox on
+	— the hysteresis state for wallbox_energy_ok, kept separate from the
+	ownership marker for the same reason voltage_on is. False when absent, so
+	a first run starts on the stricter switch-on headroom."""
+	return bool(_read_marker_file().get('energy_on', False))
+
+
 def read_wallbox_voltage_engaged():
 	"""Whether the voltage path itself is currently what holds the wallbox
 	on — the hysteresis state for wallbox_voltage_ok, kept separate from the
@@ -894,17 +945,19 @@ def read_wallbox_marker():
 	return bool(_read_marker_file().get('dirt_shift_on', False))
 
 
-def write_wallbox_marker(on=None, voltage_on=None):
+def write_wallbox_marker(on=None, voltage_on=None, energy_on=None):
 	"""Persist the wallbox marker file — the ownership flag (see
-	read_wallbox_marker) and the voltage path's own hysteresis state (see
-	read_wallbox_voltage_engaged). Either may be omitted, in which case its
-	stored value is kept: the two are written at different points of a run
-	and must not clobber one another. Best-effort: a failed write only means
-	the next run re-derives the wrong assumption once, not a hard failure —
+	read_wallbox_marker) and the per-path hysteresis states of the energy and
+	voltage paths (see read_wallbox_energy_engaged /
+	read_wallbox_voltage_engaged). Any may be omitted, in which case its
+	stored value is kept: they are written at different points of a run and
+	must not clobber one another. Best-effort: a failed write only means the
+	next run re-derives the wrong assumption once, not a hard failure —
 	never raises further."""
 	data = _read_marker_file()
 	if on is not None: data['dirt_shift_on'] = bool(on)
 	if voltage_on is not None: data['voltage_on'] = bool(voltage_on)
+	if energy_on is not None: data['energy_on'] = bool(energy_on)
 	try:
 		with open(join(dirname(__file__), 'dirt_wallbox_marker.json'), 'w') as fo:
 			json_dump(data, fo)
@@ -951,7 +1004,7 @@ def wallbox_should_be_on(dirt_now, all_dirt, mode):
 	        and mode == 'free')
 
 
-def wallbox_decide(dirt_now, all_dirt, mode, content, now, zones, basic_load, expected_pv, voltage_ok=False):
+def wallbox_decide(dirt_now, all_dirt, mode, energy_ok=False, voltage_ok=False):
 	"""Whether the wallbox should be on this run — one formula, checked the
 	same way regardless of whether dirt_shift currently owns the relay (see
 	main(), which still uses the owner marker separately to decide whether
@@ -975,7 +1028,7 @@ def wallbox_decide(dirt_now, all_dirt, mode, content, now, zones, basic_load, ex
 	empty anchor. Carries its own hysteresis state (see
 	wallbox_voltage_ok).
 
-	Energy-based path: (content - wallbox_typical_power * 0.25) > a
+	Energy-based path (wallbox_energy_ok): content against a
 	wallbox-specific reserve — reserve_pct * upcoming_red_demand(now, zones,
 	basic_load, expected_pv), in place of the main reserve variable
 	red_window_demand computes elsewhere in main(): that one deliberately
@@ -991,11 +1044,13 @@ def wallbox_decide(dirt_now, all_dirt, mode, content, now, zones, basic_load, ex
 	any assumed surplus between now and red is exactly what a running
 	wallbox could itself consume before it ever reaches the battery. This
 	replacement is scoped to the wallbox only; the main reserve variable and
-	the rest of main()'s mode decision are untouched.
+	the rest of main()'s mode decision are untouched. Carries its own
+	hysteresis state, like the voltage path (see wallbox_energy_ok).
 
-	Because both paths run continuously, a relay dirt_shift itself switched
-	on via one path stays on as long as EITHER path still holds — it only
-	switches off once both fail at the same time. This deliberately differs
+	Because all paths run continuously, a relay dirt_shift itself switched
+	on via one path stays on as long as ANY path still holds — it only
+	switches off once all of them fail at the same time. This deliberately
+	differs
 	from a relay switched on manually: that one is left alone entirely,
 	however dirty or energy-short it gets, for as long as dirt_shift never
 	owns it (see the marker logic in main()) — a completely separate
@@ -1013,10 +1068,10 @@ def wallbox_decide(dirt_now, all_dirt, mode, content, now, zones, basic_load, ex
 	unaffected by this gap; it only applies to the energy-based path.
 
 	Precharge (see precharge_ac_pct) never enters this decision either way —
-	the two remain fully independent."""
-	wallbox_reserve = conf['reserve_pct'] * 0.01 * upcoming_red_demand(now, zones, basic_load, expected_pv)
-	margin = conf['wallbox_typical_power'] * 0.25
-	energy_ok = (content - margin) > wallbox_reserve
+	the two remain fully independent. energy_ok and voltage_ok are computed
+	by main() (they carry per-path hysteresis state that has to be persisted
+	there anyway) and only combined here, so what main() reports in -v is by
+	construction the same value the decision was made on."""
 	return wallbox_should_be_on(dirt_now, all_dirt, mode) or energy_ok or voltage_ok
 
 
@@ -1446,11 +1501,15 @@ def main():
 		dirt_now = (1.0 - r) * 100 if r is not None else None
 		all_dirt = [(1.0 - x) * 100 if x is not None else None for x in grid_data['ratio']]
 		marker = read_wallbox_marker()
+		e_engaged = read_wallbox_energy_engaged()
 		v_engaged = read_wallbox_voltage_engaged()
+		wallbox_reserve = conf['reserve_pct'] * 0.01 * upcoming_red_demand(now, zones, basic_load, pv_for_reserve)
+		margin = conf['wallbox_typical_power'] * 0.25
+		energy_ok = wallbox_energy_ok(content, wallbox_reserve, margin, e_engaged)
 		min_v = battery_min_voltage(WALLBOX_V_WINDOW_MIN)
 		voltage_ok = wallbox_voltage_ok(min_v, v_engaged)
-		write_wallbox_marker(voltage_on=voltage_ok)		# hysteresis state, tracked whether or not the relay itself changes
-		should_on = wallbox_decide(dirt_now, all_dirt, mode, content, now, zones, basic_load, pv_for_reserve, voltage_ok)
+		write_wallbox_marker(energy_on=energy_ok, voltage_on=voltage_ok)	# hysteresis states, tracked whether or not the relay itself changes
+		should_on = wallbox_decide(dirt_now, all_dirt, mode, energy_ok, voltage_ok)
 		action = 'none'
 		if should_on and not marker:
 			action = 'switch on (verified)' if wallbox_switch(conf['wallbox_ip'], conf['wallbox_output'], True) else 'switch on FAILED'
@@ -1461,17 +1520,16 @@ def main():
 		if verbose:
 			median = _dirt_median(all_dirt)
 			pct_median = (dirt_now / median * 100.0) if (dirt_now is not None and median) else None
-			margin = conf['wallbox_typical_power'] * 0.25
-			wallbox_reserve = conf['reserve_pct'] * 0.01 * upcoming_red_demand(now, zones, basic_load, pv_for_reserve)
 			# each path reports its own verdict first, then the values it was reached from,
 			# so the three lines read the same way and should_on below is just their OR
-			print('wallbox: dirt_ok    %-5s   dirt%% %s (<%g)   %%median %s (<%g%%)   mode %s' % (
+			print('wallbox: dirt_ok    %-5s   dirt%% %s (<%g)   %%median %s (<%g)   mode %s' % (
 				wallbox_should_be_on(dirt_now, all_dirt, mode),
 				('%.0f' % dirt_now) if dirt_now is not None else '-', conf['wallbox_absolute_max'],
 				('%.0f' % pct_median) if pct_median is not None else '-', conf['wallbox_median_fraction'], mode))
-			print('wallbox: energy_ok  %-5s   content %.0f - reserve %.0f - margin %.0f = %.0f Wh' % (
-				(content - margin) > wallbox_reserve,
-				content, wallbox_reserve, margin, content - wallbox_reserve - margin))
+			_headroom = margin if e_engaged else WALLBOX_ENERGY_ON_FACTOR * margin
+			print('wallbox: energy_ok  %-5s   content %.0f - reserve %.0f - headroom %.0f = %.0f Wh (%s)' % (
+				energy_ok, content, wallbox_reserve, _headroom,
+				content - wallbox_reserve - _headroom, 'engaged' if e_engaged else 'idle'))
 			_v_thr = (WALLBOX_V_OFF_PER_CELL if v_engaged else WALLBOX_V_ON_PER_CELL) * conf.get('cell_count', 16)
 			print('wallbox: voltage_ok %-5s   min %s V over %d min (>=%.2f V, %s)' % (
 				voltage_ok, ('%.1f' % min_v) if min_v is not None else '-',
@@ -1502,17 +1560,27 @@ def write_timer(mode, now, basic_load_now, ac_pct=100, expected_pv_now=0.0):
 	    very high to make this cap effectively unrestricted, leaving only
 	    the energy budget below in effect.
 	  - an ENERGY budget for the current 1/4h slot only, round(0.25 *
-	    max(0, reserve_pct * basic_load_now * 0.01 - expected_pv_now)) Wh —
-	    the hour's own ordinary quarter-hour share, scaled by reserve_pct
-	    (dirt_shift.conf) exactly like the reserve itself, and net of the
-	    PV still expected in it (pvpt covers that part directly, so it need
-	    not also come from the battery — the same reserve_pct scaling and
-	    PV netting red_window_demand already applies to the reserve itself,
-	    see main()). Not a config value of its own. A rate cap alone
-	    would still let a load that is small but sustained drain the
-	    battery over the full hour; an energy budget alone would still let
-	    a brief high-power spike through before it is exhausted. Together
-	    neither gets through.
+	    max(0, min(1, reserve_pct * 0.01) * basic_load_now -
+	    expected_pv_now)) Wh — the hour's own ordinary quarter-hour share,
+	    scaled by reserve_pct (dirt_shift.conf) like the reserve itself, and
+	    net of the PV still expected in it (pvpt covers that part directly,
+	    so it need not also come from the battery — the same reserve_pct
+	    scaling and PV netting red_window_demand already applies to the
+	    reserve itself, see main()). Not a config value of its own.
+
+	    The reserve_pct factor is capped at 1.0 HERE ONLY, unlike in the
+	    reserve itself, where a value above 100 is meaningful and makes the
+	    system more cautious (it holds back more than the computed demand).
+	    For a cap the same value would invert that intent: above 100 the
+	    budget would exceed the hour's actual net demand, so the cap would
+	    stop restricting anything at all in exactly the situation it exists
+	    for. Capping keeps 'more reserve_pct' monotonically more
+	    conservative on both sides.
+
+	    A rate cap alone would still let a load that is small but sustained
+	    drain the battery over the full hour; an energy budget alone would
+	    still let a brief high-power spike through before it is exhausted.
+	    Together neither gets through.
 	A single slot's budget is enough: dirt_shift rewrites timer.txt every 1/4h
 	with a fresh budget for the new slot, and zeroinput's energy counter
 	resets whenever the timer file's last line changes (see
@@ -1538,7 +1606,7 @@ def write_timer(mode, now, basic_load_now, ac_pct=100, expected_pv_now=0.0):
 	re-arming the same limit every day."""
 	ac_pct = max(0, min(100, round(ac_pct)))
 	rate   = round(conf['limit_discharge_rate'])
-	budget = round(0.25 * max(0.0, basic_load_now * conf['reserve_pct'] * 0.01 - expected_pv_now))
+	budget = round(0.25 * max(0.0, basic_load_now * min(1.0, conf['reserve_pct'] * 0.01) - expected_pv_now))
 	FREE  = '100 100 -1'									# full discharge, full pvpt, no energy cap — the failsafe line, always fully unrestricted
 	payload = {'free': '100 %3d -1' % ac_pct,
 	           'limit': '%d %3d %d' % (rate, ac_pct, budget),
