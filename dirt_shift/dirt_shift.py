@@ -70,10 +70,13 @@ CLEAR_SKY_B          = 0.059	# Haurwitz clear-sky GHI model exponent coefficient
 SMARD_REGION        = 'DE'		# SMARD region code (see the SMARD API's region parameter)
 SMARD_FILTER_WIND_SOLAR = 5097	# 'Prognostizierte Erzeugung: Wind und Photovoltaik' (day-ahead, combined)
 SMARD_FILTER_LOAD       = 411	# 'Prognostizierter Verbrauch' (day-ahead) — less firmly confirmed than the generation filter, but the fallback below covers a wrong/broken value
+SLOT_MINUTES = 15	# length of one timer slot in minutes — the cadence dirt_shift is meant to run at (cron 0,15,30,45) and the granularity of every quantity below that is 'per slot': the timer line's own timestamp, the energy budget's share of an hour, the wallbox's typical-draw margin and its voltage window. Changing it here changes all of them together; the cron entry has to be changed to match
+SLOT_HOURS   = SLOT_MINUTES / 60.0	# same value as a fraction of an hour, for the Wh/W conversions
+
 WALLBOX_V_ON_PER_CELL  = 3.375	# per-cell voltage the battery must not have dropped below over WALLBOX_V_WINDOW_MIN for the voltage path to switch the wallbox ON (54.0 V at 16S) — a full battery under no meaningful discharge load
 WALLBOX_V_OFF_PER_CELL = 3.25	# per-cell voltage the voltage path releases at once engaged (52.0 V at 16S) — the lower half of the hysteresis, without which the wallbox's own load would drop the voltage below the ON threshold and switch itself off again on the very next run
-WALLBOX_V_WINDOW_MIN   = 15		# minutes of battery voltage history the ON/OFF thresholds are checked against (the minimum over that span, not the latest sample): 'never dropped below' captures a full battery AND the absence of a real discharge load in one test, which a momentary reading taken mid-spike would not
-WALLBOX_ENERGY_ON_FACTOR = 2	# multiple of 'margin' (a quarter hour of wallbox_typical_power) the energy path demands as headroom to switch the wallbox ON, dropped back to a single margin once it is itself holding — the hysteresis of that path. Without it, switching on with only a few Wh to spare is self-defeating: the wallbox draws roughly one margin plus house load per run, so the next run 15 min later finds the check failed and switches straight back off. Expressed as a factor rather than a fixed Wh value so it scales with the actual wallbox power — the flapping period is the run interval, so the headroom that matters is measured in run-lengths of charging.
+WALLBOX_V_WINDOW_MIN   = SLOT_MINUTES	# minutes of battery voltage history the ON/OFF thresholds are checked against (the minimum over that span, not the latest sample): 'never dropped below' captures a full battery AND the absence of a real discharge load in one test, which a momentary reading taken mid-spike would not. One slot, so each run judges the span it is itself deciding for
+WALLBOX_ENERGY_ON_FACTOR = 2	# multiple of 'margin' (one slot of wallbox_typical_power, SLOT_HOURS) the energy path demands as headroom to switch the wallbox ON, dropped back to a single margin once it is itself holding — the hysteresis of that path. Without it, switching on with only a few Wh to spare is self-defeating: the wallbox draws roughly one margin plus house load per run, so the next run 15 min later finds the check failed and switches straight back off. Expressed as a factor rather than a fixed Wh value so it scales with the actual wallbox power — the flapping period is the run interval, so the headroom that matters is measured in run-lengths of charging.
 
 def write_free_timer(path):
 	"""On any hard error, write an 'all allowed' timer so zeroinput is never
@@ -499,68 +502,112 @@ def scaled_pv_curve(pv_curve, radiation, now):
 
 
 
+SMARD_BATCH_TRIES = 3	# how many published batches back _smard_series will look for a given date before giving up
+
 def _smard_series(filter_id, today):
 	"""Fetch one SMARD day-ahead series (hourly resolution) and return
 	{local_hour: value} for points that fall on 'today' (a date) in local time.
 	SMARD's API is two-step: an index of available batch-start timestamps, then
-	the series for the most recent batch at/before now. Raises on any
-	request/structure problem — the caller treats that as 'no data'."""
+	the series for one batch. Raises on any request/structure problem — the
+	caller treats that as 'no data'.
+
+	Batches are weekly, so the newest one at/before now is NOT reliably the one
+	holding the requested date: in the small hours of a Monday the week that
+	just began is already indexed but not yet filled, while the values for that
+	very day — published day-ahead over the weekend — sit in the batch before
+	it. Taking the newest batch alone therefore returned an empty day every
+	Monday night. This walks back up to SMARD_BATCH_TRIES batches and keeps the
+	first that actually covers the date, which costs an extra request only in
+	the cases that used to fail outright."""
 	base = 'https://www.smard.de/app/chart_data'
 	idx = get(url='%s/%i/%s/index_hour.json' % (base, filter_id, SMARD_REGION), timeout=15)
 	idx.raise_for_status()
-	timestamps = idx.json()['timestamps']
 	now_ms = int(datetime.now().timestamp() * 1000)
-	batch = max(t for t in timestamps if t <= now_ms)
-
-	resp = get(url='%s/%i/%s/%i_%s_hour_%i.json' % (base, filter_id, SMARD_REGION, filter_id, SMARD_REGION, batch),
-	           timeout=15)
-	resp.raise_for_status()
-	series = resp.json()['series']
+	candidates = sorted((t for t in idx.json()['timestamps'] if t <= now_ms), reverse=True)[:SMARD_BATCH_TRIES]
 
 	result = {}
-	for ts_ms, value in series:
-		if value is None: continue
-		t_local = datetime.fromtimestamp(ts_ms / 1000)
-		if t_local.date() == today:
-			result[t_local.hour] = float(value)
+	for batch in candidates:
+		resp = get(url='%s/%i/%s/%i_%s_hour_%i.json' % (base, filter_id, SMARD_REGION, filter_id, SMARD_REGION, batch),
+		           timeout=15)
+		resp.raise_for_status()
+		found = {}
+		for ts_ms, value in resp.json()['series']:
+			if value is None: continue
+			t_local = datetime.fromtimestamp(ts_ms / 1000)
+			if t_local.date() == today:
+				found[t_local.hour] = float(value)
+		if len(found) > len(result):
+			result = found
+		if len(result) >= 24:							# full day found, no reason to look further back
+			break
 	return result
+
+
+SMARD_LOAD_FALLBACK_DAYS = 7	# how many days back the load forecast may be borrowed from when SMARD has not published it for the requested date
+
+def _smard_load_series(date):
+	"""Load forecast for 'date', falling back to the most recent earlier day
+	SMARD does have, and returning (series, date_actually_used).
+
+	SMARD publishes the two day-ahead series independently, and the load
+	forecast routinely lags the generation forecast by a day or more. Since a
+	day is only usable when BOTH series cover it, that lag alone took the whole
+	program out: generation for today complete, load missing, zones
+	uncomputable, and dirt_shift falling back to an all-allowed timer while
+	the data it actually needs most — the renewables curve — was sitting there.
+
+	Substituting an older day is defensible here because the zone cut only
+	reads the SHAPE of renewables/load across the window, never its absolute
+	level: the median splits the 24 values wherever they happen to lie. Load
+	profiles repeat closely from day to day, so the shape survives; an unusual
+	day (holiday, heatwave) shifts the split slightly, which is a far smaller
+	error than having no zones at all.
+
+	Walks back a day at a time and stops at the first day with a usable series,
+	so the substitute is always the freshest one available."""
+	for back in range(SMARD_LOAD_FALLBACK_DAYS + 1):
+		d = date - timedelta(days=back)
+		series = _smard_series(SMARD_FILTER_LOAD, d)
+		if len(series) >= 20:
+			return series, d
+	return {}, None
 
 
 def _smard_zones_for_date(date):
 	"""Classify one calendar date's SMARD-derived CO2-intensity zones
 	('red'/'green') and the raw wind+solar/load ratio per hour, from real
 	SMARD day-ahead data (Bundesnetzagentur; no API key needed). The day's
-	median ratio splits its 24 hours in half: the cleaner half (ratio at or
-	above the median) is green, the dirtier half is red — a self-adjusting
-	cut that reflects the day's own spread instead of a fixed fraction, so
-	even a day that is uniformly dirty still separates its relatively
-	cleaner hours from its worst ones. Returns {'zones': 24-value list,
-	'ratio': 24-value list (None where SMARD did not cover that hour)}, or
-	None if the query/parse fails or too few hours are covered for that date
-	(SMARD's day-ahead data for tomorrow, in particular, may simply not be
-	published yet)."""
+	Returns {'ratio': 24-value list (None where SMARD did not cover that
+	hour)}, or None if the query/parse fails or too few hours are covered for
+	that date (SMARD's day-ahead data for tomorrow, in particular, may simply
+	not be published yet). A day needs BOTH series to cover it, so a missing
+	load forecast is borrowed from the most recent day that has one (see
+	_smard_load_series) rather than sinking the whole date.
+
+	No classification happens here: the red/green median cut is taken once
+	over the ASSEMBLED rolling 24 hours instead (see read_smard_zones).
+	Cutting per calendar day made 'red' mean 'dirty for that day', which is
+	not comparable across the midnight boundary the rolling window crosses
+	every evening — a clean day's own median can classify an hour as green
+	that is absolutely dirtier than the hours the next day calls red, and the
+	battery was then held back for hours cleaner than the one it refused to
+	serve."""
 	try:
 		renewable = _smard_series(SMARD_FILTER_WIND_SOLAR, date)
-		load      = _smard_series(SMARD_FILTER_LOAD, date)
+		if len(renewable) < 20:							# no point hunting for a load profile this date cannot use
+			raise ValueError('incomplete day (%i/24 generation hours)' % len(renewable))
+		load, load_date = _smard_load_series(date)
 
 		hours = [h for h in range(24) if h in load and h in renewable]
 		if len(hours) < 20:								# too few hours for a meaningful split
 			raise ValueError('incomplete day (%i/24 hours)' % len(hours))
+		if verbose and load_date != date:				# reported only once the day is actually usable
+			print('SMARD load forecast for %s unavailable — using profile from %s' % (date, load_date))
 
 		ratio = {h: (renewable[h] / load[h] if load[h] > 0 else 0.0) for h in hours}
-		sorted_ratios = sorted(ratio[h] for h in hours)
-		n = len(sorted_ratios)
-		median = (sorted_ratios[n // 2] if n % 2 else
-		          (sorted_ratios[n // 2 - 1] + sorted_ratios[n // 2]) / 2.0)
-
-		zones = [None] * 24
-		for h in hours:
-			zones[h] = 'green' if ratio[h] >= median else 'red'
-		for h in range(24):									# hours SMARD didn't cover: treat as red (safe default)
-			if zones[h] is None: zones[h] = 'red'
 		ratio_list = [ratio.get(h) for h in range(24)]		# None where not covered
-		if debug: print('SMARD ratio by hour (%s), median %.2f:' % (date, median), {h: round(ratio[h], 2) for h in hours})
-		return {'zones': zones, 'ratio': ratio_list}
+		if debug: print('SMARD ratio by hour (%s):' % date, {h: round(ratio[h], 2) for h in hours})
+		return {'ratio': ratio_list}
 	except Exception as e:
 		if verbose: print('SMARD zone fetch failed for %s:' % date, e)
 		return None
@@ -568,7 +615,7 @@ def _smard_zones_for_date(date):
 
 def get_smard_zones():
 	"""Today's and tomorrow's SMARD-derived zones (see _smard_zones_for_date).
-	Returns (today, tomorrow), each either a {'zones':..., 'ratio':...} dict
+	Returns (today, tomorrow), each either a {'ratio':...} dict
 	or None. Tomorrow's day-ahead data commonly is not published yet earlier
 	in the day — that is expected and not treated as an error, tomorrow is
 	simply None then. Returns (None, None) if today's own query fails."""
@@ -580,18 +627,61 @@ def get_smard_zones():
 	return today, tomorrow
 
 
+def _median(values):
+	"""Median of a list, ignoring None entries. None if nothing is left.
+	Used by the zone cut over the rolling window (_cut_zones)."""
+	valid = [v for v in values if v is not None]
+	if not valid:
+		return None
+	n = len(valid)
+	s = sorted(valid)
+	return s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2.0
+
+
+def _cut_zones(ratio):
+	"""Split a 24-value ratio list into red/green at its own median: the
+	cleaner half (ratio at or above the median) is green, the dirtier half
+	red. A self-adjusting cut that reflects the window's own spread instead
+	of a fixed threshold, so even a uniformly dirty stretch still separates
+	its relatively cleaner hours from its worst ones — and, being a median,
+	it always yields 12 of each, never degenerating to all-green or all-red
+	however clean or dirty the window is overall.
+
+	Applied to the ASSEMBLED rolling window, not per calendar day. Cutting
+	each day separately makes 'red' mean 'dirty relative to that day', which
+	says nothing across the midnight boundary the window crosses every
+	evening: on a day whose midday was exceptionally clean the median sits
+	high, so a genuinely dirty late-evening hour still falls below it and
+	counts green, while the next day's calmer hours — absolutely cleaner —
+	count red. The battery was then stopped in the dirtier hour to save
+	charge for cleaner ones, the exact inverse of the intent. One cut over
+	the 24 hours actually being decided about removes that. The wallbox's own
+	threshold looks at the same rolling window, ranked rather than cut (see
+	_dirt_rank_pct).
+
+	Hours SMARD did not cover (None) count as red, the safe default."""
+	median = _median(ratio)
+	if median is None:
+		return ['red'] * 24
+	if debug: print('rolling median ratio %.2f over %d covered hours'
+	                % (median, sum(1 for r in ratio if r is not None)))
+	return ['green' if (r is not None and r >= median) else 'red' for r in ratio]
+
+
 def read_smard_zones():
-	"""Rolling 24-hour SMARD zones/ratio starting at the current hour: hours
-	from now until midnight come from today's classification, hours after
-	midnight come from tomorrow's — same rolling principle as
-	read_radiation_forecast, so a caller summing forward from 'now' (see
-	_bridge_hours/red_window_demand) always reads the classification for the
-	calendar day each hour actually falls on. Built fresh on every call from
-	the cached raw today/tomorrow dicts (see get_smard_zones), which are
-	refetched together once per hour in their own cache file. An hour missing
-	from tomorrow (day-ahead data not yet published, or entirely absent) uses
-	today's classification for that same hour — that hour is then really
-	still today's classification standing in for tomorrow, not tomorrow's own;
+	"""Rolling 24-hour SMARD zones/ratio starting at the current hour: the
+	ratio of each hour comes from the calendar day that hour actually falls
+	on — from now until midnight today's, after midnight tomorrow's — the
+	same rolling principle as read_radiation_forecast. The red/green cut is
+	then taken ONCE over that assembled window (see _cut_zones), not per
+	calendar day, so 'red' means dirty relative to the 24 hours actually
+	being decided about rather than relative to whichever day an hour
+	happens to belong to. Built fresh on every call from the cached raw
+	today/tomorrow ratio dicts (see get_smard_zones), which are refetched
+	together once per hour in their own cache file. An hour missing from
+	tomorrow (day-ahead data not yet published, or entirely absent) uses
+	today's ratio for that same hour — that hour is then really still
+	today's figure standing in for tomorrow, not tomorrow's own;
 	the returned dict's 'stale' key holds the set of such hours (see
 	_hourly_debug_table, which marks them with '.'). SMARD is a prerequisite:
 	if the fetch fails, the cached data may substitute for exactly one more
@@ -627,18 +717,23 @@ def read_smard_zones():
 			backdate_ratio = old_today['ratio'][prev_hour]			# value that was valid up to this hour's boundary
 
 		today, tomorrow = get_smard_zones()
+		vz_in['attempt'] = datetime.now().timestamp()		# recorded either way, so a failure is retried next hour and not next run
 		if today is not None:
 			vz_in['today'] = today
 			vz_in['tomorrow'] = tomorrow
 			vz_in['fetch_date'] = datetime.now().strftime('%Y-%m-%d')
 			vz_in['timestamp'] = datetime.now().timestamp()
-			with open(join(dirname(__file__), 'dirt_smard_cache.json'), 'w') as fo:
-				json_dump(vz_in, fo)
 		elif verbose:
 			print('SMARD zone refresh failed — trying previous data')
+		try:
+			with open(join(dirname(__file__), 'dirt_smard_cache.json'), 'w') as fo:
+				json_dump(vz_in, fo)
+		except Exception as e:
+			if verbose: print('failed to write SMARD cache:', e)
 	elif verbose:
+		_ok_ts = vz_in.get('timestamp')
 		print('using cached SMARD zones from',
-		      datetime.fromtimestamp(last_ts).strftime('%Y-%m-%d %H:%M') if last_ts else 'never')
+		      datetime.fromtimestamp(_ok_ts).strftime('%Y-%m-%d %H:%M') if _ok_ts else 'never')
 
 	today = vz_in.get('today')
 	fetch_date = vz_in.get('fetch_date')
@@ -658,11 +753,11 @@ def read_smard_zones():
 	else:
 		tomorrow = vz_in.get('tomorrow')
 	if tomorrow is None:
-		return {'zones': today['zones'], 'ratio': today['ratio'], 'stale': set(range(now_hour)),
-		        'backdate_ratio': backdate_ratio}
-	zones = [today['zones'][h] if h >= now_hour else tomorrow['zones'][h] for h in range(24)]
+		return {'zones': _cut_zones(today['ratio']), 'ratio': today['ratio'],
+		        'stale': set(range(now_hour)), 'backdate_ratio': backdate_ratio}
 	ratio = [today['ratio'][h] if h >= now_hour else tomorrow['ratio'][h] for h in range(24)]
-	return {'zones': zones, 'ratio': ratio, 'stale': set(), 'backdate_ratio': backdate_ratio}
+	return {'zones': _cut_zones(ratio), 'ratio': ratio, 'stale': set(),
+	        'backdate_ratio': backdate_ratio}
 
 
 def get_vz_bat_cap():
@@ -722,8 +817,9 @@ def get_vz_bat_cap():
 			vz_bat_cap += row['consumption'] / (conf['bat_to_AC_efficiency'] * 0.01)		# AC output -> battery energy removed (loss divided back in)
 
 	vz_bat_cap *= conf['bat_to_AC_efficiency'] * 0.01
-	if verbose: print('min voltage %.1f V, latest %.1f V, battery content %.0f Wh' % (min_v, latest_voltage, vz_bat_cap))
-	return latest_voltage, int(vz_bat_cap)
+	vz_bat_cap = int(vz_bat_cap)						# truncate once, here, so the value printed below is the value returned — a %.0f of the float would round and disagree with it by 1 Wh
+	if verbose: print('min voltage %.1f V, latest %.1f V, battery content %d Wh' % (min_v, latest_voltage, vz_bat_cap))
+	return latest_voltage, vz_bat_cap
 
 
 # ── dirt_shift core logic (verified separately) ───────────────────────────────
@@ -813,6 +909,41 @@ def wallbox_switch(ip, output, on):
 			sleep(30)
 	if verbose: print('wallbox switch to %s failed after 3 attempts' % ('on' if on else 'off'))
 	return False
+
+
+def recent_pv_power(minutes=15):
+	"""Average PV power volkszähler reports over the last 'minutes' (the PV
+	channel already configured in vz_chans). Used by write_timer to net the
+	quarter-hour energy budget against what the array is ACTUALLY producing
+	right now, rather than against expected_pv[hour] — an hourly mean.
+
+	The distinction matters on the ramp hours at each end of the day, which
+	are also, routinely, the marginal red hours the budget is there to guard.
+	Around sunset the modelled hourly mean can sit close to basic_load while
+	real output is already far below it, leaving a budget of a few Wh for a
+	quarter hour in which the battery should be carrying the house — the
+	shortfall then comes from the grid during a red hour, the exact inverse
+	of the point of this program. A measurement has no such lag: it tracks
+	the ramp, and passing clouds, by construction.
+
+	Returns None on any failure, which makes write_timer fall back to the
+	forecast — the previous behaviour, never a hard error. The forecast stays
+	in charge of everything about the FUTURE (reserve, dirtiest hour,
+	precharge); only the budget for the slot happening right now uses this."""
+	end   = datetime.today().replace(microsecond=0)
+	begin = end - timedelta(minutes=minutes)
+	try:
+		url = ('http://' + conf['vz_host_port'] + '/data.json?from='
+		       + str(int(begin.timestamp())).ljust(13, '0') + '&to='
+		       + str(int(end.timestamp())).ljust(13, '0') + '&uuid[]=' + conf['vz_chans']['PV'])
+		row = get(url=url).json()['data'][0]
+		if row.get('average') is not None:
+			return abs(float(row['average']))		# sign convention varies by channel; production is a magnitude here
+		tuples = row['tuples']
+		return abs(sum(v for _ts, v, _s in tuples) / len(tuples))
+	except Exception as e:
+		if verbose: print('measured PV unavailable (%s) — budget falls back to the forecast' % e)
+		return None
 
 
 def battery_min_voltage(minutes):
@@ -965,53 +1096,98 @@ def write_wallbox_marker(on=None, voltage_on=None, energy_on=None):
 		if verbose: print('failed to write wallbox marker:', e)
 
 
-def _dirt_median(all_dirt):
-	"""Median of a 24-value dirt% list, ignoring hours with no SMARD coverage
-	(None). None if no hour has a value at all. Shared by
-	wallbox_should_be_on and main()'s -v reporting, so the displayed median
-	is always the exact one the decision itself was made against."""
+def _dirt_rank_pct(dirt_now, all_dirt):
+	"""Where dirt_now sits among the covered hours of the rolling window, as a
+	percentile: 0 means nothing in the window is cleaner, 100 that nothing is
+	dirtier. None if dirt_now is None or no hour has a value at all.
+
+	A rank, not a share of the median, because dirt% is a signed quantity
+	((1 - renewables/load) * 100) that goes NEGATIVE whenever renewable
+	generation exceeds load — routinely so on a windy, sunny day. A
+	'percent of the median' test silently assumes the median is positive:
+	with a positive median, a factor below 1 lowers the bar under it (the
+	intended 'be pickier than average'), but with a negative median the same
+	factor RAISES it above the median instead, inverting the whole test and
+	locking the wallbox out precisely on the cleanest days. Percentages of a
+	signed quantity carry no stable meaning at all.
+
+	A rank has none of that: it is defined on the ordering alone, so it is
+	immune to sign, offset and scale. It also gives the threshold a meaning
+	that can be set without knowing anything about the data — 'only the
+	cleanest N percent of the window' — instead of a factor whose effect
+	depends on where the median happens to land.
+
+	Ties count as cleaner, so identical hours are treated alike rather than
+	one of them being ranked out arbitrarily."""
 	valid = [d for d in all_dirt if d is not None]
-	if not valid:
+	if dirt_now is None or not valid:
 		return None
-	n = len(valid)
-	s = sorted(valid)
-	return s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2.0
+	cleaner = sum(1 for d in valid if d < dirt_now)
+	return 100.0 * cleaner / len(valid)
 
 
-def wallbox_should_be_on(dirt_now, all_dirt, mode):
+def wallbox_should_be_on(dirt_now, all_dirt, mode, surplus_now=False):
 	"""The dirt%-based half of the switch-on decision (see wallbox_decide,
 	which combines this with the energy-based half and is what main()
 	actually calls): the current hour's dirtiness must be within
-	wallbox_median_fraction percent of the day's median dirt% AND at or
-	below the absolute wallbox_absolute_max, AND the discharge mode must be
-	'free' — which covers both a comfortably covered red reserve and,
-	deliberately, the single dirtiest red hour itself (where 'free' is
-	forced regardless of content, see main()): on a night dirty enough that
-	no hour clears the two dirt% limits, the wallbox may still end up
-	charging in that one reddest hour, since 'free' holds there too. This is
-	an accepted consequence of reusing 'free' rather than a flaw —
-	reserve_pct and the discharge limit (limit_discharge_rate plus the
-	quarter-hour energy budget) already handle the reserve itself; the
-	wallbox is not held to a stricter standard than the battery is.
+	the cleanest wallbox_cleanest_pct percent of the rolling window (see
+	_dirt_rank_pct) AND at or below the absolute wallbox_absolute_max, AND
+	the discharge mode must leave the battery unable to lose out by it.
+
+	A car has to be charged from the grid one way or another, so the point
+	is to pick the cleanest hour for it. What the mode has to rule out is
+	not the charging itself but the two ways a wallbox can cost the battery:
+
+	  'free'  -> allowed. Also covers, deliberately, the single dirtiest red
+	             hour, where 'free' is forced regardless of content (see
+	             main()): on a night dirty enough that no hour clears the
+	             two dirt% limits, the wallbox may end up charging in that
+	             one reddest hour. An accepted consequence of reusing
+	             'free', not a flaw — reserve_pct and the discharge limit
+	             already guard the reserve, and the wallbox is not held to a
+	             stricter standard than the battery.
+	  'limit' -> refused. The battery may still discharge up to the rate cap
+	             and the quarter-hour budget, and that budget is meant for
+	             the house, not for a car. In practice this branch never
+	             decides anything: 'limit' only ever occurs in a red hour,
+	             where dirt_now is at or above the median by definition and
+	             the median test above has already failed.
+	  'stop'  -> allowed only while the hour has no PV surplus. Discharge is
+	             fully blocked here ('000' in the timer line), so a wallbox
+	             cannot draw a single Wh out of the battery — refusing on
+	             that ground alone would be backwards. What it CAN do is
+	             absorb the surplus that is meant to be charging the battery
+	             back up toward the reserve, and that is what surplus_now
+	             rules out. With no surplus there is nothing to divert: the
+	             car charges from the grid, in the cleanest hour available,
+	             which is the entire purpose.
+
+	surplus_now is taken from the hourly forecast rather than a measurement
+	on purpose (unlike write_timer's budget, which governs actual Wh in the
+	quarter hour at hand): the question here is whether this HOUR is one
+	that charges the battery, and an hourly figure answers it without
+	flipping the wallbox on and off every 15 minutes as clouds pass.
+
 	Precharge (see precharge_ac_pct) never enters this decision — the two
 	are fully independent. False if dirt_now or every entry in all_dirt is
 	unavailable (no SMARD coverage for that hour)."""
-	median = _dirt_median(all_dirt)
-	if dirt_now is None or median is None:
+	rank = _dirt_rank_pct(dirt_now, all_dirt)
+	if rank is None:
 		return False
-	return (dirt_now <= conf['wallbox_median_fraction'] * 0.01 * median
+	mode_ok = mode == 'free' or (mode == 'stop' and not surplus_now)
+	return (rank <= conf['wallbox_cleanest_pct']
 	        and dirt_now <= conf['wallbox_absolute_max']
-	        and mode == 'free')
+	        and mode_ok)
 
 
-def wallbox_decide(dirt_now, all_dirt, mode, energy_ok=False, voltage_ok=False):
+def wallbox_decide(dirt_now, all_dirt, mode, energy_ok=False, voltage_ok=False, surplus_now=False):
 	"""Whether the wallbox should be on this run — one formula, checked the
 	same way regardless of whether dirt_shift currently owns the relay (see
 	main(), which still uses the owner marker separately to decide whether
 	an actual switch command is needed). Both paths run continuously side by
 	side, not just at switch-on:
 
-	  should_on = wallbox_should_be_on(dirt_now, all_dirt, mode)
+	  should_on = wallbox_should_be_on(dirt_now, all_dirt, mode, surplus_now)
 	              OR energy_ok OR voltage_ok
 
 	dirt%-based path (wallbox_should_be_on): both dirt% limits AND
@@ -1028,24 +1204,25 @@ def wallbox_decide(dirt_now, all_dirt, mode, energy_ok=False, voltage_ok=False):
 	empty anchor. Carries its own hysteresis state (see
 	wallbox_voltage_ok).
 
-	Energy-based path (wallbox_energy_ok): content against a
-	wallbox-specific reserve — reserve_pct * upcoming_red_demand(now, zones,
-	basic_load, expected_pv), in place of the main reserve variable
-	red_window_demand computes elsewhere in main(): that one deliberately
-	reads 0 for as long as 'now' itself sits within an assumed PV-surplus
-	stretch, which would make the wallbox's own energy check a rubber stamp
-	exactly when it matters most — a running wallbox can draw far more than
-	the day's actual remaining surplus (see upcoming_red_demand), quietly
-	eating into stored content the main reserve figure is trusting will
-	refill on its own. upcoming_red_demand's rough, always-available
-	estimate closes that gap by never reading 0 just because 'now' happens
-	to be a surplus hour. Compared directly against current content, with no
-	projected future surplus added on top — deliberately conservative, since
-	any assumed surplus between now and red is exactly what a running
-	wallbox could itself consume before it ever reaches the battery. This
-	replacement is scoped to the wallbox only; the main reserve variable and
-	the rest of main()'s mode decision are untouched. Carries its own
-	hysteresis state, like the voltage path (see wallbox_energy_ok).
+	Energy-based path (wallbox_energy_ok): content against a reserve
+	computed exactly as main()'s own is — reserve_pct * max(
+	red_window_demand, upcoming_red_demand) — and compared directly against
+	current content, with no projected future surplus added on top.
+	Withholding that projection is deliberate: any surplus assumed between
+	now and the next red hour is precisely what a running wallbox could
+	consume before it ever reaches the battery.
+
+	Both estimates are needed, for the same reason main() takes the max of
+	them. red_window_demand reads 0 while 'now' sits inside an assumed
+	surplus stretch, which alone would make this check a rubber stamp
+	exactly when it matters most. upcoming_red_demand never reads 0 there,
+	but stops at the first green hour — so a short green gap before dawn
+	truncates it to a fraction of what is really needed before PV returns,
+	and on that alone a wallbox will happily empty the battery overnight
+	against a reserve that never saw those hours. Neither figure may be
+	used by itself, and the wallbox must not be held to a lower bar than the
+	battery it draws from. Carries its own hysteresis state, like the
+	voltage path (see wallbox_energy_ok).
 
 	Because all paths run continuously, a relay dirt_shift itself switched
 	on via one path stays on as long as ANY path still holds — it only
@@ -1072,7 +1249,7 @@ def wallbox_decide(dirt_now, all_dirt, mode, energy_ok=False, voltage_ok=False):
 	by main() (they carry per-path hysteresis state that has to be persisted
 	there anyway) and only combined here, so what main() reports in -v is by
 	construction the same value the decision was made on."""
-	return wallbox_should_be_on(dirt_now, all_dirt, mode) or energy_ok or voltage_ok
+	return wallbox_should_be_on(dirt_now, all_dirt, mode, surplus_now) or energy_ok or voltage_ok
 
 
 def _bridge_hours(now, zones, basic_load, expected_pv):
@@ -1129,6 +1306,39 @@ def red_window_demand(basic_load, now, zones, expected_pv):
 			demand += basic_load[h] - pv
 		h = (h + 1) % 24
 	return max(0.0, demand)
+
+
+def surplus_before_next_red(now, zones, basic_load, expected_pv):
+	"""Expected PV surplus (expected_pv - basic_load, only where positive)
+	over the hours between now and the start of the next red block — the
+	charge the battery can be expected to gain on its own before that block
+	begins. Stops at the first red hour, so surplus inside the red block
+	itself is not counted; that share is already netted per hour by
+	upcoming_red_demand. 0 when a red hour starts right away.
+
+	This restores, as an arithmetic test, the assumption red_window_demand
+	used to make outright: that a battery heading into a surplus stretch
+	refills itself and needs no reserve held back beforehand. That
+	assumption is right on a sunny day and was the basis of the intended
+	daily cycle — discharge overnight and through the morning, charge from
+	midday on, discharge again in the red evening. It only failed when a
+	load emptied the battery faster than the surplus refilled it, so rather
+	than dropping the assumption (which would keep the battery idle through
+	a morning whose surplus covers the gap many times over), main() now
+	subtracts this figure and keeps whatever demand the surplus does not
+	cover.
+
+	Deliberately NOT applied to the wallbox's own reserve check (see
+	wallbox_decide): a running wallbox is precisely the consumer that would
+	eat this surplus before it ever reaches the battery, so for that check
+	the surplus must not be assumed available."""
+	surplus, h = 0.0, now.hour
+	for _ in range(24):
+		if zones[h] == 'red':
+			break
+		surplus += max(0.0, expected_pv[h] - basic_load[h])
+		h = (h + 1) % 24
+	return surplus
 
 
 def upcoming_red_demand(now, zones, basic_load, expected_pv):
@@ -1389,7 +1599,7 @@ def _hourly_debug_table(now, pv_curve, radiation, expected_pv, basic_load, grid_
 		exp = round(expected_pv[h]) if expected_pv is not None else '-'
 		bl  = round(basic_load[h]) if basic_load is not None else '-'
 		if expected_pv is not None and basic_load is not None:
-			bal = '-' if exp == 0 else '%+d' % (expected_pv[h] - basic_load[h])	# exp_PV shows 0: balance would be -basic_load, redundant
+			bal = '-' if exp == 0 else '%+d' % (exp - bl)	# from the ROUNDED column values, so the row adds up as displayed: %d on the raw difference truncates toward zero and disagrees by 1 wherever rounding went the other way. exp_PV showing 0: balance would be -basic_load, redundant
 			chg = 'L' if expected_pv[h] > basic_load[h] else 'D'
 			if h == dh: chg = '!' + chg							# the dirtiest red hour in the window
 			if h == cleanest_l: chg = '!' + chg					# the cleanest charging hour of the day
@@ -1399,22 +1609,26 @@ def _hourly_debug_table(now, pv_curve, radiation, expected_pv, basic_load, grid_
 		dirt_s = ('%.0f' % ((1.0 - ratio_h) * 100)) if ratio_h is not None else '-'
 		if h == now.hour and dirt_written is not None:
 			dirt_s = ('*' if dirt_written else '!') + dirt_s	# volkszähler write of this hour's value
-		if h in smard_stale: dirt_s = '.' + dirt_s				# still today's classification, no tomorrow value yet
+		if h in smard_stale: dirt_s = '.' + dirt_s				# still today's ratio, no tomorrow value yet
 		marker = '*' if h == now.hour else ' '
 		print('%2d%s %8s %8s %5s %8s %8s %8s %4s %6s %-8s' % (h, marker, pv, rad_s, clr, exp, bl, bal, chg, dirt_s, zones[h]))
 	if expected_pv is not None or basic_load is not None or any(r is not None for r in ratio):
 		dash8 = '-' * 8
 		print('%-3s %8s %8s %5s %8s %8s %8s' % ('', '', '', '', dash8, dash8, dash8))
-		exp_sum = sum(expected_pv) if expected_pv is not None else None
-		bl_sum  = sum(basic_load) if basic_load is not None else None
+		# summed over the ROUNDED per-hour values, i.e. exactly the numbers in
+		# the column above, so the table adds up for a reader checking it by
+		# hand — summing the raw floats and rounding once at the end can land
+		# a few Wh off the visible column.
+		exp_sum = sum(round(x) for x in expected_pv) if expected_pv is not None else None
+		bl_sum  = sum(round(x) for x in basic_load) if basic_load is not None else None
 		bal_sum = (exp_sum - bl_sum) if (exp_sum is not None and bl_sum is not None) else None
 		valid_ratio = [r for r in ratio if r is not None]
 		dirt_avg = sum((1.0 - r) * 100.0 for r in valid_ratio) / len(valid_ratio) if valid_ratio else None
 		print('%-3s %8s %8s %5s %8s %8s %8s %4s %6s' % (
 			'', '', '', '',
-			('%.0f' % exp_sum) if exp_sum is not None else '-',
-			('%.0f' % bl_sum) if bl_sum is not None else '-',
-			('%+.0f' % bal_sum) if bal_sum is not None else '-',
+			('%d' % exp_sum) if exp_sum is not None else '-',
+			('%d' % bl_sum) if bl_sum is not None else '-',
+			('%+d' % bal_sum) if bal_sum is not None else '-',
 			'', ('Ø %.0f' % dirt_avg) if dirt_avg is not None else '-'))
 	print('')
 
@@ -1432,11 +1646,18 @@ def main():
 	_voltage, content = get_vz_bat_cap()
 
 	r = grid_data['ratio'][now.hour]
-	slot = now.replace(second=0, microsecond=0, minute=(now.minute // 15) * 15)
+	slot = now.replace(second=0, microsecond=0, minute=(now.minute // SLOT_MINUTES) * SLOT_MINUTES)
 	slot_ms = int(slot.timestamp() * 1000)
+	# The backdated value closes off the hour that just ended, so its timestamp
+	# comes from the HOUR boundary and the write only happens on the run that
+	# starts an hour. Deriving it from the slot instead (slot_ms - 1000) only
+	# lands on the hour boundary while this fires exactly once per hour: any
+	# extra run plants the PREVIOUS hour's value in the middle of the current
+	# one, and the logged curve turns into a sawtooth between the two.
 	backdate_ratio = grid_data.get('backdate_ratio')
-	if backdate_ratio is not None:
-		write_dirtiness_to_vz((1.0 - backdate_ratio) * 100, slot_ms - 1000)	# flat step: previous hour's value, 1s before the boundary
+	if backdate_ratio is not None and now.minute < SLOT_MINUTES:
+		hour_ms = int(now.replace(minute=0, second=0, microsecond=0).timestamp() * 1000)
+		write_dirtiness_to_vz((1.0 - backdate_ratio) * 100, hour_ms - 1000)	# flat step: previous hour's value, 1s before the hour boundary
 	dirt_written = write_dirtiness_to_vz((1.0 - r) * 100, slot_ms) if r is not None else None
 	if debug:
 		_hourly_debug_table(now, pv_curve, radiation, expected_pv, basic_load, grid_data, dirt_written, radiation_stale)
@@ -1449,9 +1670,35 @@ def main():
 	# during those hours, scaled by reserve_pct. Without a PV forecast (curve
 	# never successfully computed, e.g. fresh install), a zero-PV day is
 	# assumed instead — conservative, but keeps the reserve computable.
+	#
+	# upcoming_red_demand is taken as a floor under it, because the two have
+	# complementary blind spots and neither dominates: red_window_demand
+	# looks broadly but stops at the first surplus hour, so it reads 0 for as
+	# long as 'now' sits inside a surplus stretch — on the assumption that
+	# the coming yield will refill the battery by itself. That assumption
+	# fails whenever a load (a running wallbox above all) drains the battery
+	# faster than the surplus refills it: reserve 0 makes content > reserve
+	# trivially true, mode goes free, and the battery is handed over
+	# unlimited exactly when nothing is guarding it. upcoming_red_demand
+	# still sees the next red block across that surplus and holds the line.
+	# Conversely it looks only at that one contiguous block, while
+	# red_window_demand sums several separate red spans (and, on a day with
+	# no surplus at all, the whole rolling 24 h) — so it is the larger, and
+	# correct, figure there. Taking the max keeps whichever is binding.
 	zones = grid_data['zones']
 	pv_for_reserve = expected_pv if expected_pv is not None else [0.0] * 24
-	reserve = conf['reserve_pct'] * 0.01 * red_window_demand(basic_load, now, zones, pv_for_reserve)
+	_rw_demand = red_window_demand(basic_load, now, zones, pv_for_reserve)
+	# upcoming_red_demand is the floor, but net of the surplus expected before
+	# that red block even starts: the battery charges itself in the meantime,
+	# and only what the surplus fails to cover has to be held back now. Without
+	# this the floor would keep the battery idle right through a sunny morning
+	# whose own yield covers the gap several times over — the very cycle
+	# red_window_demand was built around (see surplus_before_next_red). The
+	# wallbox check deliberately skips this subtraction.
+	_up_raw = upcoming_red_demand(now, zones, basic_load, pv_for_reserve)
+	_pv_before_red = surplus_before_next_red(now, zones, basic_load, pv_for_reserve)
+	_up_demand = max(0.0, _up_raw - _pv_before_red)
+	reserve = conf['reserve_pct'] * 0.01 * max(_rw_demand, _up_demand)
 	zone = zones[now.hour]
 
 	# green: charge, never discharge, as long as content has not yet reached
@@ -1489,8 +1736,15 @@ def main():
 		ac_pct = 100											# precharge only ever considered in green
 
 	if verbose:
-		print('content %d Wh   reserve(%d%%) %.0f Wh%s   =>  mode: %s' % (
-			content, conf['reserve_pct'], reserve, detail, mode.upper()))
+		# name which of the two estimates the reserve came from, and show the
+		# surplus already subtracted from the second — otherwise a reserve of 0
+		# on a sunny morning is not answerable from the output. _up_raw is the
+		# unclamped demand on purpose: reconstructing it from _up_demand would
+		# print the surplus back at the reader whenever the clamp bit.
+		_src = 'window' if _rw_demand >= _up_demand else 'upcoming'
+		print('content %d Wh   reserve(%d%%) %.0f Wh [%s: %.0f/%.0f-%.0fpv]%s   =>  mode: %s' % (
+			content, conf['reserve_pct'], reserve, _src, _rw_demand,
+			_up_raw, _pv_before_red, detail, mode.upper()))
 		if ac_pct != 100:
 			print('precharge: ac capped to %d%% this hour (see precharge_ac_pct)' % ac_pct)
 
@@ -1503,13 +1757,26 @@ def main():
 		marker = read_wallbox_marker()
 		e_engaged = read_wallbox_energy_engaged()
 		v_engaged = read_wallbox_voltage_engaged()
-		wallbox_reserve = conf['reserve_pct'] * 0.01 * upcoming_red_demand(now, zones, basic_load, pv_for_reserve)
-		margin = conf['wallbox_typical_power'] * 0.25
+		# Same two estimates as the main reserve, but WITHOUT main()'s
+		# surplus_before_next_red subtraction — deliberately stricter, not an
+		# oversight: a running wallbox is exactly the consumer that would eat
+		# that surplus before it ever reaches the battery, so it must not be
+		# assumed available here. The asymmetry only ever runs this way round;
+		# holding the wallbox to a LOWER bar than the battery is what let one
+		# empty the battery overnight (see wallbox_decide).
+		wallbox_reserve = conf['reserve_pct'] * 0.01 * max(
+			red_window_demand(basic_load, now, zones, pv_for_reserve),
+			upcoming_red_demand(now, zones, basic_load, pv_for_reserve))
+		margin = conf['wallbox_typical_power'] * SLOT_HOURS
 		energy_ok = wallbox_energy_ok(content, wallbox_reserve, margin, e_engaged)
 		min_v = battery_min_voltage(WALLBOX_V_WINDOW_MIN)
 		voltage_ok = wallbox_voltage_ok(min_v, v_engaged)
 		write_wallbox_marker(energy_on=energy_ok, voltage_on=voltage_ok)	# hysteresis states, tracked whether or not the relay itself changes
-		should_on = wallbox_decide(dirt_now, all_dirt, mode, energy_ok, voltage_ok)
+		# surplus in THIS hour is what a wallbox would divert away from
+		# charging the battery — the only way it can cost the battery while
+		# discharge is stopped (see wallbox_should_be_on)
+		surplus_now = pv_for_reserve[now.hour] > basic_load[now.hour]
+		should_on = wallbox_decide(dirt_now, all_dirt, mode, energy_ok, voltage_ok, surplus_now)
 		action = 'none'
 		if should_on and not marker:
 			action = 'switch on (verified)' if wallbox_switch(conf['wallbox_ip'], conf['wallbox_output'], True) else 'switch on FAILED'
@@ -1518,20 +1785,20 @@ def main():
 			action = 'switch off (verified)' if wallbox_switch(conf['wallbox_ip'], conf['wallbox_output'], False) else 'switch off FAILED'
 			if action.endswith('(verified)'): write_wallbox_marker(False)
 		if verbose:
-			median = _dirt_median(all_dirt)
-			pct_median = (dirt_now / median * 100.0) if (dirt_now is not None and median) else None
+			rank_pct = _dirt_rank_pct(dirt_now, all_dirt)
 			# each path reports its own verdict first, then the values it was reached from,
 			# so the three lines read the same way and should_on below is just their OR
-			print('wallbox: dirt_ok    %-5s   dirt%% %s (<%g)   %%median %s (<%g)   mode %s' % (
-				wallbox_should_be_on(dirt_now, all_dirt, mode),
+			print('wallbox: dirt_ok    %-5s   dirt%% %s (<%g)   rank %s%% (<%g)   mode %s%s' % (
+				wallbox_should_be_on(dirt_now, all_dirt, mode, surplus_now),
 				('%.0f' % dirt_now) if dirt_now is not None else '-', conf['wallbox_absolute_max'],
-				('%.0f' % pct_median) if pct_median is not None else '-', conf['wallbox_median_fraction'], mode))
+				('%.0f' % rank_pct) if rank_pct is not None else '-', conf['wallbox_cleanest_pct'], mode,
+				('' if mode != 'stop' else (' (pv surplus)' if surplus_now else ' (no pv surplus)'))))
 			_headroom = margin if e_engaged else WALLBOX_ENERGY_ON_FACTOR * margin
-			print('wallbox: energy_ok  %-5s   content %.0f - reserve %.0f - headroom %.0f = %.0f Wh (%s)' % (
+			print('wallbox: energy_ok  %-5s   content %d - reserve %.0f - headroom %.0f = %.0f Wh (%s)' % (
 				energy_ok, content, wallbox_reserve, _headroom,
 				content - wallbox_reserve - _headroom, 'engaged' if e_engaged else 'idle'))
 			_v_thr = (WALLBOX_V_OFF_PER_CELL if v_engaged else WALLBOX_V_ON_PER_CELL) * conf.get('cell_count', 16)
-			print('wallbox: voltage_ok %-5s   min %s V over %d min (>=%.2f V, %s)' % (
+			print('wallbox: voltage_ok %-5s   min %s V over %d min (>=%.1f V, %s)' % (
 				voltage_ok, ('%.1f' % min_v) if min_v is not None else '-',
 				WALLBOX_V_WINDOW_MIN, _v_thr, 'engaged' if v_engaged else 'idle'))
 			print('wallbox: should_on  %-5s   marker(before) %s   action: %s' % (should_on, marker, action))
@@ -1559,14 +1826,23 @@ def write_timer(mode, now, basic_load_now, ac_pct=100, expected_pv_now=0.0):
 	    a fixed, installation-specific ceiling on instantaneous power. Set it
 	    very high to make this cap effectively unrestricted, leaving only
 	    the energy budget below in effect.
-	  - an ENERGY budget for the current 1/4h slot only, round(0.25 *
-	    max(0, min(1, reserve_pct * 0.01) * basic_load_now -
-	    expected_pv_now)) Wh — the hour's own ordinary quarter-hour share,
-	    scaled by reserve_pct (dirt_shift.conf) like the reserve itself, and
-	    net of the PV still expected in it (pvpt covers that part directly,
-	    so it need not also come from the battery — the same reserve_pct
-	    scaling and PV netting red_window_demand already applies to the
-	    reserve itself, see main()). Not a config value of its own.
+	  - an ENERGY budget for the current slot only, round(SLOT_HOURS *
+	    max(0, min(1, reserve_pct * 0.01) * basic_load_now - pv_now)) Wh —
+	    the hour's own ordinary quarter-hour share, scaled by reserve_pct
+	    (dirt_shift.conf) like the reserve itself, and net of the PV that is
+	    covering the house directly anyway (pvpt passes it through, so it
+	    need not also come from the battery — the same reserve_pct scaling
+	    and PV netting red_window_demand applies to the reserve, see
+	    main()). Not a config value of its own.
+
+	    pv_now is MEASURED (see recent_pv_power), not expected_pv_now: this
+	    budget governs the quarter hour happening right now, and an hourly
+	    forecast mean is too coarse for it on the ramp hours at each end of
+	    the day — which are also, routinely, the marginal red hours. Around
+	    sunset the mean can still sit near basic_load while real output has
+	    already collapsed, yielding a budget of a few Wh exactly when the
+	    battery should be carrying the house. expected_pv_now stays as the
+	    fallback for when the measurement is unavailable.
 
 	    The reserve_pct factor is capped at 1.0 HERE ONLY, unlike in the
 	    reserve itself, where a value above 100 is meaningful and makes the
@@ -1606,14 +1882,16 @@ def write_timer(mode, now, basic_load_now, ac_pct=100, expected_pv_now=0.0):
 	re-arming the same limit every day."""
 	ac_pct = max(0, min(100, round(ac_pct)))
 	rate   = round(conf['limit_discharge_rate'])
-	budget = round(0.25 * max(0.0, basic_load_now * min(1.0, conf['reserve_pct'] * 0.01) - expected_pv_now))
+	pv_now = recent_pv_power()					# measured; None on failure -> fall back to the hourly forecast
+	if pv_now is None: pv_now = expected_pv_now
+	budget = round(SLOT_HOURS * max(0.0, basic_load_now * min(1.0, conf['reserve_pct'] * 0.01) - pv_now))
 	FREE  = '100 100 -1'									# full discharge, full pvpt, no energy cap — the failsafe line, always fully unrestricted
 	payload = {'free': '100 %3d -1' % ac_pct,
 	           'limit': '%d %3d %d' % (rate, ac_pct, budget),
 	           'stop': '000 %3d 000' % ac_pct}[mode]
 
 	lines = []
-	t = now.replace(second=0, microsecond=0, minute=(now.minute // 15) * 15)
+	t = now.replace(second=0, microsecond=0, minute=(now.minute // SLOT_MINUTES) * SLOT_MINUTES)
 	lines.append((t, payload))
 	if mode != 'free' or ac_pct != 100:					# failsafe: lift any limit/stop/ac-cap after 30 min
 		t2 = t + timedelta(minutes=30)
