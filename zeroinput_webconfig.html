@@ -604,8 +604,8 @@ const DIRTSHIFT_SECTIONS = {
 	'Reserve':                       ['reserve_pct', 'limit_discharge_rate'],
 	'Grid intensity':                ['vz_dirtiness_uuid'],
 	'Location (PV forecast)':        ['latitude', 'longitude'],
-	'Battery energy':                ['PV_to_bat_efficiency', 'bat_to_AC_efficiency', 'max_days_empty_battery'],
-	'Precharge':                     ['precharge_enabled'],
+	'Battery energy':                ['PV_to_bat_efficiency', 'bat_to_AC_efficiency', 'max_days_empty_battery', 'battery_capacity_wh'],
+	'Precharge':                     ['precharge_enabled', 'precharge_cleanest_pct'],
 	'Wallbox':                       ['wallbox_enabled', 'wallbox_ip', 'wallbox_output', 'wallbox_cleanest_pct', 'wallbox_absolute_max', 'wallbox_typical_power'],
 	'Other':                         ['disable_zeroinput_timer', 'logfile'],
 };
