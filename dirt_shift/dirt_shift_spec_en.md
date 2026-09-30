@@ -301,13 +301,27 @@ The written plan is short: the current quarter-hour slot in the chosen mode (fre
 
 ---
 
+## Output: pv_forecast.json
+
+Once per calendar day, `write_daily_pv_forecast` writes `pv_forecast.json` (a fixed name, a fixed constant `PV_FORECAST_FILE` in the code — no config key, nothing in the web UI, always on) next to `dirt_shift.py`:
+
+```json
+{"datum": "2026-09-29", "pv_forecast_kwh": 23.4}
+```
+
+`pv_forecast_kwh` is the PV yield forecast summed over the **whole calendar day** (hours 0..23 of today) in kWh, using the same clear-sky scaling as `expected_pv` elsewhere (see PV forecast), but computed consistently against today's date — not against the rolling 24-hour window the rest of the program uses, which is anchored at the current hour and by late morning would only cover part of the day. The file carries its own date as a marker: a run only writes when `datum` does not already match today, after which the day is done. If the PV curve or radiation forecast is missing on the day's first run, the attempt is retried automatically on the next run. A write failure only triggers a warning, never an abort.
+
+This file is purely a side output for other tools — `dirt_shift` never reads it back itself, and it does not feed into the control logic. The field name and meaning deliberately match the identically named, optional `pv_forecast_kwh` field of the [Ortsnetz-Auslastung](https://github.com/thomaslehmann1234/datenerfassung-ortsnetz-auslastung) API (0–100000, "today's total PV forecast in kWh"), which this output is intended for: a vzlogger cron script for that project is meant to read the value from `pv_forecast.json` and submit it alongside the grid voltage readings it already collects.
+
+---
+
 ## Configuration
 
 `dirt_shift.conf` holds **only** the path to `zeroinput.conf` and dirt_shift's own parameters. Values already present in `zeroinput.conf` are read from there instead of being duplicated — `dirt_shift` never modifies `zeroinput.conf`.
 
 Read from `zeroinput.conf` (read-only):
 
-- **`discharge_t_file`** — the path of the timer file that zeroinput reads. `dirt_shift` writes exactly this file (resolved relative to zeroinput.conf). This guarantees writer and reader point at the same file. `discharge_timer` must additionally be enabled in `zeroinput.conf`, otherwise zeroinput ignores the file.
+- **`discharge_t_file`** — the path of the timer file that zeroinput reads. `dirt_shift` writes exactly this file (resolved relative to zeroinput.conf). This guarantees writer and reader point at the same file. `discharge_timer` must additionally be enabled in `zeroinput.conf`, otherwise zeroinput ignores the file — `dirt_shift` reads that switch too and writes the timer line regardless (zeroinput could be re-enabled at any time), but reports it unmissably on every run as `DISABLED timer: discharge_timer is disabled in zeroinput.conf`, even without `-v`. If the key is absent from an older `zeroinput.conf` entirely, `discharge_timer` is assumed enabled — no false alarm.
 
 dirt_shift's own keys in `dirt_shift.conf`:
 

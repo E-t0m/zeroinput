@@ -72,6 +72,7 @@ SMARD_FILTER_WIND_SOLAR = 5097	# 'Prognostizierte Erzeugung: Wind und Photovolta
 SMARD_FILTER_LOAD       = 411	# 'Prognostizierter Verbrauch' (day-ahead) — less firmly confirmed than the generation filter, but the fallback below covers a wrong/broken value
 SLOT_MINUTES = 15	# length of one timer slot in minutes — the cadence dirt_shift is meant to run at (cron 0,15,30,45) and the granularity of every quantity below that is 'per slot': the timer line's own timestamp, the energy budget's share of an hour, the wallbox's typical-draw margin and its voltage window. Changing it here changes all of them together; the cron entry has to be changed to match
 VZ_TIMEOUT_S = 30	# HTTP timeout (seconds) on every volkszähler request. Without one, requests.get blocks forever if volkszähler accepts the connection but never answers (overloaded, wedged), and dirt_shift hangs with no error — while cron keeps starting a fresh hung process every 15 minutes. 30 s is generous for a slow answer yet well under the run interval, so a stuck query fails the run cleanly instead of hanging it
+PV_FORECAST_FILE = 'pv_forecast.json'	# fixed filename (not configurable, no path) for the once-a-day total-PV-forecast side output — see write_daily_pv_forecast. Always resolved relative to dirt_shift.py's own directory
 SLOT_HOURS   = SLOT_MINUTES / 60.0	# same value as a fraction of an hour, for the Wh/W conversions
 
 WALLBOX_V_ON_PER_CELL  = 3.375	# per-cell voltage the battery must not have dropped below over WALLBOX_V_WINDOW_MIN for the voltage path to switch the wallbox ON (54.0 V at 16S) — a full battery under no meaningful discharge load
@@ -172,6 +173,7 @@ if conf.get('logfile'):
 # pull shared values from zeroinput.conf (read-only, never duplicated here):
 #   discharge_t_file           — the timer file zeroinput reads (we write it)
 #   cell_count                 — battery cell count for the empty-voltage anchor
+#   discharge_timer             — whether zeroinput actually acts on that file (see write_timer)
 # (the discharge cap for a non-priority red hour combines limit_discharge_rate
 # from dirt_shift.conf with a fixed quarter-hour energy budget, 1/4 *
 # (reserve_pct * basic_load - expected PV) — unrelated to any inverter
@@ -183,6 +185,7 @@ try:
 	conf['cell_count'] = _zi.get('cell_count', 16)		# default 16S, as in zeroinput
 	conf['timer.txt'] = join(dirname(_zi_path), _zi['discharge_t_file']) \
 		if not _zi['discharge_t_file'].startswith('/') else _zi['discharge_t_file']
+	conf['discharge_timer_enabled'] = bool(_zi.get('discharge_timer', True))	# zeroinput's own on/off switch for the timer file — a run writes it either way, this only controls the warning below
 except Exception as e:
 	# zeroinput.conf unreadable or missing the needed keys — timer path unknown.
 	print('dirt_shift: cannot read zeroinput.conf (%s): %s' % (conf.get('zeroinput_conf', '?'), e))
@@ -520,6 +523,75 @@ def read_radiation_forecast():
 	return [today[h] if h >= now_hour or tomorrow[h] is None else tomorrow[h] for h in range(24)], stale
 
 
+def _read_weather_cache_today():
+	"""Raw, calendar-day-indexed (0..23) radiation forecast for the day of the
+	last successful fetch, straight from the cache file — unlike
+	read_radiation_forecast, NOT rolled to start at the current hour. A
+	calendar-day summary (see write_daily_pv_forecast) needs hour 0 of today
+	even once it is long past, which the rolling window has already dropped
+	by then. Returns None if the cache has never been populated."""
+	try:
+		with open(join(dirname(__file__), 'dirt_weather_cache.json'), 'r') as fi:
+			return json_load(fi).get('today')
+	except Exception:
+		return None
+
+
+def write_daily_pv_forecast(pv_curve, now):
+	"""Write today's total PV forecast (kWh) to PV_FORECAST_FILE, once per
+	calendar day. Fixed filename, not read from dirt_shift.conf and not
+	exposed in the web config — a local constant, always on, nothing to
+	configure or disable. Purely a side output for other tools to read;
+	nothing in dirt_shift itself consumes it.
+
+	Deliberately scans calendar hours 0..23 of TODAY, not the rolling window
+	the rest of the program uses: the rolling window is anchored at now.hour
+	and would give the day's remaining hours plus a slice of TOMORROW, never
+	a clean whole-day total. Uses the same clear-sky scaling as
+	scaled_pv_curve, but against today's own date throughout (the rolling
+	version alternates between today's and tomorrow's date per hour, which
+	does not apply to a single calendar day's summary).
+
+	Runs once a day, not every 15-minute cycle: the output file's own 'datum'
+	is the record of whether today has already been written, so no separate
+	state is needed. If pv_curve or today's radiation is not (yet) available
+	the write is skipped and retried on the next run, since the file still
+	lacks today's date — self-healing without extra bookkeeping. Never raises
+	into main(): a problem here must not interrupt the actual battery
+	steering, so any error is caught and reported, not propagated."""
+	path = join(dirname(__file__), PV_FORECAST_FILE)
+	today_str = now.strftime('%Y-%m-%d')
+	try:
+		with open(path, 'r') as fi:
+			if json_load(fi).get('datum') == today_str:
+				return									# already written today
+	except Exception:
+		pass												# missing/unreadable/first run — fall through and write
+
+	if pv_curve is None:
+		if verbose: print('pv forecast file: skipped, no PV curve available yet')
+		return
+	radiation_today = _read_weather_cache_today()
+	total_wh = 0.0
+	for h in range(24):
+		r = radiation_today[h] if radiation_today is not None and h < len(radiation_today) else None
+		if r is None:
+			total_wh += pv_curve[h]						# no radiation data for this hour: fall back to the plain reference, as scaled_pv_curve does
+			continue
+		csghi = clear_sky_ghi(now, h + 0.5)				# today's date throughout — this is a single calendar day, not a rolling window crossing midnight
+		if csghi <= 0:
+			total_wh += pv_curve[h]
+			continue
+		total_wh += pv_curve[h] * min(1.0, max(0.0, r / csghi))
+
+	try:
+		with open(path, 'w') as fo:
+			json_dump({'datum': today_str, 'pv_forecast_kwh': round(total_wh / 1000.0, 1)}, fo)
+		if verbose: print('pv forecast file: wrote %s (%.1f kWh)' % (path, total_wh / 1000.0))
+	except Exception as e:
+		print('dirt_shift: warning: cannot write %s (%s) — continuing without it' % (path, e))
+
+
 def scaled_pv_curve(pv_curve, radiation, now):
 	"""Scale the empirical PV reference curve by a clear-sky index derived from
 	the Open-Meteo shortwave_radiation forecast: each hour's expected PV is
@@ -721,42 +793,6 @@ def _cut_zones(ratio):
 	if debug: print('rolling median ratio %.2f over %d covered hours'
 	                % (median, sum(1 for r in ratio if r is not None)))
 	return ['green' if (r is not None and r >= median) else 'red' for r in ratio]
-
-
-def load_only_zones(basic_load, now):
-	"""EMERGENCY fallback when SMARD is gone for longer than the one-day cache
-	can bridge. Builds zones from the LOAD profile alone (from volkszähler,
-	always on hand), with no grid-intensity data at all: the hours of highest
-	expected load become red, the rest green, by the same rolling median cut.
-
-	This is a bet, not a measurement, and deliberately a narrow one. The load
-	double-peak (morning ~7-9, evening ~18-21) is the one part of the grid's
-	daily shape that is human-driven and so predictable without weather data,
-	and high load means high dirtiness at equal generation — so on a windless
-	day these are reliably the dirtiest hours. It says NOTHING about wind: a
-	windy night can be clean despite high load, and there this fallback will
-	wrongly steer discharge into the evening peak. It is therefore a last
-	resort before the free-timer, worthwhile mainly for a small/often-empty
-	battery that can only cover part of the day and should spend its charge on
-	the hours most likely to be dirty. The dirt% it reports is not a CO2 figure
-	but the load expressed on the same 0-100 scale, purely so the rest of the
-	pipeline (reserve, dirtiest_hour, the table) has something monotonic to
-	work with; it must never be logged to volkszähler as real dirtiness.
-
-	Returned dict carries emergency=True so the caller can label everything
-	loudly and skip the dirtiness export."""
-	rolling = [basic_load[(now.hour + k) % 24] for k in range(24)]	# chronological, like the SMARD window
-	lo, hi = min(rolling), max(rolling)
-	# map load onto a ratio-like 0..1 where HIGH load = LOW ratio (= dirty),
-	# so _cut_zones' "green = ratio >= median" makes the high-load hours red
-	span = (hi - lo) or 1.0
-	ratio_chrono = [1.0 - (v - lo) / span for v in rolling]
-	# unshuffle back to hour-indexed 0..23
-	ratio = [None] * 24
-	for k in range(24):
-		ratio[(now.hour + k) % 24] = ratio_chrono[k]
-	return {'zones': _cut_zones(ratio), 'ratio': ratio, 'stale': set(),
-	        'backdate_ratio': None, 'emergency': True}
 
 
 def read_smard_zones():
@@ -1852,7 +1888,8 @@ def main():
 	basic_load = vz['basic_load']
 	now = datetime.now()
 	pv_curve = read_pv_curve()
-	radiation, radiation_stale = read_radiation_forecast()
+	radiation, radiation_stale = read_radiation_forecast()	# also refreshes the raw weather cache on disk if the hour changed — must run before write_daily_pv_forecast reads that same cache below, or the first run of a new day would still see yesterday's data
+	write_daily_pv_forecast(pv_curve, now)
 	expected_pv = scaled_pv_curve(pv_curve, radiation, now)	# drives red_window_demand/dirtiest_hour below
 	grid_data = read_smard_zones()					# before get_vz_bat_cap, so all cache notices print together
 	if grid_data is None:
@@ -2107,6 +2144,13 @@ def main():
 
 	if not conf['disable_zeroinput_timer']:
 		write_timer(mode, now, basic_load[now.hour], ac_pct, pv_for_reserve[now.hour])
+		if not conf.get('discharge_timer_enabled', True):
+			# the file is written either way — this only warns that zeroinput
+			# itself is configured to ignore it, so every decision above has no
+			# real-world effect until 'discharge_timer' is turned back on there.
+			# Always printed, not just under -v, so it reaches the cron log.
+			print('dirt_shift: DISABLED timer: discharge_timer is disabled in zeroinput.conf — '
+			      'timer.txt was written but zeroinput will not act on it')
 
 	if verbose:
 		print('dirt_shift done.', datetime.now().strftime('%Y-%m-%d %H:%M:%S'))

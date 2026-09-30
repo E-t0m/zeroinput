@@ -154,6 +154,16 @@ Bei jedem Lauf wird der frische Energieinhalt abgefragt und die `timer.txt` mit 
 
 `dirt_shift` schreibt nur die `timer.txt`. Die eigentliche Umsetzung — Entladegrenze, PV-Durchleitung, Stufenverteilung — macht zeroinput. Die direkte PV-Durchleitung (`pvpt`) wird in jeder Timer-Zeile mit `ac 100%` garantiert; `dirt_shift` begrenzt ausschließlich die Batterieentladung.
 
+### Nebenausgabe: pv_forecast.json
+
+Einmal täglich schreibt `dirt_shift` zusätzlich `pv_forecast.json` neben `dirt_shift.py` — fester Dateiname, nicht konfigurierbar, immer aktiv, kein Bezug zur eigentlichen Steuerung. Sie enthält die für den ganzen Kalendertag summierte PV-Ertragsprognose:
+
+```json
+{"datum": "2026-09-29", "pv_forecast_kwh": 23.4}
+```
+
+Gedacht als Nebenausgabe für das Projekt [Ortsnetz-Auslastung](https://github.com/thomaslehmann1234/datenerfassung-ortsnetz-auslastung), dessen API-Feld `pv_forecast_kwh` genau diesen Wert erwartet — ein dafür vorgesehenes vzlogger-Cron-Skript soll die Datei einlesen und den Wert zusammen mit den Netzspannungsmessungen übertragen. `dirt_shift` selbst tut nichts mit dieser Datei außer sie zu schreiben.
+
 ### Fehlerverhalten
 
 Fehlt der **Akkuenergieinhalt** (volkszähler-Lücke bei der Spannung), lässt sich die Batterie nicht steuern — sie wird freigegeben (Frei-Timer). Die **Wallbox-Steuerung läuft trotzdem weiter**: Ihre drei Pfade sind redundant, ein fehlender Wert lässt nur seinen eigenen Pfad entfallen (ohne Inhalt der Energie-Pfad, ohne Spannungsmessung der Spannungs-Pfad), die übrigen entscheiden normal. Nur wenn **alle** Wallbox-Pfade mangels Daten nicht entscheidbar sind, bleibt das Relais unverändert (kein Ein- oder Ausschalten). Ebenso bei fehlenden SMARD-Daten: Dort speist der Notmodus die Zonen, und der ganze Lauf inklusive Wallbox läuft normal.
@@ -196,3 +206,5 @@ Ist nicht einmal die `zeroinput.conf` lesbar (Timer-Pfad unbekannt), bleibt nur 
 - **„… PV_to_bat_efficiency / bat_to_AC_efficiency may be set lower than this installation's real losses …"** Ohne Wirkungsgrad wäre die Bilanz plausibel — die konfigurierten Prozentsätze könnten schlicht zu niedrig (zu pessimistisch) für die reale Anlage sein. Gegen einen echten Leer-zu-Leer-Zyklus prüfen und ggf. anheben. Ein Wechselrichter-Fehler bleibt daneben möglich, die Meldung nennt ihn deshalb als Alternative.
 
 In beiden Fällen macht zusätzlich ein zu weit zurückliegender Leer-Anker (kein echter Leerzustand seit vielen Tagen) den Effekt größer, weil sich der Fehler über eine längere Integration stärker aufsummiert. Die Regelung läuft derweil weiter (ein negativer Inhalt liegt ohnehin unter jeder Reserve → Batterie geschont); nach dem nächsten echten Leerzustand kalibriert sich der Inhalt von selbst.
+
+**Meldung „DISABLED timer: discharge_timer is disabled in zeroinput.conf".** `dirt_shift` hat die Timer-Zeile wie gewohnt geschrieben, aber in `zeroinput.conf` steht `discharge_timer` auf deaktiviert — zeroinput liest die Datei dann zwar, wendet sie aber nicht an, sämtliche Entscheidungen von `dirt_shift` bleiben ohne Wirkung. Meist eine bewusste Einstellung (z. B. während Wartungsarbeiten) oder ein Rest aus der Ersteinrichtung. In der Weboberfläche im Timer-Tab erscheint derselbe Hinweis. Abhilfe: `discharge_timer` in `zeroinput.conf` aktivieren.

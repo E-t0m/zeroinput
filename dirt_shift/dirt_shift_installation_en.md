@@ -154,6 +154,16 @@ On each run the fresh energy content is fetched and `timer.txt` is rewritten wit
 
 `dirt_shift` only writes the `timer.txt`. The actual execution — discharge limit, PV pass-through, stage allocation — is done by zeroinput. Direct PV pass-through (`pvpt`) is guaranteed in every timer line with `ac 100%`; `dirt_shift` limits only the battery discharge.
 
+### Side output: pv_forecast.json
+
+Once a day, `dirt_shift` also writes `pv_forecast.json` next to `dirt_shift.py` — a fixed filename, not configurable, always on, unrelated to the actual control. It holds the PV yield forecast summed over the whole calendar day:
+
+```json
+{"datum": "2026-09-29", "pv_forecast_kwh": 23.4}
+```
+
+Intended as a side output for the [Ortsnetz-Auslastung](https://github.com/thomaslehmann1234/datenerfassung-ortsnetz-auslastung) project, whose API field `pv_forecast_kwh` expects exactly this value — a vzlogger cron script for that project is meant to read the file and submit the value alongside the grid voltage measurements it already collects. `dirt_shift` itself does nothing with this file beyond writing it.
+
 ### Error behaviour
 
 If the **battery energy content** is missing (a volkszähler gap on the voltage), the battery cannot be steered and is freed (all-allowed timer). The **wallbox control still runs**: its three paths are redundant, a missing input drops only its own path (no content → the energy path, no voltage reading → the voltage path), the others decide as usual. Only if **all** wallbox paths are undecidable for lack of data is the relay left unchanged (no switching either way). Likewise for missing SMARD data: there the emergency mode feeds the zones and the whole run, wallbox included, proceeds normally.
@@ -196,3 +206,5 @@ If not even `zeroinput.conf` is readable (timer path unknown), only the abort wi
 - **"… PV_to_bat_efficiency / bat_to_AC_efficiency may be set lower than this installation's real losses …"** Without any efficiency applied the balance would be plausible — the configured percentages may simply be lower (more pessimistic) than the real installation. Check them against a genuine empty-to-empty cycle and raise if needed. An inverter fault remains possible too, which is why the message names it as an alternative.
 
 Either way, an anchor too far back (no real empty state for many days) makes the effect larger, since the error accumulates over a longer integration. The control keeps running meanwhile (a negative content is below any reserve anyway → the battery is spared); once a real empty state recurs, the content self-calibrates.
+
+**"DISABLED timer: discharge_timer is disabled in zeroinput.conf" message.** `dirt_shift` wrote the timer line as usual, but `zeroinput.conf` has `discharge_timer` turned off — zeroinput then reads the file but does not act on it, so every decision `dirt_shift` makes has no effect. Usually a deliberate setting (e.g. during maintenance) or a leftover from initial setup. The same notice shows in the web UI's timer tab. Fix: enable `discharge_timer` in `zeroinput.conf`.

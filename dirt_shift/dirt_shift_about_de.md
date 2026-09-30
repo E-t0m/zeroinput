@@ -79,3 +79,7 @@ jedem Fall als gültig erkennt.
 Aufruf viertelstündlich per cron. `-v` zeigt Zone, Akkustand, Reserve und Modus; `-debug`
 zusätzlich die stündliche Übersichtstabelle. Alle anlagenspezifischen Werte stehen in
 `dirt_shift.conf`; geteilte Größen liest `dirt_shift` aus `zeroinput.conf`, ohne sie zu ändern.
+Einmal täglich schreibt `dirt_shift` zusätzlich `pv_forecast.json` mit der PV-Tagesprognose in
+kWh — eine reine Nebenausgabe für das Projekt
+[Ortsnetz-Auslastung](https://github.com/thomaslehmann1234/datenerfassung-ortsnetz-auslastung),
+ohne Rückwirkung auf die eigene Steuerung.

@@ -78,4 +78,7 @@ as valid.
 Invoked every fifteen minutes via cron. `-v` shows zone, battery level, reserve and mode;
 `-debug` additionally shows the hourly overview table. All installation-specific values live in
 `dirt_shift.conf`; shared values are read by `dirt_shift` from `zeroinput.conf` without being
-changed there.
+changed there. Once a day, `dirt_shift` also writes `pv_forecast.json` with the day's total PV
+forecast in kWh — a pure side output for the
+[Ortsnetz-Auslastung](https://github.com/thomaslehmann1234/datenerfassung-ortsnetz-auslastung)
+project, with no effect on `dirt_shift`'s own control.
