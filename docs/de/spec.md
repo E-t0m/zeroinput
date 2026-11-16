@@ -1,5 +1,5 @@
 # zeroinput – Funktionsspezifikation
-*v2.2*
+*v2.3*
 
 ## Zweck
 

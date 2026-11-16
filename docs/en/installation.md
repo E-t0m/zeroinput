@@ -1,5 +1,5 @@
 # zeroinput – Installation Guide
-*v2.2*
+*v2.3*
 
 ## Overview
 

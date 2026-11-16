@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
-# zeroinput v2.2
+# zeroinput v2.3
 # indent size 4, mode Tabs
 
 import input_power_staging as staging

@@ -1,4 +1,4 @@
-# zeroinput v2.2
+# zeroinput v2.3
 set power import to zero, using grid inverters and charge controllers
 
 | English | Deutsch |

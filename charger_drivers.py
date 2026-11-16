@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
-# zeroinput - charger_drivers: MPPT charger abstraction v2.2
+# zeroinput - charger_drivers: MPPT charger abstraction v2.3
 #
 # Handles all charger-side I/O: eSmart3, Victron VE.Direct (conventional +
 # aggregator), temperature sensors. Owns mppt_data, all reader threads and the

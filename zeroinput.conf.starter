@@ -1,5 +1,5 @@
 {
- "_version": "2.2",
+ "_version": "2.3",
  "_starter_help": "REFERENCE config showing every available device class and inverter type. Copy what you need into your real zeroinput.conf and delete the rest. Ports, serials and power values are EXAMPLES - replace them with your own.",
  "vzlogger_log_file": "/tmp/vz/vzlogger.fifo",
  "vzlogger_log_file_help": "data pipe from vzlogger, set as log in /etc/vzlogger.conf, 'verbosity': 15 required, use mkfifo to create it before vzlogger starts!",

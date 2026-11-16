@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
-# zeroinput - input_power_staging: staged power distribution v2.2
+# zeroinput - input_power_staging: staged power distribution v2.3
 #
 # Pure functions (no I/O) so they can be unit-tested in isolation.
 # Driver objects passed in need: .id .stages .count .min_power .max_power

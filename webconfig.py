@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
-# zeroinput - webconfig HTTP server v2.2
+# zeroinput - webconfig HTTP server v2.3
 # started as thread in zeroinput.py when conf['webconfig_port'] > 0
 import json
 import re
