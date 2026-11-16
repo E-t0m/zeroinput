@@ -1,6 +1,6 @@
 # zeroinput load predictor — specification
 
-Functional specification of the zeroinput load predictor (`predictor.py`, VERSION 108). This is the authoritative description of the intended behaviour. The German version is `predictor_spec_de.md`.
+Functional specification of the zeroinput load predictor (`predictor.py`, VERSION 108). This is the authoritative description of the intended behaviour. The German version is [de/predictor_spec.md](../de/predictor_spec.md).
 
 ## Purpose
 
@@ -64,7 +64,7 @@ Peaks & override:
 
 ## Mechanism 1: k-means (cyclic load)
 
-![Rectangle signal: k-means learns low/high and holds at LOW during the HIGH phase](screenshots/mechanism_1_kmeans.png)
+![Rectangle signal: k-means learns low/high and holds at LOW during the HIGH phase](../screenshots/mechanism_1_kmeans.png)
 
 The reliable base. k-means clusters the load history into two levels, LOW and HIGH. It only computes once at least `MIN_HIST` (10) samples are present. A result is valid only if the spread (`HIGH − LOW`) lies within `[min_spread_w, MAX_SPREAD_W]` **and** the distribution is genuinely two-level: if either cluster group holds less than 15 % (or more than 85 %) of the values, it is deemed unimodal and discarded — then there are no valid levels.
 
@@ -82,7 +82,7 @@ If `KMEANS_TIMEOUT_N` (120) cycles pass without a real LOW↔HIGH transition, th
 
 ## Mechanism 2: peaks & override
 
-![Ls_read with two short peaks that activate the override and one long peak that ends it](screenshots/mechanism_2_peaks.png)
+![Ls_read with two short peaks that activate the override and one long peak that ends it](../screenshots/mechanism_2_peaks.png)
 
 This mechanism handles recurring short high-load surges (peaks), e.g. from a cycling appliance. The **override** is a signal from the predictor to zeroinput to suspend its ramp mode (flag `ramp_override_by_predictor`): normally zeroinput drives large load steps through a ramp of its own and overwrites the predictor offset while doing so. For a recognized cycling appliance this ramp would corrupt the offset on every peak — the override suppresses it, so the predictor can hold the offset calmly on the base load and sit the peaks out.
 

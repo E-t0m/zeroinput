@@ -144,7 +144,7 @@ try:
 except Exception:
 	# dirt_shift.conf itself is missing/broken — the timer path is unknown,
 	# so only a plain abort is possible.
-	print('dirt_shift: error reading config file dirt_shift.conf')
+	print('dirt_shift: error reading config file dirt_shift.conf - create it from dirt_shift.conf.starter')
 	exit(1)
 
 

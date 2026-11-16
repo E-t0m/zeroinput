@@ -24,7 +24,7 @@ PVPT_V_PER_CELL			= 3.375		# 54 V at 16S: above this, PV is passed through even 
 try:
 	with open(join(dirname(__file__),'tib_zero_tas.conf'),'r') as fi: conf = json_load(fi)	# read configuration from file
 except:
-	print('error reading config file')
+	print('error reading config file tib_zero_tas.conf - create it from tib_zero_tas.conf.starter')
 	exit(1)
 
 def write_free_timer(path):							# 'all allowed' timer: full discharge, full pv pass through, no energy limit

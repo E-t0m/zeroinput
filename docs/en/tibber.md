@@ -195,7 +195,7 @@ disabled tasmota timer
 done. 2025-10-05 14:14:31
 ```
 At first the consumption data is taken from volkszähler's database. This gets cached hourly.
-PV power, inverter input, net demand, car, charger, climate is used to calculate a 7 day average profile. (similar to [profiler.py](https://github.com/E-t0m/zeroinput/blob/main/profiler.py))
+PV power, inverter input, net demand, car, charger, climate is used to calculate a 7 day average profile. (similar to [profiler.py](../../tools/profiler.py))
 
 Then the energy content gets fetched: It searches for the latest empty battery state and calculates the remaining battery content from there. Empty means the voltage stays at or below 3.03125 V per cell (48.5 V at 16S) for at least 2 minutes; shorter dips are ignored, and samples below 2.5 V per cell are discarded as sensor errors. The cell count is read from zeroinput.conf (`zeroinput_conf` in tib_zero_tas.conf). Inverter output always reduces the content, independent of the sign of the volkszähler channel.
 
@@ -208,11 +208,17 @@ If volkszähler or the price file cannot be read, tib_zero_tas writes an unrestr
 
 PVpt is PV pass through, where the PV energy is directly transformed by the inverter, because of the small price gap to the next sheduled hour with input from battery.
 
-Tib_zero_tas.py should run every 15 minutes.
+The scripts live in the `tibber` subfolder of the zeroinput installation. `tib_zero_tas.conf` and `tibber_personal_token.json` are created from their `.starter` templates and are not part of the repository:
+```
+cd /home/vzlogger/zeroinput/tibber
+cp tib_zero_tas.conf.starter tib_zero_tas.conf
+cp tibber_personal_token.json.starter tibber_personal_token.json
+```
+Tib_zero_tas.py should run every 15 minutes, see the example [crontab](../../tibber/crontab).
 I write the output to a html file which is linked (as root) from the vzlogger htdocs folder:
 ```
-ln -s /home/vzlogger/tib_zero_tas.html /home/pi/volkszaehler.org/htdocs
+ln -s /home/vzlogger/zeroinput/tibber/tib_zero_tas.html /home/pi/volkszaehler.org/htdocs
 ```
 It's found at http ://the-usual-volkszaehler-site /tib_zero_tas.html#now
 
-The code is here: [tibber](https://github.com/E-t0m/zeroinput/tree/main/tibber)
+The code is here: [tibber](../../tibber)

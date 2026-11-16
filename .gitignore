@@ -1,0 +1,22 @@
+# local configuration, created from the *.starter / *.example templates
+/zeroinput.conf
+/timer.txt
+/dirt_shift/dirt_shift.conf
+/tibber/tib_zero_tas.conf
+/tibber/tibber_personal_token.json
+
+# files written at runtime
+/zeroinput.html
+/vzlogger.conf.example
+/dirt_shift/dirt_*_cache.json
+/dirt_shift/dirt_wallbox_marker.json
+/dirt_shift/pv_forecast.json
+/dirt_shift/*.html
+/tibber/avg_cache.json
+/tibber/tibber_prices.json
+/tibber/*.html
+*.log
+
+# python
+__pycache__/
+*.pyc

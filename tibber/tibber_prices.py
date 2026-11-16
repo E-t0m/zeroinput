@@ -68,7 +68,7 @@ try:
 	with open(join(dirname(__file__),'tibber_personal_token.json'),'r') as fi: 
 		tibber_personal_token = json_load(fi)['tibber_personal_token']	# get personal token from file
 except:
-	if debug: print('error reading: tibber_personal_token.json')
+	if debug: print('error reading: tibber_personal_token.json - create it from tibber_personal_token.json.starter')
 	syslog.syslog(syslog, "error reading: tibber_personal_token.json")
 	exit(1)
 else:

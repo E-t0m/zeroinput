@@ -161,7 +161,7 @@ jeden Zyklus auf 0 zwingen und keine Rampe könnte laufen.
 
 Die vollständige Beschreibung — beide Mechanismen, das Spreizungsfenster, das zyklenbasierte
 Zeitmodell und alle Konstanten — steht in
-**[predictor_spec_de.md](predictor_spec_de.md)**.
+**[predictor_spec.md](predictor_spec.md)**.
 
 
 ---
@@ -177,7 +177,7 @@ Ein negatives `energy_Wh` (`-1`) bedeutet „kein Energiebudget": die Budgetprü
 
 Regeln werden der Reihe nach aktiviert; `0000-00-00` als Datum gilt täglich.
 
-`timer.txt` kann von Hand geschrieben oder von einem externen Tool erzeugt werden. Die [Tibber-Tools](https://github.com/E-t0m/zeroinput/tree/main/tibber) (optional, nicht gepflegt) erzeugen eine `timer.txt` aus Tibber-Dynamikpreisdaten und verteilen Wechselrichterleistung, Batterieentladung und Energiemengen in die teuersten Preisslots.
+`timer.txt` kann von Hand geschrieben oder von einem externen Tool erzeugt werden. Die [Tibber-Tools](../../tibber) (optional, nicht gepflegt) erzeugen eine `timer.txt` aus Tibber-Dynamikpreisdaten und verteilen Wechselrichterleistung, Batterieentladung und Energiemengen in die teuersten Preisslots.
 
 ---
 
@@ -246,7 +246,7 @@ REC-Ausgabe über Hilfsfunktion `_drain_rec_msgs()` verzögert.
 
 Die Konfigurationsschlüssel des Prediktors (`load_prediction`, `min_spread_w`,
 `predictor_log`) und sein internes Verhalten sind vollständig in
-**[predictor_spec_de.md](predictor_spec_de.md)** dokumentiert.
+**[predictor_spec.md](predictor_spec.md)** dokumentiert.
 
 ---
 

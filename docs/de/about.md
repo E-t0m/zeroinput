@@ -3,7 +3,7 @@
 Es wird **zuerst** der Eigenverbrauch im Haus gedeckt.
 Wenn **dann** noch Leistung übrig ist, dann wird auch der **Akku** geladen.
 
-Oder: Vorgaben in der [timer-Datei](https://github.com/E-t0m/zeroinput/blob/main/timer.txt) setzen andere Werte.
+Oder: Vorgaben in der [timer-Datei](../../timer.txt.example) setzen andere Werte.
 
 ## Aufbau
 ![scheme](https://github.com/user-attachments/assets/8d767329-15f9-4098-b4b4-a9e70d0d98c9)

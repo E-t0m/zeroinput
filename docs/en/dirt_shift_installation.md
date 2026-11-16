@@ -7,7 +7,7 @@
 
 The prerequisites are a working zeroinput installation with the discharge timer enabled and a reachable volkszähler with the `data.json` HTTP API.
 
-The detailed description of how it works is in `dirt_shift_spec_en.md`.
+The detailed description of how it works is in the [specification](dirt_shift_spec.md).
 
 ---
 
@@ -34,22 +34,22 @@ In `zeroinput.conf` the discharge timer must be active:
 
 ## Installation
 
-### 1. Copy the files
+### 1. Create the configuration
 
-`dirt_shift` usually lives in a subfolder of the zeroinput installation:
+`dirt_shift` lives in the `dirt_shift` subfolder of the zeroinput installation. Your own configuration is created from the starter file:
 
 ```bash
-cd /opt/zeroinput
-mkdir -p dirt_shift
-cp dirt_shift.py dirt_shift.conf dirt_shift/
-chmod +x dirt_shift/dirt_shift.py
+cd /home/vzlogger/zeroinput/dirt_shift
+sudo -u vzlogger cp dirt_shift.conf.starter dirt_shift.conf
 ```
+
+`dirt_shift.conf` and the files written at runtime (caches, wallbox marker, `pv_forecast.json`) are listed in `.gitignore`; an update with `git pull` leaves them untouched.
 
 The default path to the parent `zeroinput.conf` is `../zeroinput.conf` and thus matches this folder structure. If `dirt_shift` lives elsewhere, adjust the `zeroinput_conf` key in `dirt_shift.conf` accordingly.
 
 ### 2. Adapt dirt_shift.conf
 
-The supplied `dirt_shift.conf` contains placeholders that must be replaced:
+The `dirt_shift.conf` created from the starter file contains placeholders that must be replaced:
 
 ```json
 "zeroinput_conf": "../zeroinput.conf",
@@ -73,11 +73,11 @@ The remaining keys (`reserve_pct`, `limit_discharge_rate`, `latitude`/`longitude
 - The location (`latitude`/`longitude`, default ~centre of Germany) drives the clear-sky model and the radiation forecast.
 - `day_weights_pct` weights individual days of the average more heavily (chronological, index −1 = yesterday, index 0 = same weekday of the previous week); the length must match `average_days`, otherwise equal weighting is used.
 
-**The cap in a non-priority red hour consists of two limits that apply at once.** A power cap, `limit_discharge_rate` (Watt) in `dirt_shift.conf` — installation-specific, adapt to your own ordinary peak load; set very high, it has practically no effect. And a fixed quarter-hour energy budget of `1/4 × (min(100 %, reserve_pct) × basic_load − measured PV)` for that hour (floored at 0), which needs no configuration entry of its own since it follows directly from `basic_load`, `reserve_pct`, and the measured PV power (the `PV` channel over the last 15 minutes, not the forecast's hourly mean — too coarse on the ramp hours at each end of the day; the forecast serves only as the fallback): `reserve_pct` scales the same share of demand here as in the red reserve itself, rather than letting a non-priority hour draw its full demand — capped at 100% here, though, since a cap above the actual net demand would no longer restrict anything (for the reserve itself, values above 100 are meaningful and act more cautiously); the measured PV is subtracted in full regardless, since `pvpt` already passes it through directly and it does not also need to come from the battery. Together the two caps close the gap the other leaves open: the Watt cap alone would let a load through unrestricted as long as it stays permanently below the threshold; the Wh budget alone would still let a brief spike through before it is exhausted. Details are in `dirt_shift_spec_en.md`, section "Discharge by zone".
+**The cap in a non-priority red hour consists of two limits that apply at once.** A power cap, `limit_discharge_rate` (Watt) in `dirt_shift.conf` — installation-specific, adapt to your own ordinary peak load; set very high, it has practically no effect. And a fixed quarter-hour energy budget of `1/4 × (min(100 %, reserve_pct) × basic_load − measured PV)` for that hour (floored at 0), which needs no configuration entry of its own since it follows directly from `basic_load`, `reserve_pct`, and the measured PV power (the `PV` channel over the last 15 minutes, not the forecast's hourly mean — too coarse on the ramp hours at each end of the day; the forecast serves only as the fallback): `reserve_pct` scales the same share of demand here as in the red reserve itself, rather than letting a non-priority hour draw its full demand — capped at 100% here, though, since a cap above the actual net demand would no longer restrict anything (for the reserve itself, values above 100 are meaningful and act more cautiously); the measured PV is subtracted in full regardless, since `pvpt` already passes it through directly and it does not also need to come from the battery. Together the two caps close the gap the other leaves open: the Watt cap alone would let a load through unrestricted as long as it stays permanently below the threshold; the Wh budget alone would still let a brief spike through before it is exhausted. Details are in the [specification](dirt_shift_spec.md), section "Discharge by zone".
 
 **`precharge_enabled` (default `false`, optional):** enables an additional path that deliberately steers PV which would otherwise feed the house via `pvpt` into the battery; the house then draws that share from the grid — the one exception to the otherwise unrestricted `pvpt` guarantee. The trade: a clean grid import in the current hour for more charge for the dirty hours later, paid for with the round-trip loss. It only pays off while the battery would **not** be full by the red block anyway — if the natural surplus fills it regardless, diverting would only get more PV curtailed. A green hour is therefore throttled only if it ranks among the cleanest `precharge_cleanest_pct` % of the window (default 25), the red block is dirtier by at least the round-trip loss × `round_trip_margin`, **and** room remains in the battery after the natural surplus that the red block can actually use. At most that remaining room is diverted, spread across the qualifying hours. Only real SMARD data counts: the precharge window ends with the last published hour, and in emergency mode precharge is off. Typically engages on days with a clean grid but little PV surplus of one's own; not on sunny days. Requires `battery_capacity_wh` (usable capacity in Wh).
 
-**`round_trip_margin` (default `1.5`):** cost-versus-cleanliness setting for precharge. Precharge costs the round-trip loss of the battery detour (from `PV_to_bat_efficiency` and `bat_to_AC_efficiency`) as extra grid import; the red block must be dirtier by at least that loss × `round_trip_margin`. `1.0` = as clean as possible (more grid import, more cycling), larger values = more economical, a very large value effectively turns precharge off. Values below `1.0` count as `1.0`. Has no effect on the discharge decisions — there `dirt_shift` only shifts energy already stored, with no extra round trip. Details and formulas are in `dirt_shift_spec_en.md`, section "Precharge".
+**`round_trip_margin` (default `1.5`):** cost-versus-cleanliness setting for precharge. Precharge costs the round-trip loss of the battery detour (from `PV_to_bat_efficiency` and `bat_to_AC_efficiency`) as extra grid import; the red block must be dirtier by at least that loss × `round_trip_margin`. `1.0` = as clean as possible (more grid import, more cycling), larger values = more economical, a very large value effectively turns precharge off. Values below `1.0` count as `1.0`. Has no effect on the discharge decisions — there `dirt_shift` only shifts energy already stored, with no extra round trip. Details and formulas are in the [specification](dirt_shift_spec.md), section "Precharge".
 
 **SMARD is a prerequisite.** `dirt_shift` pulls real day-ahead grid data (Bundesnetzagentur, free, no registration) for today **and** tomorrow and derives the zones from it (a median cut over the rolling 24-hour window: the cleaner half green, the dirtier half red); there is no alternative source of *real* grid data (an outage triggers a modelled emergency mode instead, see below). If the fetch fails, the cache substitutes for exactly **one** more day; beyond that `dirt_shift` switches to an **emergency mode** that models the zones from the weather forecast (solar plus wind via Open-Meteo) and a fixed nationwide grid-load profile — clearly flagged, never mistaken for real data. Only if the weather cannot be fetched either does `dirt_shift` leave an all-allowed timer behind. Optionally, `vz_dirtiness_uuid` (a channel UUID created in volkszähler beforehand) can be set so `dirt_shift` logs the current dirtiness value to volkszähler via HTTP POST on every run (empty disables it).
 
@@ -101,14 +101,14 @@ What matters is that `basic_load` ends up as the actual house consumption to be 
 
 **Important regarding the wallbox:** because `Auto` is deliberately excluded from `basic_load`, `dirt_shift` does not see wallbox charging directly. Protection against a wallbox spike draining the battery instead of the grid instead comes from the zone logic itself — see "Discharge by zone" in the spec (green stops or caps as long as the reserve has not been reached; red caps to `limit_discharge_rate` and simultaneously to `1/4 × (min(100 %, reserve_pct) × basic_load − measured PV)` per quarter-hour outside the dirtiest hour).
 
-**Optional: active wallbox control (`wallbox_enabled`, default `false`).** Independent of the passive exclusion above, `dirt_shift` can actively switch a wallbox's relay via a Tasmota device — switched on once **any one** of three conditions holds: two configurable dirtiness thresholds (`wallbox_cleanest_pct` — the hour must rank among the cleanest that-many percent of the rolling 24-hour window — and `wallbox_absolute_max` as an absolute ceiling) — the discharge mode plays no part; while the wallbox runs, the mode would be free, the content does not cover the reserve and the battery has no surplus of its own, battery discharge is instead capped to the house's share, so the car charges from the grid, **or** enough battery content left against a wallbox reserve that is stricter than the battery's own (no deduction of the expected surplus), **or** a full battery (voltage has not dropped below 3.375 V/cell over the last 15 minutes, so 54.0 V at 16S — otherwise wasted PV surplus then goes into the car). It only switches off once **all three** fail at the same time. The energy and voltage conditions each carry a hysteresis: they demand more to switch on than to hold, so the wallbox's own load does not immediately undo the condition that switched it on and leave the wallbox flapping at the quarter hour. The energy condition asks for double the buffer (two quarter hours of wallbox draw instead of one), the voltage condition holds down to 3.35 V/cell and only applies while measured PV exceeds the house load — without surplus there is nothing that would otherwise be lost. All of these thresholds are named constants in the code, not configuration; the voltage values scale with `cell_count`. Only ever switches off what it switched on itself (a manual activation is left untouched, however dirty or energy-short it gets, see the spec's "Wallbox" section). Details, including the retry/verification logic for switching, are in `dirt_shift_spec_en.md`.
+**Optional: active wallbox control (`wallbox_enabled`, default `false`).** Independent of the passive exclusion above, `dirt_shift` can actively switch a wallbox's relay via a Tasmota device — switched on once **any one** of three conditions holds: two configurable dirtiness thresholds (`wallbox_cleanest_pct` — the hour must rank among the cleanest that-many percent of the rolling 24-hour window — and `wallbox_absolute_max` as an absolute ceiling) — the discharge mode plays no part; while the wallbox runs, the mode would be free, the content does not cover the reserve and the battery has no surplus of its own, battery discharge is instead capped to the house's share, so the car charges from the grid, **or** enough battery content left against a wallbox reserve that is stricter than the battery's own (no deduction of the expected surplus), **or** a full battery (voltage has not dropped below 3.375 V/cell over the last 15 minutes, so 54.0 V at 16S — otherwise wasted PV surplus then goes into the car). It only switches off once **all three** fail at the same time. The energy and voltage conditions each carry a hysteresis: they demand more to switch on than to hold, so the wallbox's own load does not immediately undo the condition that switched it on and leave the wallbox flapping at the quarter hour. The energy condition asks for double the buffer (two quarter hours of wallbox draw instead of one), the voltage condition holds down to 3.35 V/cell and only applies while measured PV exceeds the house load — without surplus there is nothing that would otherwise be lost. All of these thresholds are named constants in the code, not configuration; the voltage values scale with `cell_count`. Only ever switches off what it switched on itself (a manual activation is left untouched, however dirty or energy-short it gets, see the spec's "Wallbox" section). Details, including the retry/verification logic for switching, are in the [specification](dirt_shift_spec.md).
 
 ### 4. Dry run to verify
 
 Before activation, a run without writing the timer file is recommended:
 
 ```bash
-cd /opt/zeroinput/dirt_shift
+cd /home/vzlogger/zeroinput/dirt_shift
 # temporarily set disable_zeroinput_timer to true in dirt_shift.conf
 python3 dirt_shift.py -v -debug
 ```
@@ -133,11 +133,11 @@ If the values look plausible (zone matching the grid situation, reserve in the e
 `dirt_shift` should run every quarter hour, **on** the quarter-hour marks (`0,15,30,45`), not shortly before them:
 
 ```bash
-crontab -e
+sudo crontab -u vzlogger -e
 ```
 
 ```cron
-0,15,30,45 * * * * cd /opt/zeroinput/dirt_shift && /usr/bin/python3 dirt_shift.py >/dev/null 2>&1
+0,15,30,45 * * * * cd /home/vzlogger/zeroinput/dirt_shift && /usr/bin/python3 dirt_shift.py >/dev/null 2>&1
 ```
 
 **Why these exact minutes and not e.g. `59,14,29,44`:** `dirt_shift` always rounds the current slot **down** to the running slot when writing the timer line (`now.minute // SLOT_MINUTES * SLOT_MINUTES`). A run one minute before the mark still falls inside the **old** slot and writes its (stale) policy — the new slot would then only get its correct entry 14 minutes after it actually began. With `0,15,30,45`, each run starts exactly at the slot boundary, so the delay shrinks to plain cron dispatch jitter (seconds). The slot length is the named constant `SLOT_MINUTES` (default 15) in the code, and it also drives the per-slot energy budget, the wallbox margin, and the voltage window; changing it means changing the cron entry to match.

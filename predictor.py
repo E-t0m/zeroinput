@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # predictor.py — zeroinput load predictor (rectangle-signal view)
 #
-# Two mechanisms (see predictor_concept_de.md):
+# Two mechanisms (see docs/en/predictor_spec.md):
 #   1. k-means: learns a cyclic load (low/high), holds the inverter at LOW. Reliable base.
 #   2. peaks & override: handle recurring short high-load spikes whose ramp-up would export
 #      more (via inverter inertia) than it saves.

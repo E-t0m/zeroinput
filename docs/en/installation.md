@@ -24,12 +24,16 @@ zeroinput integrates naturally into an existing Volkszähler setup without repla
 | `predictor.py` | Load predictor (k-means, optional) |
 | `webconfig.py` | HTTP configuration server (optional, requires `-httpd`) |
 | [`ve_aggregator.py`](https://github.com/E-t0m/ve.direct-aggregator) | VE.Direct Aggregator client (optional, only for `victron_agg`) |
-| `zeroinput.conf` | Configuration (JSON) — create from `zeroinput.conf.starter` |
-| `zeroinput.conf.starter` | Reference configuration showing all available device classes |
+| `zeroinput.conf.starter` | Reference configuration showing all available device classes, template for `zeroinput.conf` |
+| `zeroinput.conf` | Your own configuration (JSON), created from `zeroinput.conf.starter`; not part of the repository |
 | `zeroinput_webconfig.html` | Web interface |
 | `zeroinput.service` | systemd service |
-| `zerooutput.sh` | Live status in terminal (`/usr/local/bin/zerooutput.sh`) |
-| `timer.txt` | Discharge timer (optional) |
+| `timer.txt.example` | Template for the discharge timer `timer.txt` (optional); `timer.txt` is not part of the repository |
+| `dirt_shift/` | CO₂-driven discharge control (optional), see [dirt_shift installation](dirt_shift_installation.md) |
+| `tibber/` | Price-driven discharge control with Tibber (optional), see [tibber](tibber.md) |
+| `tools/` | Helper scripts |
+| `tests/` | Tests without hardware |
+| `docs/` | Documentation |
 
 ---
 
@@ -50,7 +54,7 @@ zeroinput integrates naturally into an existing Volkszähler setup without repla
 ### Software
 
 ```bash
-sudo apt install python3 python3-serial vzlogger
+sudo apt install git python3 python3-serial vzlogger
 ```
 
 For Victron MultiPlus support, pyserial is already included above. No additional libraries required — `vebus.py` uses only the standard serial port.
@@ -59,20 +63,18 @@ For Victron MultiPlus support, pyserial is already included above. No additional
 
 ## Installation
 
-### 1. Copy files
+### 1. Clone the repository
 
 ```bash
 sudo useradd -m -s /bin/bash vzlogger   # if not already existing
 sudo usermod -aG dialout vzlogger       # RS485 and USB serial access
-sudo cp zeroinput.py input_power_staging.py inverter_drivers.py charger_drivers.py /home/vzlogger/
-sudo cp vebus.py /home/vzlogger/        # only needed for Victron MultiPlus
-sudo cp predictor.py /home/vzlogger/    # optional
-sudo cp webconfig.py /home/vzlogger/    # optional, only for -httpd
-sudo cp ve_aggregator.py /home/vzlogger/ # optional, only for victron_agg
-sudo cp zeroinput.conf zeroinput_webconfig.html zeroinput.service /home/vzlogger/
-sudo cp timer.txt /home/vzlogger/       # optional
-sudo chown vzlogger:vzlogger /home/vzlogger/*.py /home/vzlogger/*.conf /home/vzlogger/*.html
+sudo -u vzlogger git clone https://github.com/E-t0m/zeroinput.git /home/vzlogger/zeroinput
+cd /home/vzlogger/zeroinput
+sudo -u vzlogger cp zeroinput.conf.starter zeroinput.conf
+sudo -u vzlogger cp timer.txt.example timer.txt   # optional, for the discharge timer
 ```
+
+zeroinput runs directly from the cloned folder `/home/vzlogger/zeroinput`. Your own configuration (`zeroinput.conf`, `timer.txt`) and all files written at runtime are listed in `.gitignore`; an update with `git pull` leaves them untouched.
 
 ### 2. Persistent device names via udev (recommended)
 
@@ -123,22 +125,22 @@ sudo chmod 440 /etc/sudoers.d/zeroinput
 
 ### 4. Configure vzlogger
 
-zeroinput generates a template `vzlogger.conf.example` on startup based on the current `zeroinput.conf`. It already contains the mandatory `1-0:16.7.0` channel and all `vz_channels` with UUID placeholders.
+zeroinput generates a template `vzlogger.conf.example` in `/home/vzlogger/zeroinput` on startup, based on the current `zeroinput.conf`. It already contains the mandatory `1-0:16.7.0` channel and all `vz_channels` with UUID placeholders.
 
 **Steps:**
-1. Start zeroinput once — `vzlogger.conf.example` is created in the working directory
+1. Start zeroinput once — `vzlogger.conf.example` is created
 2. Create a channel in the Volkszähler interface for each entry and insert its UUID
 3. Adjust `device` (read head path) and `middleware` URL
-4. `sudo cp vzlogger.conf.example /etc/vzlogger.conf`
+4. `sudo cp /home/vzlogger/zeroinput/vzlogger.conf.example /etc/vzlogger.conf`
 5. `sudo systemctl restart vzlogger`
 
 The `1-0:16.7.0` channel (active power) **must** be present.
 
 > **Note:** Depending on channel resolution, vzlogger may write large amounts of data. See [data volume management](https://wiki.volkszaehler.org/howto/datenmengen). zeroinput uses `verbosity: 15` only to receive meter values from the FIFO — surplus log entries are discarded.
 
-### 5. Create zeroinput.conf
+### 5. Adapt zeroinput.conf
 
-Copy `zeroinput.conf.starter` to `zeroinput.conf` and adapt it to your hardware. The starter file contains all available device classes with comments. **Delete the entries you do not need.**
+Adapt the `zeroinput.conf` created from `zeroinput.conf.starter` in step 1 to your hardware. It contains all available device classes with comments. **Delete the entries you do not need.**
 
 zeroinput starts even without fully configured ports, so the web interface is available immediately. **Configure everything in the browser at `http://<hostname>:8081/`** — chargers, inverters, vz channels, alarms, and all other settings.
 
@@ -232,7 +234,7 @@ For Victron Aggregator (multiple MPPTs on one port):
 
 ### 6. Install systemd service
 
-Contents of `zeroinput.service`:
+The file `zeroinput.service` is part of the repository:
 
 ```ini
 [Unit]
@@ -241,10 +243,10 @@ After=syslog.target network.target ntp.service vzlogger.service
 
 [Service]
 User=vzlogger
-WorkingDirectory=/home/vzlogger
+WorkingDirectory=/home/vzlogger/zeroinput
 ExecStartPre=/bin/mkdir -p /tmp/vz
 ExecStartPre=/bin/touch /tmp/vz/output_to_vz.log
-ExecStart=/usr/bin/python3 -u /home/vzlogger/zeroinput.py -web -httpd
+ExecStart=/usr/bin/python3 -u /home/vzlogger/zeroinput/zeroinput.py -web -httpd
 ExecStartPost=+/bin/bash -c 'test -f /tmp/vz/vzlogger_restarted || (sleep 3 && /bin/systemctl restart vzlogger.service && touch /tmp/vz/vzlogger_restarted)'
 Restart=on-failure
 RestartSec=15
@@ -257,7 +259,7 @@ WantedBy=multi-user.target
 ```
 
 ```bash
-sudo cp zeroinput.service /etc/systemd/system/
+sudo cp /home/vzlogger/zeroinput/zeroinput.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable zeroinput
 sudo systemctl start zeroinput
@@ -271,6 +273,16 @@ journalctl -u zeroinput -f
 ```
 
 > **Note on output (`-v`):** The `ExecStart` line above starts zeroinput **without** `-v`. The `-v` option enables a verbose status output that writes several lines on every control cycle (about once per second). Because `StandardOutput=journal` is set, this output goes to the systemd journal and thus to syslog — in continuous operation this adds up to hundreds of thousands of lines per day and bloats the log. For continuous operation `-v` is therefore omitted; only startup, error and config-reload messages are logged. The live status is still available via the `-web` status page in the browser. `-v` is intended for a manual foreground start (see troubleshooting), when you want to read the output directly. If you do want the verbose output in the journal permanently, add `-v` and either cap the journal via `journald.conf` (e.g. `SystemMaxUse=`) or redirect the output to a separate rotated file with `StandardOutput=append:/var/log/zeroinput.log` plus a logrotate rule.
+
+### 7. Update
+
+```bash
+cd /home/vzlogger/zeroinput
+sudo -u vzlogger git pull
+sudo systemctl restart zeroinput
+```
+
+New configuration keys are listed in `zeroinput.conf.starter`. The web interface adds keys that are missing from your own `zeroinput.conf` with their default values when it is opened and writes them to the file on the next save.
 
 ---
 
@@ -340,7 +352,7 @@ The load predictor (`load_prediction: true`, default: false) detects cyclic load
 | `PEAK_SHORT_MAX_N` | `predictor.py` | Short/long peak boundary in cycles |
 | `LOG_FILE` | `predictor.py` | Log path (`''` = disabled) |
 
-conf keys are hot-reloadable; constants in `predictor.py` are applied automatically on file save. Full behaviour documented in **[predictor_spec_en.md](predictor_spec_en.md)**.
+conf keys are hot-reloadable; constants in `predictor.py` are applied automatically on file save. Full behaviour documented in **[predictor_spec.md](predictor_spec.md)**.
 
 ---
 
@@ -404,9 +416,7 @@ eSmart3 supports `int_hi`, `int_lo`, `ext_hi`, `ext_lo`. Temperature sensors sup
 
 **Follow live output:**
 ```bash
-zerooutput.sh
-# or:
-tail -f /home/vzlogger/zeroinput.html
+tail -f /home/vzlogger/zeroinput/zeroinput.html
 ```
 
 **systemd logs:**
@@ -426,7 +436,7 @@ sudo reboot
 **zeroinput does not start:**
 ```bash
 journalctl -u zeroinput -n 50
-python3 /home/vzlogger/zeroinput.py -v
+python3 /home/vzlogger/zeroinput/zeroinput.py -v
 ```
 
 **No FIFO:** `mkfifo /tmp/vz/vzlogger.fifo`

@@ -27,7 +27,7 @@ try:
 except Exception as e:
 	print(e)
 	print_exc()
-	print('error reading config file')
+	print('error reading config file zeroinput.conf - create it from zeroinput.conf.starter')
 	exit(1)
 
 inverter_drivers = []		# list of InverterDriver instances, built at startup from conf['inverters']

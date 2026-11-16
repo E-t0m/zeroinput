@@ -7,7 +7,7 @@
 
 Voraussetzung ist eine funktionierende zeroinput-Installation mit aktiviertem Entladetimer und ein erreichbarer volkszähler mit der `data.json`-HTTP-API.
 
-Die ausführliche Beschreibung der Funktionsweise steht in `dirt_shift_spec_de.md`.
+Die ausführliche Beschreibung der Funktionsweise steht in der [Spezifikation](dirt_shift_spec.md).
 
 ---
 
@@ -34,22 +34,22 @@ In `zeroinput.conf` muss der Entladetimer aktiv sein:
 
 ## Installation
 
-### 1. Dateien kopieren
+### 1. Konfiguration anlegen
 
-`dirt_shift` liegt üblicherweise in einem Unterordner der zeroinput-Installation:
+`dirt_shift` liegt im Unterordner `dirt_shift` der zeroinput-Installation. Die eigene Konfiguration entsteht aus der Starter-Datei:
 
 ```bash
-cd /opt/zeroinput
-mkdir -p dirt_shift
-cp dirt_shift.py dirt_shift.conf dirt_shift/
-chmod +x dirt_shift/dirt_shift.py
+cd /home/vzlogger/zeroinput/dirt_shift
+sudo -u vzlogger cp dirt_shift.conf.starter dirt_shift.conf
 ```
+
+`dirt_shift.conf` und die zur Laufzeit geschriebenen Dateien (Caches, Wallbox-Merker, `pv_forecast.json`) stehen in der `.gitignore`; eine Aktualisierung per `git pull` lässt sie unberührt.
 
 Der Standardpfad zur übergeordneten `zeroinput.conf` ist `../zeroinput.conf` und passt damit zu dieser Ordnerstruktur. Liegt `dirt_shift` woanders, ist der Schlüssel `zeroinput_conf` in `dirt_shift.conf` entsprechend anzupassen.
 
 ### 2. dirt_shift.conf anpassen
 
-Die mitgelieferte `dirt_shift.conf` enthält Platzhalter, die ersetzt werden müssen:
+Die aus der Starter-Datei erstellte `dirt_shift.conf` enthält Platzhalter, die ersetzt werden müssen:
 
 ```json
 "zeroinput_conf": "../zeroinput.conf",
@@ -73,11 +73,11 @@ Die übrigen Schlüssel (`reserve_pct`, `limit_discharge_rate`, `latitude`/`long
 - Der Standort (`latitude`/`longitude`, Standard ~Mitte Deutschland) steuert das Klarhimmel-Modell und die Strahlungsprognose.
 - `day_weights_pct` gewichtet einzelne Tage des Mittels stärker (chronologisch, Index −1 = gestern, Index 0 = gleicher Wochentag der Vorwoche); die Länge muss `average_days` entsprechen, sonst wird gleich gewichtet.
 
-**Der Deckel in nicht-priorisierten roten Stunden besteht aus zwei gleichzeitig geltenden Limits.** Ein Leistungs-Deckel `limit_discharge_rate` (Watt) in `dirt_shift.conf` — anlagenspezifisch, an die eigene gewöhnliche Spitzenlast anzupassen; sehr hoch gesetzt wirkt er praktisch nicht. Und ein festes Viertelstunden-Energiebudget von `¼ × (min(100 %, reserve_pct) × basic_load − gemessene PV)` dieser Stunde (mindestens 0), das keinen eigenen Konfigurationseintrag braucht, da es sich direkt aus `basic_load`, `reserve_pct` und der gemessenen PV-Leistung ergibt (der `PV`-Kanal der letzten 15 Minuten, nicht das Stundenmittel der Prognose — an den Rampenstunden am Tagesrand wäre das zu grob; die Prognose dient nur als Rückfall): `reserve_pct` skaliert dabei denselben Anteil des Bedarfs wie bei der Rot-Reserve selbst, statt nicht-priorisierten Stunden den vollen Bedarf zu erlauben — hier allerdings bei 100 % gekappt, da ein Deckel oberhalb des tatsächlichen Netto-Bedarfs nichts mehr begrenzen würde (bei der Reserve selbst sind Werte über 100 dagegen sinnvoll und wirken vorsichtiger); die gemessene PV wird davon unabhängig in voller Höhe abgezogen, da `pvpt` sie ohnehin schon direkt durchleitet. Beide Deckel zusammen schließen sich gegenseitig die Lücke: Der Watt-Deckel allein ließe eine dauerhaft anliegende, aber unterhalb der Schwelle bleibende Last unbegrenzt durch; das Wh-Budget allein ließe eine kurze Lastspitze noch durch, bevor es aufgebraucht ist. Details stehen in `dirt_shift_spec_de.md`, Abschnitt „Entladung nach Zone".
+**Der Deckel in nicht-priorisierten roten Stunden besteht aus zwei gleichzeitig geltenden Limits.** Ein Leistungs-Deckel `limit_discharge_rate` (Watt) in `dirt_shift.conf` — anlagenspezifisch, an die eigene gewöhnliche Spitzenlast anzupassen; sehr hoch gesetzt wirkt er praktisch nicht. Und ein festes Viertelstunden-Energiebudget von `¼ × (min(100 %, reserve_pct) × basic_load − gemessene PV)` dieser Stunde (mindestens 0), das keinen eigenen Konfigurationseintrag braucht, da es sich direkt aus `basic_load`, `reserve_pct` und der gemessenen PV-Leistung ergibt (der `PV`-Kanal der letzten 15 Minuten, nicht das Stundenmittel der Prognose — an den Rampenstunden am Tagesrand wäre das zu grob; die Prognose dient nur als Rückfall): `reserve_pct` skaliert dabei denselben Anteil des Bedarfs wie bei der Rot-Reserve selbst, statt nicht-priorisierten Stunden den vollen Bedarf zu erlauben — hier allerdings bei 100 % gekappt, da ein Deckel oberhalb des tatsächlichen Netto-Bedarfs nichts mehr begrenzen würde (bei der Reserve selbst sind Werte über 100 dagegen sinnvoll und wirken vorsichtiger); die gemessene PV wird davon unabhängig in voller Höhe abgezogen, da `pvpt` sie ohnehin schon direkt durchleitet. Beide Deckel zusammen schließen sich gegenseitig die Lücke: Der Watt-Deckel allein ließe eine dauerhaft anliegende, aber unterhalb der Schwelle bleibende Last unbegrenzt durch; das Wh-Budget allein ließe eine kurze Lastspitze noch durch, bevor es aufgebraucht ist. Details stehen in der [Spezifikation](dirt_shift_spec.md), Abschnitt „Entladung nach Zone".
 
 **`precharge_enabled` (Standard `false`, optional):** Aktiviert einen zusätzlichen Pfad, der PV, die sonst per `pvpt` ins Haus ginge, gezielt in den Akku lenkt; das Haus bezieht diesen Anteil dann aus dem Netz — die einzige Ausnahme von der sonst uneingeschränkten `pvpt`-Garantie. Der Tausch: sauberer Netzbezug in der laufenden Stunde gegen mehr Ladung für die dreckigen Stunden später, bezahlt mit dem Rundlaufverlust. Das lohnt nur, solange der Akku bis zum roten Block **nicht** ohnehin voll wird — füllt ihn der natürliche Überschuss sowieso, würde Umlenken nur mehr PV abregeln lassen. Gedrosselt wird eine grüne Stunde daher nur, wenn sie zu den saubersten `precharge_cleanest_pct` % des Fensters gehört (Standard 25), der rote Block um mindestens den Rundlaufverlust × `round_trip_margin` dreckiger ist, **und** nach dem natürlichen Überschuss noch Platz im Akku bleibt, den der rote Block auch nutzen kann. Umgelenkt wird höchstens dieser Restplatz, verteilt auf die qualifizierenden Stunden. Es zählen nur echte SMARD-Daten: Das Precharge-Fenster endet mit der letzten veröffentlichten Stunde, im Notmodus ist Precharge aus. Greift typischerweise an Tagen mit sauberem Netz, aber wenig eigenem PV-Überschuss; an Sonnentagen nicht. Setzt `battery_capacity_wh` (nutzbare Kapazität in Wh) voraus.
 
-**`round_trip_margin` (Standard `1.5`):** Stellschraube zwischen Kosten und Sauberkeit für Precharge. Precharge kostet den Rundlaufverlust des Akkuumwegs (aus `PV_to_bat_efficiency` und `bat_to_AC_efficiency`) als zusätzlichen Netzbezug; der rote Block muss um mindestens diesen Verlust × `round_trip_margin` dreckiger sein. `1.0` = so sauber wie möglich (mehr Netzbezug, mehr Ladezyklen), größere Werte = sparsamer, ein sehr großer Wert schaltet Precharge praktisch ab. Werte unter `1.0` gelten als `1.0`. Wirkt nicht auf die Entladeentscheidungen — dort verschiebt `dirt_shift` nur bereits gespeicherte Energie, ohne zusätzlichen Rundlauf. Details und Formeln stehen in `dirt_shift_spec_de.md`, Abschnitt „Precharge".
+**`round_trip_margin` (Standard `1.5`):** Stellschraube zwischen Kosten und Sauberkeit für Precharge. Precharge kostet den Rundlaufverlust des Akkuumwegs (aus `PV_to_bat_efficiency` und `bat_to_AC_efficiency`) als zusätzlichen Netzbezug; der rote Block muss um mindestens diesen Verlust × `round_trip_margin` dreckiger sein. `1.0` = so sauber wie möglich (mehr Netzbezug, mehr Ladezyklen), größere Werte = sparsamer, ein sehr großer Wert schaltet Precharge praktisch ab. Werte unter `1.0` gelten als `1.0`. Wirkt nicht auf die Entladeentscheidungen — dort verschiebt `dirt_shift` nur bereits gespeicherte Energie, ohne zusätzlichen Rundlauf. Details und Formeln stehen in der [Spezifikation](dirt_shift_spec.md), Abschnitt „Precharge".
 
 **SMARD ist Voraussetzung.** `dirt_shift` bezieht reale Day-Ahead-Netzdaten (Bundesnetzagentur, kostenlos, ohne Anmeldung) für heute **und morgen** und leitet daraus die Zonen ab (Median-Schnitt über das rollierende 24-Stunden-Fenster: sauberere Hälfte grün, dreckigere rot); eine alternative Quelle für *echte* Netzdaten gibt es nicht (bei Ausfall greift ein modellierter Notmodus, siehe unten). Schlägt die Abfrage fehl, überbrückt der Cache genau **einen Tag**; danach schaltet `dirt_shift` in einen **Notmodus**, der die Zonen aus der Wetterprognose (Solar plus Wind über Open-Meteo) und einem festen Profil der bundesweiten Netzlast modelliert — deutlich gekennzeichnet, nie mit echten Daten verwechselt. Erst wenn auch das Wetter nicht abrufbar ist, hinterlässt `dirt_shift` einen „Alles-erlaubt"-Timer. Optional kann `vz_dirtiness_uuid` (eine vorher in volkszähler angelegte Kanal-UUID) gesetzt werden, damit `dirt_shift` den aktuellen Dreckigkeitswert bei jedem Lauf per HTTP-POST in volkszähler protokolliert (leer = deaktiviert).
 
@@ -101,14 +101,14 @@ Maßgeblich ist, dass `basic_load` am Ende den tatsächlich zu deckenden Hausver
 
 **Wichtig zur Wallbox:** Weil `Auto` bewusst aus `basic_load` ausgeklammert ist, sieht `dirt_shift` eine Wallbox-Ladung nicht direkt. Der Schutz davor, dass eine Wallbox-Spitze den Akku statt des Netzes belastet, kommt stattdessen aus der Zonenlogik selbst — siehe „Entladung nach Zone" in der Spec (grüne Zone stoppt oder deckelt, solange die Reserve nicht erreicht ist; rote Zone deckelt außerhalb der dreckigsten Stunde auf `limit_discharge_rate` und gleichzeitig auf `¼ × (min(100 %, reserve_pct) × basic_load − gemessene PV)` je Viertelstunde).
 
-**Optional: aktive Wallbox-Steuerung (`wallbox_enabled`, Standard `false`).** Unabhängig von der passiven Ausklammerung oben kann `dirt_shift` das Relais einer Wallbox über ein Tasmota-Gerät aktiv schalten — eingeschaltet, sobald **eine** von drei Bedingungen zutrifft: zwei konfigurierbare Sauberkeits-Schwellen (`wallbox_cleanest_pct` — die Stunde muss zu den saubersten so viel Prozent des rollierenden 24-Stunden-Fensters gehören — und `wallbox_absolute_max` als absolute Obergrenze) — der Batteriemodus spielt dabei keine Rolle; läuft die Wallbox, während der Modus frei wäre, der Inhalt die Reserve aber nicht deckt und der Akku keinen eigenen Überschuss hat, wird stattdessen die Batterieentladung auf den Hausanteil gedeckelt, sodass das Auto aus dem Netz lädt, **oder** genug Akkuinhalt gegenüber einer Wallbox-Reserve, die strenger ist als die des Akkus (ohne Abzug des erwarteten Überschusses), **oder** ein voller Akku (die Batteriespannung ist über die letzten 15 Minuten nicht unter 3,375 V/Zelle gefallen, bei 16S also 54,0 V — dann geht sonst verschenkter PV-Überschuss ins Auto). Abgeschaltet wird erst, wenn **alle drei** gleichzeitig wegfallen. Die Energie- und die Spannungs-Bedingung haben je eine Hysterese: Sie fordern zum Einschalten mehr als zum Halten, damit die Wallbox-Last die Bedingung nicht sofort selbst wieder aufhebt und die Wallbox im Viertelstundentakt flattert. Die Energie-Bedingung verlangt dazu den doppelten Puffer (zwei statt einer Viertelstunde Wallbox-Bezug), die Spannungs-Bedingung hält bis 3,35 V/Zelle und gilt nur, solange die gemessene PV den Hausverbrauch übersteigt — ohne Überschuss gibt es nichts, was sonst verloren ginge. Alle diese Schwellen sind benannte Konstanten im Code, keine Konfiguration; die Spannungswerte skalieren über `cell_count` mit. Ausgeschaltet wird dabei nur, was `dirt_shift` selbst eingeschaltet hat (manuelle Aktivierung bleibt unangetastet, egal wie dreckig oder energiearm es wird, siehe Spec-Abschnitt „Wallbox"). Details, inklusive der Retry-/Verifikationslogik beim Schalten, stehen in `dirt_shift_spec_de.md`.
+**Optional: aktive Wallbox-Steuerung (`wallbox_enabled`, Standard `false`).** Unabhängig von der passiven Ausklammerung oben kann `dirt_shift` das Relais einer Wallbox über ein Tasmota-Gerät aktiv schalten — eingeschaltet, sobald **eine** von drei Bedingungen zutrifft: zwei konfigurierbare Sauberkeits-Schwellen (`wallbox_cleanest_pct` — die Stunde muss zu den saubersten so viel Prozent des rollierenden 24-Stunden-Fensters gehören — und `wallbox_absolute_max` als absolute Obergrenze) — der Batteriemodus spielt dabei keine Rolle; läuft die Wallbox, während der Modus frei wäre, der Inhalt die Reserve aber nicht deckt und der Akku keinen eigenen Überschuss hat, wird stattdessen die Batterieentladung auf den Hausanteil gedeckelt, sodass das Auto aus dem Netz lädt, **oder** genug Akkuinhalt gegenüber einer Wallbox-Reserve, die strenger ist als die des Akkus (ohne Abzug des erwarteten Überschusses), **oder** ein voller Akku (die Batteriespannung ist über die letzten 15 Minuten nicht unter 3,375 V/Zelle gefallen, bei 16S also 54,0 V — dann geht sonst verschenkter PV-Überschuss ins Auto). Abgeschaltet wird erst, wenn **alle drei** gleichzeitig wegfallen. Die Energie- und die Spannungs-Bedingung haben je eine Hysterese: Sie fordern zum Einschalten mehr als zum Halten, damit die Wallbox-Last die Bedingung nicht sofort selbst wieder aufhebt und die Wallbox im Viertelstundentakt flattert. Die Energie-Bedingung verlangt dazu den doppelten Puffer (zwei statt einer Viertelstunde Wallbox-Bezug), die Spannungs-Bedingung hält bis 3,35 V/Zelle und gilt nur, solange die gemessene PV den Hausverbrauch übersteigt — ohne Überschuss gibt es nichts, was sonst verloren ginge. Alle diese Schwellen sind benannte Konstanten im Code, keine Konfiguration; die Spannungswerte skalieren über `cell_count` mit. Ausgeschaltet wird dabei nur, was `dirt_shift` selbst eingeschaltet hat (manuelle Aktivierung bleibt unangetastet, egal wie dreckig oder energiearm es wird, siehe Spec-Abschnitt „Wallbox"). Details, inklusive der Retry-/Verifikationslogik beim Schalten, stehen in der [Spezifikation](dirt_shift_spec.md).
 
 ### 4. Trockenlauf zur Prüfung
 
 Vor der Aktivierung empfiehlt sich ein Lauf ohne Schreiben der Timer-Datei:
 
 ```bash
-cd /opt/zeroinput/dirt_shift
+cd /home/vzlogger/zeroinput/dirt_shift
 # disable_zeroinput_timer in dirt_shift.conf vorübergehend auf true setzen
 python3 dirt_shift.py -v -debug
 ```
@@ -133,11 +133,11 @@ Stimmen die Werte plausibel (Zone zur Netzlage passend, Reserve im erwarteten Be
 `dirt_shift` soll viertelstündlich laufen, und zwar **zu** den Viertelstunden-Marken (`0,15,30,45`), nicht kurz davor:
 
 ```bash
-crontab -e
+sudo crontab -u vzlogger -e
 ```
 
 ```cron
-0,15,30,45 * * * * cd /opt/zeroinput/dirt_shift && /usr/bin/python3 dirt_shift.py >/dev/null 2>&1
+0,15,30,45 * * * * cd /home/vzlogger/zeroinput/dirt_shift && /usr/bin/python3 dirt_shift.py >/dev/null 2>&1
 ```
 
 **Warum genau diese Minuten und nicht z. B. `59,14,29,44`:** `dirt_shift` rundet den aktuellen Slot beim Schreiben der Timer-Zeile immer nach **unten** auf den laufenden Slot (`now.minute // SLOT_MINUTES * SLOT_MINUTES`). Ein Lauf eine Minute vor der Marke liegt noch im **alten** Slot und schreibt dessen (veraltete) Policy — der neue Slot bekäme seinen korrekten Eintrag dann erst 14 Minuten nach seinem eigentlichen Beginn. Mit `0,15,30,45` beginnt jeder Lauf exakt am Slot-Anfang, die Verzögerung schrumpft auf reinen Cron-Dispatch-Jitter (Sekunden). Die Slot-Länge steht als Konstante `SLOT_MINUTES` (Standard 15) im Code und bestimmt zugleich das Energiebudget je Slot, die Wallbox-Marge und das Spannungsfenster; wird sie geändert, muss der Cron-Eintrag entsprechend mitgeändert werden.

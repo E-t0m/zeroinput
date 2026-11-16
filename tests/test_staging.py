@@ -1,6 +1,10 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
 # unit test for input_power_staging.py — uses FakeDriver with the .stages list interface
+import sys
+from os.path import abspath, dirname, join
+sys.path.insert(0, dirname(dirname(abspath(__file__))))	# the modules live in the repository root
+
 import input_power_staging as staging
 
 class FakeDriver:

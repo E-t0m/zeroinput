@@ -5,7 +5,7 @@ I would like to present my own private system and regulation for zero feed-in.
 
 The own consumption in the house is covered **first**. If there is **then** still power left, the **battery** will also be charged.
 
-Or: settings in the [timer file](https://github.com/E-t0m/zeroinput/blob/main/timer.txt) set other values.
+Or: settings in the [timer file](../../timer.txt.example) set other values.
 
 ## Structure
 ![scheme](https://github.com/user-attachments/assets/8d767329-15f9-4098-b4b4-a9e70d0d98c9)
