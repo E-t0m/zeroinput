@@ -33,3 +33,8 @@ Override is active, short peaks shaved, long peak deactivates override, 2 short 
 ## both together
 Override gets active, predictor holds low level
 ![](screenshots/predictor_low_phase_and_peak_override.png)
+
+# dirt_shift
+## a day in November
+Battery charged from PV while the grid is clean, discharged when it is dirtiest
+![](screenshots/dirt_shift_day.png)

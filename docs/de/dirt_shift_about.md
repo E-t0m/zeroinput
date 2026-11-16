@@ -57,6 +57,18 @@ Die Deckelung wirkt zweifach: als Leistungsgrenze (Watt) und als Energiebudget j
 (gegen die tatsächlich gemessene PV gerechnet). So wird sowohl eine kurze Lastspitze als auch
 eine dauerhaft erhöhte Last ins Netz gedrängt statt in den Akku.
 
+## Ein Tag im Betrieb
+
+![dirt_shift an einem Novembertag](../screenshots/dirt_shift_day.png)
+
+Ein Samstag im November, aufgezeichnet im volkszähler. Lila ist die Netzdreckigkeit (rechte Achse), rot der Netzbezug, gelb die PV-Leistung und grün die Einspeisung der Wechselrichter; PV und Einspeisung sind nach unten aufgetragen.
+
+- **Vormittag und Mittag, Dreckigkeit 30–45 %:** Das Netz ist sauber. Die Einspeisung bleibt auf einen kleinen Teil der PV-Leistung gedrosselt (Precharge), der Rest der PV lädt den Akku. Das Haus bezieht seinen Strom in dieser Zeit aus dem Netz.
+- **Ab 15 Uhr, Dreckigkeit 60–68 %:** Das Netz ist am dreckigsten. Der Akku gibt frei ab, die Einspeisung folgt dem Verbrauch, und der Netzbezug liegt bei null.
+- **Ab etwa 19:30 Uhr:** Der Akku ist leer, die Einspeisung läuft aus, und das Haus bezieht wieder aus dem Netz.
+
+Die im Akku gespeicherte Energie ersetzt damit Netzstrom in den dreckigsten Stunden des Tages statt in den saubersten.
+
 ## Optionale Zusatzfunktionen
 
 **Wallbox.** `dirt_shift` kann das Relais einer Wallbox über ein Tasmota-Gerät schalten, wenn
