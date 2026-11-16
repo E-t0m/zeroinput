@@ -28,6 +28,8 @@ except:
 	print('error reading config file tib_zero_tas.conf - create it from tib_zero_tas.conf.starter')
 	exit(1)
 
+if not isabs(conf['timer.txt']): conf['timer.txt'] = join(dirname(abspath(__file__)), conf['timer.txt'])	# relative timer path: resolved against this folder, like zeroinput_conf
+
 def write_free_timer(path):							# 'all allowed' timer: full discharge, full pv pass through, no energy limit
 	try:
 		with open(path,'w') as fo:
@@ -42,7 +44,7 @@ def die(msg):										# hard abort: leave an 'all allowed' timer, so zeroinput 
 	exit(1)
 
 try:												# cell_count from zeroinput.conf, scales the battery voltage thresholds
-	_zi_path = conf['zeroinput_conf'] if isabs(conf['zeroinput_conf']) else join(dirname(__file__), conf['zeroinput_conf'])
+	_zi_path = conf['zeroinput_conf'] if isabs(conf['zeroinput_conf']) else join(dirname(abspath(__file__)), conf['zeroinput_conf'])
 	with open(_zi_path,'r') as fi: conf['cell_count'] = json_load(fi).get('cell_count', 16)
 except Exception as e:
 	die('cannot read zeroinput.conf (%s): %s'%(conf.get('zeroinput_conf','?'), e))

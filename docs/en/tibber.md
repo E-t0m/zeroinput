@@ -212,7 +212,7 @@ If volkszähler or the price file cannot be read, tib_zero_tas writes an unrestr
 
 PVpt is PV pass through, where the PV energy is directly transformed by the inverter, because of the small price gap to the next sheduled hour with input from battery.
 
-The scripts live in the `tibber` subfolder of the zeroinput installation. `tib_zero_tas.conf` and `tibber_personal_token.json` are created from their `.starter` templates and are not part of the repository:
+The scripts live in the `tibber` subfolder of the zeroinput installation. The paths `timer.txt` and `zeroinput_conf` in `tib_zero_tas.conf` are absolute or relative to that folder; the defaults `../timer.txt` and `../zeroinput.conf` match this layout. `tib_zero_tas.conf` and `tibber_personal_token.json` are created from their `.starter` templates and are not part of the repository:
 ```
 cd /opt/zeroinput/tibber
 cp tib_zero_tas.conf.starter tib_zero_tas.conf

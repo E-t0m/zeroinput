@@ -1,5 +1,5 @@
 {
-"timer.txt": "/opt/zeroinput/timer.txt",	"help":"the absolute path to zeroinput.py timer file.",
+"timer.txt": "../timer.txt",	"help":"path to zeroinput.py timer file, absolute or relative to this folder",
 "zeroinput_conf": "../zeroinput.conf",	"help":"path to zeroinput.conf, absolute or relative to this folder; cell_count is read from there to scale the battery voltage thresholds",
 
 "vz_host_port": "127.0.0.0:8080",			"help":"host:port of your volkszähler installation",
