@@ -61,7 +61,14 @@ _STRING_FIELDS = {
 }
 
 def _parse_value(name, raw):
-	"""Convert raw VE.Direct string value to Python type."""
+	"""Convert raw VE.Direct string value to Python type. Fields listed in
+	_STRING_FIELDS are text by definition and pass through unchanged. For every
+	other field the value is numeric by definition, so a value that converts to
+	neither int nor float (line noise, embedded null byte, empty value) is
+	rejected with None rather than handed on as the raw string: a caller doing
+	arithmetic on what it is entitled to treat as a number must not be handed
+	text. parse_block drops None fields entirely, so a disturbed reading makes
+	the field absent for that block instead of poisoning it."""
 	if name in _STRING_FIELDS:
 		return raw
 	try:
@@ -75,7 +82,7 @@ def _parse_value(name, raw):
 	try:
 		return float(raw)   # e.g. TEMP field from DS18B20 pseudo-block
 	except (ValueError, TypeError):
-		return raw
+		return None
 
 
 def _check_checksum(raw_bytes):
@@ -108,7 +115,9 @@ def parse_block(raw_bytes):
 		name, _, raw = line.partition('\t')
 		name = name.strip(); raw = raw.strip()
 		if name:
-			fields[name] = _parse_value(name, raw)
+			value = _parse_value(name, raw)
+			if value is not None:				# unconvertible numeric field: leave it out entirely
+				fields[name] = value
 	return fields if 'PID' in fields else None
 
 

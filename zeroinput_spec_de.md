@@ -173,6 +173,8 @@ Optionale zeitbasierte Steuerung über `timer.txt`. Jede Regel legt fest:
 - **inverter** — maximale Einspeiseleistung (W oder % von `max_input_power`)
 - **energy_Wh** — Energiebudget pro Timerperiode; nach Überschreitung stoppt Batterieentladung, nur PV-Durchleitung läuft weiter
 
+Ein negatives `energy_Wh` (`-1`) bedeutet „kein Energiebudget": die Budgetprüfung entfällt vollständig, allein `battery` und `inverter` begrenzen. Dasselbe gilt ohne lesbare `timer.txt`. `0` ist das engste Budget, nicht der Freibrief: der Energiezähler wird nur bei einem Wechsel der zuletzt angewandten Zeile zurückgesetzt, also gilt ein Budget von `0` ab der ersten aus der Batterie entnommenen Wattsekunde als überschritten und bleibt es bis zum Zeilenwechsel. Die Statuszeile zeigt Verbrauch und Budget als `energy <verbraucht>/<budget> Wh`, bei `-1` als `energy <verbraucht>/unlimited Wh`; die Meldung bei Überschreitung lautet `battery energy budget <n> Wh exceeded` und ist damit vom Leistungslimit `battery discharge limit <n> W` unterscheidbar.
+
 Regeln werden der Reihe nach aktiviert; `0000-00-00` als Datum gilt täglich.
 
 `timer.txt` kann von Hand geschrieben oder von einem externen Tool erzeugt werden. Die [Tibber-Tools](https://github.com/E-t0m/zeroinput/tree/main/tibber) (optional, nicht gepflegt) erzeugen eine `timer.txt` aus Tibber-Dynamikpreisdaten und verteilen Wechselrichterleistung, Batterieentladung und Energiemengen in die teuersten Preisslots.
