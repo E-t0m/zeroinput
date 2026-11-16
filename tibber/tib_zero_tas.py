@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
+# status: testing - not verified in continuous operation
 # indent size 4, mode Tabs
 from json import load as json_load
 from json import dump as json_dump

@@ -30,7 +30,7 @@ zeroinput runs directly from the cloned folder `/opt/zeroinput` as user `vzlogge
 | | English | Deutsch |
 |---|----------|---------|
 | **dirt_shift** - shifts battery discharge into the hours with the dirtiest grid power | [Introduction](docs/en/dirt_shift_about.md), [Installation](docs/en/dirt_shift_installation.md), [Specification](docs/en/dirt_shift_spec.md), [Console output](docs/en/dirt_shift_console_output.md) | [Vorstellung](docs/de/dirt_shift_about.md), [Installation](docs/de/dirt_shift_installation.md), [Spezifikation](docs/de/dirt_shift_spec.md) |
-| **tibber** - shifts battery discharge into the most expensive hours of a Tibber tariff | [Description](docs/en/tibber.md) | |
+| **tibber** (testing) - shifts battery discharge into the most expensive hours of a Tibber tariff | [Description](docs/en/tibber.md) | |
 
 ## Repository layout
 
@@ -41,7 +41,7 @@ zeroinput runs directly from the cloned folder `/opt/zeroinput` as user `vzlogge
 | `zeroinput.service` | systemd service |
 | `zerooutput.sh` | live status in the terminal |
 | `dirt_shift/` | dirt_shift add-on |
-| `tibber/` | tibber add-on |
+| `tibber/` | tibber add-on (testing) |
 | `tools/` | helper scripts |
 | `tests/` | tests that run without hardware |
 | `docs/` | documentation in English and German, screenshots |

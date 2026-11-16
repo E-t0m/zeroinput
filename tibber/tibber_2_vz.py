@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
+# status: testing - not verified in continuous operation
 
 from json import load as json_load
 from time import time, strftime, sleep

@@ -31,7 +31,7 @@ zeroinput fügt sich damit natürlich in eine bestehende Volkszähler-Installati
 | `zerooutput.sh` | Live-Status im Terminal, zeigt die von `-web` geschriebene `zeroinput.html` |
 | `timer.txt.example` | Vorlage für den Entladetimer `timer.txt` (optional); `timer.txt` ist nicht Teil des Repositorys |
 | `dirt_shift/` | CO₂-geführte Entladesteuerung (optional), siehe [dirt_shift-Installation](dirt_shift_installation.md) |
-| `tibber/` | Preisgeführte Entladesteuerung mit Tibber (optional), siehe [tibber](../en/tibber.md) |
+| `tibber/` | Preisgeführte Entladesteuerung mit Tibber (optional, im Teststadium), siehe [tibber](../en/tibber.md) |
 | `tools/` | Hilfsskripte |
 | `tests/` | Tests ohne Hardware |
 | `docs/` | Dokumentation |

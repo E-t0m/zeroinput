@@ -1,4 +1,8 @@
-the -v erbose output looks like this
+# tibber – price-driven discharge control
+
+> **Status: testing.** The tibber scripts are not verified in continuous operation. Check the timer file they write before relying on it.
+
+The `-v` (verbose) output looks like this
 
 ```
 

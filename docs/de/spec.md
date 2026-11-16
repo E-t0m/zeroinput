@@ -177,7 +177,7 @@ Ein negatives `energy_Wh` (`-1`) bedeutet „kein Energiebudget": die Budgetprü
 
 Regeln werden der Reihe nach aktiviert; `0000-00-00` als Datum gilt täglich.
 
-`timer.txt` kann von Hand geschrieben oder von einem externen Tool erzeugt werden. Die [Tibber-Tools](../../tibber) (optional, nicht gepflegt) erzeugen eine `timer.txt` aus Tibber-Dynamikpreisdaten und verteilen Wechselrichterleistung, Batterieentladung und Energiemengen in die teuersten Preisslots.
+`timer.txt` kann von Hand geschrieben oder von einem externen Tool erzeugt werden. Die [Tibber-Tools](../../tibber) (optional, im Teststadium) erzeugen eine `timer.txt` aus Tibber-Dynamikpreisdaten und verteilen Wechselrichterleistung, Batterieentladung und Energiemengen in die teuersten Preisslots.
 
 ---
 

@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
+# status: testing - not verified in continuous operation
 # indent size 4, mode Tabs
 
 debug = False

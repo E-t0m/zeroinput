@@ -31,7 +31,7 @@ zeroinput integrates naturally into an existing Volkszähler setup without repla
 | `zerooutput.sh` | Live status in the terminal, shows the `zeroinput.html` written by `-web` |
 | `timer.txt.example` | Template for the discharge timer `timer.txt` (optional); `timer.txt` is not part of the repository |
 | `dirt_shift/` | CO₂-driven discharge control (optional), see [dirt_shift installation](dirt_shift_installation.md) |
-| `tibber/` | Price-driven discharge control with Tibber (optional), see [tibber](tibber.md) |
+| `tibber/` | Price-driven discharge control with Tibber (optional, testing), see [tibber](tibber.md) |
 | `tools/` | Helper scripts |
 | `tests/` | Tests without hardware |
 | `docs/` | Documentation |
