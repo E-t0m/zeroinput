@@ -39,7 +39,7 @@ In `zeroinput.conf` the discharge timer must be active:
 `dirt_shift` lives in the `dirt_shift` subfolder of the zeroinput installation. Your own configuration is created from the starter file:
 
 ```bash
-cd /home/vzlogger/zeroinput/dirt_shift
+cd /opt/zeroinput/dirt_shift
 sudo -u vzlogger cp dirt_shift.conf.starter dirt_shift.conf
 ```
 
@@ -108,7 +108,7 @@ What matters is that `basic_load` ends up as the actual house consumption to be 
 Before activation, a run without writing the timer file is recommended:
 
 ```bash
-cd /home/vzlogger/zeroinput/dirt_shift
+cd /opt/zeroinput/dirt_shift
 # temporarily set disable_zeroinput_timer to true in dirt_shift.conf
 python3 dirt_shift.py -v -debug
 ```
@@ -137,7 +137,7 @@ sudo crontab -u vzlogger -e
 ```
 
 ```cron
-0,15,30,45 * * * * cd /home/vzlogger/zeroinput/dirt_shift && /usr/bin/python3 dirt_shift.py >/dev/null 2>&1
+0,15,30,45 * * * * cd /opt/zeroinput/dirt_shift && /usr/bin/python3 dirt_shift.py >/dev/null 2>&1
 ```
 
 **Why these exact minutes and not e.g. `59,14,29,44`:** `dirt_shift` always rounds the current slot **down** to the running slot when writing the timer line (`now.minute // SLOT_MINUTES * SLOT_MINUTES`). A run one minute before the mark still falls inside the **old** slot and writes its (stale) policy — the new slot would then only get its correct entry 14 minutes after it actually began. With `0,15,30,45`, each run starts exactly at the slot boundary, so the delay shrinks to plain cron dispatch jitter (seconds). The slot length is the named constant `SLOT_MINUTES` (default 15) in the code, and it also drives the per-slot energy budget, the wallbox margin, and the voltage window; changing it means changing the cron entry to match.

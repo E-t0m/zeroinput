@@ -4,10 +4,10 @@ After=syslog.target network.target ntp.service vzlogger.service
 
 [Service]
 User=vzlogger
-WorkingDirectory=/home/vzlogger/zeroinput
+WorkingDirectory=/opt/zeroinput
 ExecStartPre=/bin/mkdir -p /tmp/vz
 ExecStartPre=/bin/touch /tmp/vz/output_to_vz.log
-ExecStart=/usr/bin/python3 -u /home/vzlogger/zeroinput/zeroinput.py -web -httpd
+ExecStart=/usr/bin/python3 -u /opt/zeroinput/zeroinput.py -web -httpd
 ExecStartPost=+/bin/bash -c 'test -f /tmp/vz/vzlogger_restarted || (sleep 3 && /bin/systemctl restart vzlogger.service && touch /tmp/vz/vzlogger_restarted)'
 Restart=on-failure
 RestartSec=15

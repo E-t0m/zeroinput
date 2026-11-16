@@ -1,7 +1,7 @@
 # m h  dom mon dow   command
 
-* * * * * python3 /home/vzlogger/zeroinput/tibber/tibber_2_vz.py
+* * * * * python3 /opt/zeroinput/tibber/tibber_2_vz.py
 
-13,28,43,58 * * * * python3 /home/vzlogger/zeroinput/tibber/tibber_prices.py
+13,28,43,58 * * * * python3 /opt/zeroinput/tibber/tibber_prices.py
 
-14,29,44,59 * * * *	python3 /home/vzlogger/zeroinput/tibber/tib_zero_tas.py -v -html > /home/vzlogger/zeroinput/tibber/tib_zero_tas.html
+14,29,44,59 * * * *	python3 /opt/zeroinput/tibber/tib_zero_tas.py -v -html > /opt/zeroinput/tibber/tib_zero_tas.html

@@ -16,12 +16,14 @@ This script uses a https://volkszaehler.org/ installation for energy meter input
 ## Quick start
 
 ```bash
-sudo -u vzlogger git clone https://github.com/E-t0m/zeroinput.git /home/vzlogger/zeroinput
-cd /home/vzlogger/zeroinput
+sudo mkdir /opt/zeroinput
+sudo chown vzlogger:vzlogger /opt/zeroinput
+sudo -u vzlogger git clone https://github.com/E-t0m/zeroinput.git /opt/zeroinput
+cd /opt/zeroinput
 sudo -u vzlogger cp zeroinput.conf.starter zeroinput.conf
 ```
 
-zeroinput runs directly from the cloned folder and is updated with `git pull`. Your own configuration files are not part of the repository. All steps are in the [installation manual](docs/en/installation.md).
+zeroinput runs directly from the cloned folder `/opt/zeroinput` as user `vzlogger` and is updated with `git pull`. Your own configuration files are not part of the repository. All steps are in the [installation manual](docs/en/installation.md).
 
 ## Add-ons
 

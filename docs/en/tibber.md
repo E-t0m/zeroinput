@@ -210,14 +210,14 @@ PVpt is PV pass through, where the PV energy is directly transformed by the inve
 
 The scripts live in the `tibber` subfolder of the zeroinput installation. `tib_zero_tas.conf` and `tibber_personal_token.json` are created from their `.starter` templates and are not part of the repository:
 ```
-cd /home/vzlogger/zeroinput/tibber
+cd /opt/zeroinput/tibber
 cp tib_zero_tas.conf.starter tib_zero_tas.conf
 cp tibber_personal_token.json.starter tibber_personal_token.json
 ```
 Tib_zero_tas.py should run every 15 minutes, see the example [crontab](../../tibber/crontab).
 I write the output to a html file which is linked (as root) from the vzlogger htdocs folder:
 ```
-ln -s /home/vzlogger/zeroinput/tibber/tib_zero_tas.html /home/pi/volkszaehler.org/htdocs
+ln -s /opt/zeroinput/tibber/tib_zero_tas.html /home/pi/volkszaehler.org/htdocs
 ```
 It's found at http ://the-usual-volkszaehler-site /tib_zero_tas.html#now
 

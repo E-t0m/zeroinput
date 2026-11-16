@@ -68,13 +68,15 @@ For Victron MultiPlus support, pyserial is already included above. No additional
 ```bash
 sudo useradd -m -s /bin/bash vzlogger   # if not already existing
 sudo usermod -aG dialout vzlogger       # RS485 and USB serial access
-sudo -u vzlogger git clone https://github.com/E-t0m/zeroinput.git /home/vzlogger/zeroinput
-cd /home/vzlogger/zeroinput
+sudo mkdir /opt/zeroinput
+sudo chown vzlogger:vzlogger /opt/zeroinput
+sudo -u vzlogger git clone https://github.com/E-t0m/zeroinput.git /opt/zeroinput
+cd /opt/zeroinput
 sudo -u vzlogger cp zeroinput.conf.starter zeroinput.conf
 sudo -u vzlogger cp timer.txt.example timer.txt   # optional, for the discharge timer
 ```
 
-zeroinput runs directly from the cloned folder `/home/vzlogger/zeroinput`. Your own configuration (`zeroinput.conf`, `timer.txt`) and all files written at runtime are listed in `.gitignore`; an update with `git pull` leaves them untouched.
+zeroinput runs directly from the cloned folder `/opt/zeroinput`. Your own configuration (`zeroinput.conf`, `timer.txt`) and all files written at runtime are listed in `.gitignore`; an update with `git pull` leaves them untouched.
 
 ### 2. Persistent device names via udev (recommended)
 
@@ -125,13 +127,13 @@ sudo chmod 440 /etc/sudoers.d/zeroinput
 
 ### 4. Configure vzlogger
 
-zeroinput generates a template `vzlogger.conf.example` in `/home/vzlogger/zeroinput` on startup, based on the current `zeroinput.conf`. It already contains the mandatory `1-0:16.7.0` channel and all `vz_channels` with UUID placeholders.
+zeroinput generates a template `vzlogger.conf.example` in `/opt/zeroinput` on startup, based on the current `zeroinput.conf`. It already contains the mandatory `1-0:16.7.0` channel and all `vz_channels` with UUID placeholders.
 
 **Steps:**
 1. Start zeroinput once — `vzlogger.conf.example` is created
 2. Create a channel in the Volkszähler interface for each entry and insert its UUID
 3. Adjust `device` (read head path) and `middleware` URL
-4. `sudo cp /home/vzlogger/zeroinput/vzlogger.conf.example /etc/vzlogger.conf`
+4. `sudo cp /opt/zeroinput/vzlogger.conf.example /etc/vzlogger.conf`
 5. `sudo systemctl restart vzlogger`
 
 The `1-0:16.7.0` channel (active power) **must** be present.
@@ -243,10 +245,10 @@ After=syslog.target network.target ntp.service vzlogger.service
 
 [Service]
 User=vzlogger
-WorkingDirectory=/home/vzlogger/zeroinput
+WorkingDirectory=/opt/zeroinput
 ExecStartPre=/bin/mkdir -p /tmp/vz
 ExecStartPre=/bin/touch /tmp/vz/output_to_vz.log
-ExecStart=/usr/bin/python3 -u /home/vzlogger/zeroinput/zeroinput.py -web -httpd
+ExecStart=/usr/bin/python3 -u /opt/zeroinput/zeroinput.py -web -httpd
 ExecStartPost=+/bin/bash -c 'test -f /tmp/vz/vzlogger_restarted || (sleep 3 && /bin/systemctl restart vzlogger.service && touch /tmp/vz/vzlogger_restarted)'
 Restart=on-failure
 RestartSec=15
@@ -259,7 +261,7 @@ WantedBy=multi-user.target
 ```
 
 ```bash
-sudo cp /home/vzlogger/zeroinput/zeroinput.service /etc/systemd/system/
+sudo cp /opt/zeroinput/zeroinput.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable zeroinput
 sudo systemctl start zeroinput
@@ -277,7 +279,7 @@ journalctl -u zeroinput -f
 ### 7. Update
 
 ```bash
-cd /home/vzlogger/zeroinput
+cd /opt/zeroinput
 sudo -u vzlogger git pull
 sudo systemctl restart zeroinput
 ```
@@ -416,7 +418,7 @@ eSmart3 supports `int_hi`, `int_lo`, `ext_hi`, `ext_lo`. Temperature sensors sup
 
 **Follow live output:**
 ```bash
-tail -f /home/vzlogger/zeroinput/zeroinput.html
+tail -f /opt/zeroinput/zeroinput.html
 ```
 
 **systemd logs:**
@@ -436,7 +438,7 @@ sudo reboot
 **zeroinput does not start:**
 ```bash
 journalctl -u zeroinput -n 50
-python3 /home/vzlogger/zeroinput/zeroinput.py -v
+python3 /opt/zeroinput/zeroinput.py -v
 ```
 
 **No FIFO:** `mkfifo /tmp/vz/vzlogger.fifo`

@@ -39,7 +39,7 @@ In `zeroinput.conf` muss der Entladetimer aktiv sein:
 `dirt_shift` liegt im Unterordner `dirt_shift` der zeroinput-Installation. Die eigene Konfiguration entsteht aus der Starter-Datei:
 
 ```bash
-cd /home/vzlogger/zeroinput/dirt_shift
+cd /opt/zeroinput/dirt_shift
 sudo -u vzlogger cp dirt_shift.conf.starter dirt_shift.conf
 ```
 
@@ -108,7 +108,7 @@ Maßgeblich ist, dass `basic_load` am Ende den tatsächlich zu deckenden Hausver
 Vor der Aktivierung empfiehlt sich ein Lauf ohne Schreiben der Timer-Datei:
 
 ```bash
-cd /home/vzlogger/zeroinput/dirt_shift
+cd /opt/zeroinput/dirt_shift
 # disable_zeroinput_timer in dirt_shift.conf vorübergehend auf true setzen
 python3 dirt_shift.py -v -debug
 ```
@@ -137,7 +137,7 @@ sudo crontab -u vzlogger -e
 ```
 
 ```cron
-0,15,30,45 * * * * cd /home/vzlogger/zeroinput/dirt_shift && /usr/bin/python3 dirt_shift.py >/dev/null 2>&1
+0,15,30,45 * * * * cd /opt/zeroinput/dirt_shift && /usr/bin/python3 dirt_shift.py >/dev/null 2>&1
 ```
 
 **Warum genau diese Minuten und nicht z. B. `59,14,29,44`:** `dirt_shift` rundet den aktuellen Slot beim Schreiben der Timer-Zeile immer nach **unten** auf den laufenden Slot (`now.minute // SLOT_MINUTES * SLOT_MINUTES`). Ein Lauf eine Minute vor der Marke liegt noch im **alten** Slot und schreibt dessen (veraltete) Policy — der neue Slot bekäme seinen korrekten Eintrag dann erst 14 Minuten nach seinem eigentlichen Beginn. Mit `0,15,30,45` beginnt jeder Lauf exakt am Slot-Anfang, die Verzögerung schrumpft auf reinen Cron-Dispatch-Jitter (Sekunden). Die Slot-Länge steht als Konstante `SLOT_MINUTES` (Standard 15) im Code und bestimmt zugleich das Energiebudget je Slot, die Wallbox-Marge und das Spannungsfenster; wird sie geändert, muss der Cron-Eintrag entsprechend mitgeändert werden.
