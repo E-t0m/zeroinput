@@ -314,7 +314,11 @@ Tabs:
 - **vz channels** — Volkszähler channel mapping as editable table
 - **timer.txt** — Edit discharge timer rules
 - **restart** — Restart zeroinput or vzlogger (`sudo systemctl restart <service>`); one button each. Requires the matching sudoers entries (see Installation).
+- **dirt shift** — Edit `dirt_shift.conf` (only visible when `dirt_shift/dirt_shift.conf` exists)
+- **dirt shift log** — The last 24 hours of the dirt_shift log, read-only (only visible when a `logfile` is set in `dirt_shift.conf`). The buttons **previous run** and **next run** page run by run and jump to the start of a run, **latest** jumps to the end.
 - **status** — Live status page (only with `-web`)
+
+The buttons **A−** and **A+** in the header set the text size of the status, timer.txt and dirt shift log views in steps of 25 % between 50 % and 400 %. The setting is stored in the browser and therefore applies per device.
 
 ### Hot-reload
 

@@ -49,6 +49,11 @@
 	button.sec { background: transparent; border: 1px solid var(--border); color: var(--muted); }
 	button.sec:hover { color: var(--text); border-color: var(--text); opacity: 1; }
 	button.danger { background: var(--err); }
+	.text-size { margin-left: auto; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+	.text-size button { padding: 4px 10px; }
+	.text-size #text_size_val { min-width: 4ch; text-align: center; }
+	#dirtshiftlog_pre { position: relative; }			/* offsetTop of the run blocks is measured against the log box */
+	#dirtshiftlog_runinfo { color: var(--muted); font-size: 12px; margin-left: 6px; }
 
 	/* ── chargers / inverters tabs ── */
 	.rs-toolbar { display: flex; gap: 10px; margin-bottom: 16px; }
@@ -121,7 +126,13 @@
 </style>
 </head>
 <body>
-<header><h1>zeroinput v2.2</h1><span id="api_status" style="color:var(--muted);font-size:11px;">connecting...</span></header>
+<header><h1>zeroinput v2.2</h1><span id="api_status" style="color:var(--muted);font-size:11px;">connecting...</span>
+	<span class="text-size" title="text size of the status, timer.txt and dirt shift log views">
+		<button class="sec" id="text_size_minus" onclick="changeTextSize(-1)" aria-label="smaller text">A−</button>
+		<span id="text_size_val"></span>
+		<button class="sec" id="text_size_plus" onclick="changeTextSize(1)" aria-label="larger text">A+</button>
+	</span>
+</header>
 <nav>
 	<a onclick="tab('conf')"      id="tab_conf"      class="active">zeroinput.conf</a>
 	<a onclick="tab('chargers')"  id="tab_chargers">chargers</a>
@@ -208,7 +219,7 @@
 		⚠ discharge_timer is <strong>disabled</strong> in zeroinput.conf — the timer file is saved but has no effect until enabled.
 	</div>
 	<p style="font-size:13px;color:var(--muted);margin-bottom:12px;">Format: <code>YYYY-MM-DD HH:MM:SS &lt;battery%&gt; &lt;inverter%&gt; &lt;energy_Wh&gt;</code> — use <code>0000-00-00</code> for today.</p>
-	<textarea id="timer_ta" spellcheck="false" style="font-size:200%;height:calc(100vh - 200px - 1.6em);"></textarea>
+	<textarea id="timer_ta" spellcheck="false" style="height:calc(100vh - 200px - 1.6em);"></textarea>
 	<div class="btn-row">
 		<button onclick="saveTimer()">Save timer.txt</button>
 		<button class="sec" onclick="loadTimer()">Reset</button>
@@ -226,10 +237,14 @@
 
 <!-- dirt shift log tab -->
 <div id="pane_dirtshiftlog" class="container">
-	<p style="font-size:13px;color:var(--muted);margin-bottom:12px;">Last 24 hours of the log dirt_shift writes, read-only. The path comes from the <code>logfile</code> key in dirt_shift.conf; this tab is hidden when logging is disabled there. Runs are located by their timestamp — the <code>=== &lt;timestamp&gt; ===</code> separator dirt_shift writes to the file at the start of every run. Without it, the whole file is shown unfiltered.</p>
-	<pre id="dirtshiftlog_pre" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;max-height:calc(100vh - 200px - 1.6em);overflow:auto;white-space:pre-wrap;font-size:200%;line-height:1.5;"></pre>
+	<p style="font-size:13px;color:var(--muted);margin-bottom:12px;">Last 24 hours of the log dirt_shift writes, read-only. The path comes from the <code>logfile</code> key in dirt_shift.conf; this tab is hidden when logging is disabled there. Runs are located by their timestamp — the <code>=== &lt;timestamp&gt; ===</code> separator dirt_shift writes to the file at the start of every run. Without it, the whole file is shown unfiltered. The run buttons page through the log run by run and jump to the start of each run.</p>
+	<pre id="dirtshiftlog_pre" style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;max-height:calc(100vh - 200px - 1.6em);overflow:auto;white-space:pre-wrap;line-height:1.5;"></pre>
 	<div class="btn-row">
+		<button class="sec" id="dirtshiftlog_prev" onclick="dirtShiftLogRun(-1)">◀ previous run</button>
+		<button class="sec" id="dirtshiftlog_next" onclick="dirtShiftLogRun(1)">next run ▶</button>
+		<button class="sec" onclick="scrollDirtShiftLogToEnd()">latest</button>
 		<button onclick="loadDirtShiftLog()">Refresh</button>
+		<span id="dirtshiftlog_runinfo"></span>
 	</div>
 </div>
 
@@ -255,7 +270,9 @@
 
 <!-- status tab -->
 <div id="pane_status" class="container">
-	<iframe src="/zeroinput.html" style="width:100%;height:calc(100vh - 120px);border:none;background:var(--bg);"></iframe>
+	<div style="height:calc(100vh - 120px);overflow:hidden;">
+		<iframe id="status_frame" src="/zeroinput.html" style="width:100%;height:calc(100vh - 120px);border:none;background:var(--bg);transform-origin:0 0;"></iframe>
+	</div>
 </div>
 
 <!-- restart warning modal -->
@@ -749,14 +766,34 @@ async function saveDirtShift() {
 
 // ── dirt shift log tab ───────────────────────────────────────────────────────
 
+// One block per run, so a run's start has a position to jump to. A run starts
+// at the '=== <timestamp> ===' separator line; text before the first separator
+// (or a log without any) stays one block without a run entry.
+let dsRuns = [];
+const DS_RUN_SPLIT = /^(?==== \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} ===[ \t]*$)/m;
+const DS_RUN_HEAD  = /^=== (\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) ===/;
+
+function renderDirtShiftLog(text) {
+	const pre = document.getElementById('dirtshiftlog_pre');
+	pre.textContent = '';
+	dsRuns = [];
+	text.split(DS_RUN_SPLIT).forEach(part => {
+		if (!part) return;
+		const el = document.createElement('div');
+		el.textContent = part;
+		const m = part.match(DS_RUN_HEAD);
+		if (m) { el.dataset.ts = m[1]; dsRuns.push(el); }
+		pre.appendChild(el);
+	});
+}
+
 async function loadDirtShiftLog() {
 	try {
 		const r = await fetch(API + '/api/dirtshiftlog');
 		const d = await r.json();
-		document.getElementById('dirtshiftlog_pre').textContent =
-			d.content || (d.error ? 'Error: ' + d.error : '(empty — no entries in the last 24 hours)');
+		renderDirtShiftLog(d.content || (d.error ? 'Error: ' + d.error : '(empty — no entries in the last 24 hours)'));
 	} catch(e) {
-		document.getElementById('dirtshiftlog_pre').textContent = 'Error: ' + e;
+		renderDirtShiftLog('Error: ' + e);
 	}
 	scrollDirtShiftLogToEnd();
 }
@@ -767,7 +804,78 @@ async function loadDirtShiftLog() {
 function scrollDirtShiftLogToEnd() {
 	const pre = document.getElementById('dirtshiftlog_pre');
 	if (pre) pre.scrollTop = pre.scrollHeight;
+	updateDirtShiftLogRunInfo();
 }
+
+const DS_RUN_GAP = 8;	// px kept above a run's first line after a jump
+
+// index of the run the view is in: the last run starting at or above the top
+// edge. At the very bottom it is the last run, whose start cannot reach the top
+// edge when the run is shorter than the box.
+function dirtShiftLogCurrentRun() {
+	const pre = document.getElementById('dirtshiftlog_pre');
+	if (!dsRuns.length) return -1;
+	if (pre.scrollTop >= pre.scrollHeight - pre.clientHeight - 2) return dsRuns.length - 1;
+	let cur = -1;
+	dsRuns.forEach((el, i) => { if (el.offsetTop - DS_RUN_GAP <= pre.scrollTop + 4) cur = i; });
+	return cur;
+}
+
+// dir -1: start of the current run, or of the previous one when already there; dir 1: start of the next run
+function dirtShiftLogRun(dir) {
+	const pre = document.getElementById('dirtshiftlog_pre');
+	const cur = dirtShiftLogCurrentRun();
+	let target;
+	if (dir > 0) target = cur + 1;
+	else if (cur < 0) return;
+	else target = (pre.scrollTop > dsRuns[cur].offsetTop - DS_RUN_GAP + 4) ? cur : cur - 1;
+	if (target < 0 || target >= dsRuns.length) return;
+	pre.scrollTop = dsRuns[target].offsetTop - DS_RUN_GAP;
+	updateDirtShiftLogRunInfo();
+}
+
+function updateDirtShiftLogRunInfo() {
+	const cur = dirtShiftLogCurrentRun();
+	document.getElementById('dirtshiftlog_runinfo').textContent =
+		dsRuns.length ? 'run ' + (cur + 1) + ' / ' + dsRuns.length + (cur >= 0 ? ' — ' + dsRuns[cur].dataset.ts : '') : '';
+	document.getElementById('dirtshiftlog_prev').disabled = !dsRuns.length;
+	document.getElementById('dirtshiftlog_next').disabled = !dsRuns.length || cur >= dsRuns.length - 1;
+}
+
+document.getElementById('dirtshiftlog_pre').addEventListener('scroll', updateDirtShiftLogRunInfo);
+
+// ── text size of the status, timer.txt and dirt shift log views ───────────────
+// kept per browser, so a wall display and a phone can differ
+
+const TEXT_SIZE_DEFAULT = 200, TEXT_SIZE_MIN = 50, TEXT_SIZE_MAX = 400, TEXT_SIZE_STEP = 25;	// percent
+let textSize = TEXT_SIZE_DEFAULT;
+try {
+	const v = parseInt(localStorage.getItem('zeroinput_text_size'));
+	if (v >= TEXT_SIZE_MIN && v <= TEXT_SIZE_MAX) textSize = v;
+} catch(e) {}
+
+function applyTextSize() {
+	document.getElementById('timer_ta').style.fontSize = textSize + '%';
+	document.getElementById('dirtshiftlog_pre').style.fontSize = textSize + '%';
+	// zeroinput.html carries its own fixed 200 % and reloads every second, so the frame is scaled as a whole
+	const f  = textSize / TEXT_SIZE_DEFAULT;
+	const fr = document.getElementById('status_frame');
+	fr.style.transform = 'scale(' + f + ')';
+	fr.style.width  = 'calc(100% / ' + f + ')';
+	fr.style.height = 'calc((100vh - 120px) / ' + f + ')';
+	document.getElementById('text_size_val').textContent = textSize + '%';
+	document.getElementById('text_size_minus').disabled = textSize <= TEXT_SIZE_MIN;
+	document.getElementById('text_size_plus').disabled  = textSize >= TEXT_SIZE_MAX;
+	updateDirtShiftLogRunInfo();
+}
+
+function changeTextSize(dir) {
+	textSize = Math.max(TEXT_SIZE_MIN, Math.min(TEXT_SIZE_MAX, textSize + dir * TEXT_SIZE_STEP));
+	try { localStorage.setItem('zeroinput_text_size', textSize); } catch(e) {}
+	applyTextSize();
+}
+
+applyTextSize();
 
 // ── restart tab ───────────────────────────────────────────────────────────────
 

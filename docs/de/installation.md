@@ -314,7 +314,11 @@ Tabs:
 - **vz channels** — Volkszähler-Kanalzuordnung als editierbare Tabelle
 - **timer.txt** — Entladeregeln bearbeiten
 - **restart** — Startet zeroinput oder vzlogger neu (`sudo systemctl restart <dienst>`); je ein Button. Erfordert die passenden sudoers-Einträge (siehe Installation).
+- **dirt shift** — `dirt_shift.conf` bearbeiten (nur sichtbar, wenn `dirt_shift/dirt_shift.conf` vorhanden ist)
+- **dirt shift log** — die letzten 24 Stunden des dirt_shift-Logs, nur lesend (nur sichtbar, wenn in `dirt_shift.conf` ein `logfile` gesetzt ist). Die Schaltflächen **previous run** und **next run** blättern laufweise und springen jeweils an den Anfang eines Laufs, **latest** springt ans Ende.
 - **status** — Live-Statusseite (nur mit `-web`)
+
+Die Schaltflächen **A−** und **A+** in der Kopfzeile stellen die Schriftgröße der Ansichten status, timer.txt und dirt shift log in Schritten von 25 % zwischen 50 % und 400 % ein. Die Einstellung wird im Browser gespeichert und gilt damit pro Gerät.
 
 ### Hot-Reload
 
