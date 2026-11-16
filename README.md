@@ -55,3 +55,14 @@ zeroinput runs directly from the cloned folder `/opt/zeroinput` as user `vzlogge
 ![basic](https://user-images.githubusercontent.com/110770475/183761064-bd2632d8-4438-4288-b05c-e8126de78463.png)
 
 Version 1 is found here: [zeroinput v1](v1)
+
+## License
+
+zeroinput is released under [CC0 1.0](LICENSE). This covers the code written for this project.
+
+Two parts are derived from other projects. Their repositories state no license, so the rights to these parts remain with their authors:
+
+| Part | Derived from |
+|---|---|
+| class `esmart` in `charger_drivers.py` | [skagmo/esmart_mppt](https://github.com/skagmo/esmart_mppt), skagmo.com |
+| `vebus.py` | [martiby/multiplus2](https://github.com/martiby/multiplus2), Martin Steppuhn |

@@ -6,8 +6,8 @@
 # adapter (no GX device required). Sets the ESS power setpoint over the VE.Bus
 # MK2 protocol by writing the ESS-assistant RAM variable.
 #
-# Derived from martiby/multiplus2 (vebus.py, MIT License, Martin Steppuhn),
-# adapted to the zeroinput code style (tabs) and driver model. Protocol basis:
+# Derived from vebus.py by Martin Steppuhn (https://github.com/martiby/multiplus2,
+# no license stated there), adapted to the zeroinput code style (tabs) and driver model. Protocol basis:
 # "Interfacing with VE-Bus products - MK2 Protocol 3.14".
 #
 # Frame: <Length> 0xFF <Command> <Data...> <Checksum>

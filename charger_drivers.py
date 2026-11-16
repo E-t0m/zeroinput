@@ -513,8 +513,8 @@ def set_victron_power(device_key, watts, conf):
 
 class esmart:
 	"""eSmart3 MPPT charger driver.
-	Original lib by skagmo.com 2018 (https://github.com/skagmo/esmart_mppt),
-	adapted for zeroinput."""
+	Original lib by skagmo.com 2018 (https://github.com/skagmo/esmart_mppt,
+	no license stated there), adapted for zeroinput."""
 
 	def __init__(self, verbose=False):
 		self.state      = 0
