@@ -28,6 +28,7 @@ zeroinput integrates naturally into an existing Volkszähler setup without repla
 | `zeroinput.conf` | Your own configuration (JSON), created from `zeroinput.conf.starter`; not part of the repository |
 | `zeroinput_webconfig.html` | Web interface |
 | `zeroinput.service` | systemd service |
+| `zerooutput.sh` | Live status in the terminal, shows the `zeroinput.html` written by `-web` |
 | `timer.txt.example` | Template for the discharge timer `timer.txt` (optional); `timer.txt` is not part of the repository |
 | `dirt_shift/` | CO₂-driven discharge control (optional), see [dirt_shift installation](dirt_shift_installation.md) |
 | `tibber/` | Price-driven discharge control with Tibber (optional), see [tibber](tibber.md) |
@@ -74,6 +75,7 @@ sudo -u vzlogger git clone https://github.com/E-t0m/zeroinput.git /opt/zeroinput
 cd /opt/zeroinput
 sudo -u vzlogger cp zeroinput.conf.starter zeroinput.conf
 sudo -u vzlogger cp timer.txt.example timer.txt   # optional, for the discharge timer
+sudo ln -s /opt/zeroinput/zerooutput.sh /usr/local/bin/zerooutput.sh   # optional, live status as a command
 ```
 
 zeroinput runs directly from the cloned folder `/opt/zeroinput`. Your own configuration (`zeroinput.conf`, `timer.txt`) and all files written at runtime are listed in `.gitignore`; an update with `git pull` leaves them untouched.
@@ -418,6 +420,8 @@ eSmart3 supports `int_hi`, `int_lo`, `ext_hi`, `ext_lo`. Temperature sensors sup
 
 **Follow live output:**
 ```bash
+zerooutput.sh
+# or:
 tail -f /opt/zeroinput/zeroinput.html
 ```
 

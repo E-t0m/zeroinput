@@ -39,6 +39,7 @@ zeroinput runs directly from the cloned folder `/opt/zeroinput` as user `vzlogge
 | `zeroinput.py` and the other `*.py` files | the control loop, drivers, predictor and webconfig server |
 | `zeroinput.conf.starter`, `timer.txt.example` | templates for your own `zeroinput.conf` and `timer.txt` |
 | `zeroinput.service` | systemd service |
+| `zerooutput.sh` | live status in the terminal |
 | `dirt_shift/` | dirt_shift add-on |
 | `tibber/` | tibber add-on |
 | `tools/` | helper scripts |

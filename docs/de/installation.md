@@ -28,6 +28,7 @@ zeroinput fügt sich damit natürlich in eine bestehende Volkszähler-Installati
 | `zeroinput.conf` | Eigene Konfiguration (JSON), aus `zeroinput.conf.starter` erstellt; nicht Teil des Repositorys |
 | `zeroinput_webconfig.html` | Weboberfläche |
 | `zeroinput.service` | systemd-Dienst |
+| `zerooutput.sh` | Live-Status im Terminal, zeigt die von `-web` geschriebene `zeroinput.html` |
 | `timer.txt.example` | Vorlage für den Entladetimer `timer.txt` (optional); `timer.txt` ist nicht Teil des Repositorys |
 | `dirt_shift/` | CO₂-geführte Entladesteuerung (optional), siehe [dirt_shift-Installation](dirt_shift_installation.md) |
 | `tibber/` | Preisgeführte Entladesteuerung mit Tibber (optional), siehe [tibber](../en/tibber.md) |
@@ -74,6 +75,7 @@ sudo -u vzlogger git clone https://github.com/E-t0m/zeroinput.git /opt/zeroinput
 cd /opt/zeroinput
 sudo -u vzlogger cp zeroinput.conf.starter zeroinput.conf
 sudo -u vzlogger cp timer.txt.example timer.txt   # optional, für den Entladetimer
+sudo ln -s /opt/zeroinput/zerooutput.sh /usr/local/bin/zerooutput.sh   # optional, Live-Status als Befehl
 ```
 
 zeroinput läuft direkt aus dem geklonten Ordner `/opt/zeroinput`. Die eigene Konfiguration (`zeroinput.conf`, `timer.txt`) und alle zur Laufzeit geschriebenen Dateien stehen in der `.gitignore`; eine Aktualisierung per `git pull` lässt sie unberührt.
@@ -418,6 +420,8 @@ eSmart3 unterstützt `int_hi`, `int_lo`, `ext_hi`, `ext_lo`. Temperatursensoren 
 
 **Live-Ausgabe verfolgen:**
 ```bash
+zerooutput.sh
+# oder:
 tail -f /opt/zeroinput/zeroinput.html
 ```
 
