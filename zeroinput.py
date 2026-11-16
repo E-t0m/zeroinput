@@ -114,7 +114,7 @@ def display_stats(in_pc, timer):
 		output_buffer.truncate(0)
 	display_mppt_data()
 	if timer:
-		if timer.active:	print('\ntimer active: bat discharge %i'%timer.battery,'W,' if timer.battery > 100 else '%,','energy %.0f/%i Wh,'%(in_pc/3600,timer.energy),'inverter %i'%timer.inverter,'W' if timer.inverter > 100 else '%','\n')
+		if timer.active:	print('\ntimer active: bat discharge %i'%timer.battery,'W,' if timer.battery > 100 else '%,','energy %.0f/%s Wh,'%(in_pc/3600, timer.energy if timer.energy >= 0 else 'unlimited'),'inverter %i'%timer.inverter,'W' if timer.inverter > 100 else '%','\n')
 		else:				print('\ntimer.txt enabled but not active! no valid timer file set?\n')
 
 
@@ -230,6 +230,7 @@ RUNTIME_NO_RELOAD = {
 
 HEAT_FAIL_FRACTION = 0.5	# heat-protect cap fraction of max_input_power when the selected sensor has no reading
 STAGE_HOLD_CYCLES = 7		# hold power_demand this many cycles after a stage 2->1 transition: the inverters need ~4-5 s to settle after the hard switch, and reacting to that transient would make the control loop fight its own transition
+NO_ENERGY_LIMIT = -1		# energy field of a timer line: any negative value means "no energy budget at all" (see discharge_times.energy_exceeded); also the default without a usable timer file
 
 # battery voltage thresholds, expressed PER CELL so they scale with conf['cell_count'].
 # The original code was hard-wired to 16S LiFePO4 (51.2 V nominal); the 16S value is
@@ -495,9 +496,20 @@ class discharge_times():			# handle timer.txt file
 		self.active		= False
 		self.battery	= 100
 		self.inverter	= 100
-		self.energy		= conf['max_input_power']
+		self.energy		= NO_ENERGY_LIMIT
 		self.update()
-	
+
+	def energy_exceeded(self, in_pc):
+		"""True when the energy budget of the currently active timer line is
+		used up. 'in_pc' is the battery energy counter in W*s, so it is
+		converted to Wh before the comparison. A negative budget is the
+		"no energy limit at all" sentinel: dirt_shift writes -1 in its free
+		mode and in the failsafe line that is meant to lift every limit, and
+		a sentinel compared as a plain number would be below any counter
+		value and thus read as "exceeded" from the very first cycle on."""
+		if self.energy < 0:	return False
+		return (in_pc / 3600) > self.energy
+
 	def update(self):
 		times = []; states = []
 		
@@ -526,7 +538,7 @@ class discharge_times():			# handle timer.txt file
 			self.active		= False		# indicates a invalid timer file!
 			self.battery	= 100
 			self.inverter	= 100
-			self.energy		= -1
+			self.energy		= NO_ENERGY_LIMIT
 		
 		try:
 			if not times:
@@ -745,7 +757,7 @@ if __name__ =="__main__":
 				adjusted_power = False
 				
 				if bat_voltage <= cell_voltage(VC_DERATE_LO) or (conf['discharge_timer'] and					# 16S original: 48 V; set a new battery timeout
-					( (not timer.battery or (timer.battery and (in_pc/3600) > timer.energy) ) and (not timer.inverter) )):
+					( (not timer.battery or (timer.battery and timer.energy_exceeded(in_pc)) ) and (not timer.inverter) )):
 					adjusted_power = True
 					power_demand		= 0																	# disable input
 					send_history	= [0]*4																# reset history
@@ -803,9 +815,9 @@ if __name__ =="__main__":
 					else:						max_input = timer.inverter 								# > 100 as W
 					max_input += free_power																# add free power to timer limit
 					
-					if timer.energy >= 0 and (in_pc/3600) > timer.energy and timer.battery != 0:		# hourly battery discharge limit exceeded
+					if timer.energy_exceeded(in_pc) and timer.battery != 0:							# energy budget of the active timer line used up: pass PV through, nothing from the battery
 											max_input = pv_power
-											status_text	+= ', battery discharge limit exceeded'
+											status_text	+= ', battery energy budget %i Wh exceeded' % timer.energy
 					
 					if max_input > max_input_power:
 											max_input = max_input_power

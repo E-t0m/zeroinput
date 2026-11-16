@@ -149,37 +149,6 @@ def count_active_units(allocation, drivers):
 	           if w > 0 and i in by_id)
 
 
-def fade_blend(alloc_from, alloc_to, t, drivers, t_out=None):
-	"""Linearly blend two per-driver allocations for a stage cross-fade.
-
-	alloc_from / alloc_to — {driver_id: per_unit_watts} (e.g. stage-2 and
-	                        stage-1 results of distribute() for the same demand).
-	t                     — blend factor 0.0..1.0 for units that ramp UP
-	                        (alloc_to > alloc_from, i.e. the stage-1 unit).
-	t_out                 — separate factor for units that ramp DOWN
-	                        (alloc_to < alloc_from, the stage-2 units). Defaults
-	                        to t. Running the fade-out a few cycles behind the
-	                        fade-in (t_out < t) lets the rising unit catch up
-	                        before the others drop, avoiding a feed-in dip — at
-	                        the cost of brief over-feed (clamped to max_power).
-	Per-unit watts are interpolated, then the same min_power/max_power clamp as
-	distribute() is applied: a unit below its min_power is switched off (0).
-	This is stateless — the caller owns the fade countdown(s)."""
-	t = max(0.0, min(1.0, t))
-	t_out = t if t_out is None else max(0.0, min(1.0, t_out))
-	result = {}
-	for d in drivers:
-		frm = alloc_from.get(d.id, 0)
-		to  = alloc_to.get(d.id, 0)
-		tt  = t_out if to < frm else t			# down-faders use the delayed factor
-		v = (1.0 - tt) * frm + tt * to
-		if v < d.min_power:
-			result[d.id] = 0
-		else:
-			result[d.id] = max(d.min_power, min(int(round(v)), d.max_power))
-	return result
-
-
 def check_stage1_capacity(drivers, single_threshold):
 	"""Startup sanity check: can the stage-1 groups alone cover
 	single_inverter_threshold? Returns (ok, stage1_capacity)."""
