@@ -106,7 +106,7 @@ Reserve = reserve_pct × max(red_window_demand,
 
 Keine der beiden Schätzungen ist dabei entbehrlich, denn sie haben komplementäre blinde Flecken: `red_window_demand` schaut **breit, aber nur bis zum ersten Überschuss** (summiert also mehrere getrennte rote Phasen und an einem trüben Tag die ganzen 24 Stunden), `upcoming_red_demand` schaut **schmal, dafür über den Überschuss hinweg** (nur der eine nächste zusammenhängende rote Block, aber auch mitten in einer Überschussphase sichtbar). Je nach Tageslage ist mal die eine, mal die andere die bindende.
 
-**Der erwartete Überschuss wird davon abgezogen.** Die ursprüngliche Annahme von `red_window_demand` — nachts und vormittags entladen, ab Mittag lädt die PV den Akku wieder auf, abends erneut entladen — ist an sonnigen Tagen schlicht richtig; sie war nur nie nachgerechnet. `surplus_before_next_red` summiert deshalb den erwarteten Überschuss der Stunden zwischen jetzt und dem Beginn des nächsten roten Blocks und zieht ihn vom Bedarf ab. Zurückgehalten wird nur, was der Überschuss **nicht** deckt:
+**Der erwartete Überschuss wird davon abgezogen.** An sonnigen Tagen wird der Akku nachts und vormittags entladen, ab Mittag lädt die PV ihn wieder auf, abends wird erneut entladen. `surplus_before_next_red` summiert deshalb den erwarteten Überschuss der Stunden zwischen jetzt und dem Beginn des nächsten roten Blocks und zieht ihn vom Bedarf ab. Zurückgehalten wird nur, was der Überschuss **nicht** deckt:
 
 - Deckt er die Lücke mehrfach (typischer Sonnentag), fällt die Reserve auf 0 — der Akku darf den Vormittag über entladen, genau wie vorgesehen, und füllt sich nachmittags von selbst.
 - Deckt er sie teilweise, bleibt der ungedeckte Rest stehen.
@@ -120,7 +120,7 @@ Zur Netto-Rechnung: `pvpt` deckt einen Teil dieses Bedarfs bereits direkt ab (an
 
 ### Wenn die Reserve knapp wird: die dreckigste Stunde zuerst
 
-Reicht der aktuelle Inhalt nicht für die Reserve (`content < reserve`), wird nicht mehr pauschal jede rote Stunde unbegrenzt bedient. Stattdessen wird im selben Fenster (jetzt bis zur nächsten Überschussstunde) die **eine** rote Stunde mit dem höchsten `dirt%` bestimmt — bei gleichauf zählt die chronologisch früheste im Fenster. Nur diese Stunde bleibt unbegrenzt; jede andere rote Stunde im Fenster wird gleichzeitig auf `limit_discharge_rate` (Watt) **und** auf `¼ × (min(100 %, reserve_pct) × basic_load − gemessene PV)` dieser Stunde (Wh, Viertelstunden-Energiebudget) gedeckelt (siehe Entladung nach Zone).
+Reicht der aktuelle Inhalt nicht für die Reserve (`content < reserve`), wird im selben Fenster (bis zur nächsten Überschussstunde) die **eine** rote Stunde mit dem höchsten `dirt%` bestimmt — bei gleichauf zählt die chronologisch früheste im Fenster. Nur diese Stunde bleibt unbegrenzt; jede andere rote Stunde im Fenster wird gleichzeitig auf `limit_discharge_rate` (Watt) **und** auf `¼ × (min(100 %, reserve_pct) × basic_load − gemessene PV)` dieser Stunde (Wh, Viertelstunden-Energiebudget) gedeckelt (siehe Entladung nach Zone).
 
 Das Fenster wird bei **jedem** Lauf frisch ab der aktuellen Uhrzeit neu aufgebaut — eine bereits vergangene dreckigste Stunde fällt beim nächsten Lauf einfach aus dem (jetzt kürzeren) Fenster heraus, und die dann verbleibend dreckigste Stunde wird automatisch frei, ohne dass dafür eine gesonderte Regel nötig wäre. Grüne Stunden innerhalb des Fensters zählen dabei nicht mit — nur rote Stunden werden untereinander verglichen.
 
@@ -158,7 +158,7 @@ Die Ausfallsicherung (siehe dort) greift auch hier: Eine reine `ac_%`-Drosselung
 
 ## Wallbox (optional, Standard aus)
 
-Mit `wallbox_enabled: true` schaltet `dirt_shift` das Relais einer E-Auto-Wallbox über ein Tasmota-Gerät — ein von der bisherigen `basic_load`-Ausklammerung (siehe Entladung nach Zone) unabhängiger, zusätzlicher Mechanismus.
+Mit `wallbox_enabled: true` schaltet `dirt_shift` das Relais einer E-Auto-Wallbox über ein Tasmota-Gerät — ein von der `basic_load`-Ausklammerung (siehe Entladung nach Zone) unabhängiger, zusätzlicher Mechanismus.
 
 **Keine Anschluss- oder Ladezustandserkennung.** Ohne Rückmeldung zum Ladezustand des Fahrzeugs (kein SoC) lässt sich kein sinnvolles Tagesziel bilden — `dirt_shift` versucht das erst gar nicht. Das Relais wird einfach geschlossen gehalten, wann immer die Bedingungen erfüllt sind; ist kein Fahrzeug angeschlossen, passiert schlicht nichts (kein Ladestrom, kein Schaden).
 
@@ -230,7 +230,7 @@ Die `-v`-Ausgabe kennzeichnet die Herabstufung in der Modus-Zeile mit `[free->li
 
 **Warum alle Bedingungen durchgehend gelten, nicht nur beim Einschalten:** Weil die Pfade gleichberechtigt und gleichzeitig laufen sollen — eine Stunde, die sauber genug ist, darf laden, auch wenn die Energie-Bedingung (noch) nicht erfüllt ist; ein komfortabel gefüllter Akku darf laden, auch wenn es gerade dreckig ist; und ein voller Akku darf seinen sonst verschenkten Überschuss abgeben, auch wenn beide anderen Bedingungen dagegen sprechen. Ein Relais, das `dirt_shift` selbst eingeschaltet hat, bleibt deshalb an, solange **mindestens eine** der drei Bedingungen weiter zutrifft, und schaltet erst ab, wenn **alle gleichzeitig** nicht mehr erfüllt sind.
 
-**Zur Spannungs-Bedingung und `limit`/`stop`:** Da die Energie-Bedingung dieselbe Reserve wie der Hauptmodus verwendet, kann sie ein Relais nicht mehr am Laufen halten, während der Akku selbst schon geschützt wird. Für die Spannungs-Bedingung gilt das nicht, dort aber bewusst: Ein voller Akku soll seinen Überschuss auch dann abgeben dürfen, wenn `limit`/`stop` gilt — das ist gerade der Fall, den sie abdecken soll (siehe unten). Ihre eigene Halteschwelle begrenzt das: Sackt die Spannung unter 3,25 V/Zelle, fällt der Pfad weg.
+**Zur Spannungs-Bedingung und `limit`/`stop`:** Da die Energie-Bedingung dieselbe Reserve wie der Hauptmodus verwendet, kann sie ein Relais nicht am Laufen halten, während der Akku selbst schon geschützt wird. Für die Spannungs-Bedingung gilt das nicht, dort aber bewusst: Ein voller Akku soll seinen Überschuss auch dann abgeben dürfen, wenn `limit`/`stop` gilt — das ist gerade der Fall, den sie abdecken soll (siehe unten). Ihre eigene Halteschwelle begrenzt das: Sackt die Spannung unter 3,25 V/Zelle, fällt der Pfad weg.
 
 Eine Randbedingung, die aus der Sauberkeits-Bedingung folgt: In der roten Zone gilt `free` auch an der **dreckigsten Stunde selbst** (dort soll die Reserve bewusst verbraucht werden), unabhängig vom Akkuinhalt. In einer durchgehend „tiefroten" Nacht, in der keine Stunde die beiden Sauberkeits-Schwellen von sich aus erreicht, kann die Wallbox deshalb ausnahmsweise doch in der roten dreckigsten Stunde zu laden beginnen, sofern diese selbst noch unter `wallbox_absolute_max` bleibt — eine bewusst akzeptierte Randbedingung, keine Lücke.
 

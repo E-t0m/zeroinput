@@ -381,7 +381,7 @@ def combine_charger_data(conf, verbose=False):
 	# 0 V (or otherwise implausibly low). Such a reading must NOT drag the averaged
 	# Vbat below the battery-protection threshold and trip a false timeout. A
 	# LiFePO4 cell never runs below ~2.5 V in operation; anything under 2.0 V/cell
-	# is impossible and is dropped from the average. Ibat/Pload are summed as before.
+	# is impossible and is dropped from the average. Ibat/Pload are summed.
 	_vbat_floor = 2.0 * conf.get('cell_count', 16)		# implausible-Vbat threshold (2.0 V/cell)
 	_vbat_valcnt = 0									# how many chargers gave a plausible Vbat this cycle
 	for name in ('Vbat', 'Ibat', 'Pload'):
@@ -983,7 +983,7 @@ class VEDirectBridge:
 
 _HEX_ADDR      = 0x2015
 _HEX_TIMEOUT   = 0.4
-_VBAT_FALLBACK = 24.0
+_VBAT_FALLBACK_CELL = 3.2		# V per cell, multiplied by cell_count when no measured Vbat is available
 
 
 def _hex_build_set(val_x10):
@@ -1023,8 +1023,12 @@ def _hex_parse_get_reply(line):
 		return None
 
 
-def _hex_exec_set(ser_obj, device_key, watts, verbose=False):
-	vbat    = mppt_data.get(device_key, {}).get('Vbat') or _VBAT_FALLBACK
+def _hex_exec_set(ser_obj, device_key, watts, conf, verbose=False):
+	# battery voltage for the watts -> current conversion: this charger, else the
+	# combined (held) value, else the nominal LiFePO4 cell voltage times cell_count
+	vbat    = (mppt_data.get(device_key, {}).get('Vbat')
+	           or mppt_data.get('combined', {}).get('Vbat')
+	           or _VBAT_FALLBACK_CELL * conf.get('cell_count', 16))
 	reg_val = round(watts / vbat * 10)
 	ser_obj.write(_hex_build_set(reg_val)); ser_obj.flush()
 	deadline = time() + _HEX_TIMEOUT
@@ -1094,7 +1098,7 @@ def handle_victron_data(serialport, conf, stop_event, verbose=False):
 				if name == 'Checksum' and serialport in _victron_cmd_queues:
 					try:
 						watts = _victron_cmd_queues[serialport].get_nowait()
-						_hex_exec_set(ser, serialport, watts, verbose)
+						_hex_exec_set(ser, serialport, watts, conf, verbose)
 					except Empty:
 						pass
 	except Exception as e:

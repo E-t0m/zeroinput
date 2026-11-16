@@ -211,9 +211,9 @@ class LoadPredictor:
 			# describe the physical peak state (load above MIN_PEAK_W), which must
 			# only follow Ls_read, not an algorithm reset. Clearing them mid-peak
 			# (e.g. on the 'long' event, which fires while the load is still high)
-			# made _track_peak start a *new* peak on the next cycle, so the tail of
-			# a long peak was miscounted as a fresh short peak — which in turn armed
-			# the override after a single further short spike. The peak state is
+			# would make _track_peak start a *new* peak on the next cycle, so the tail
+			# of a long peak would be counted as a fresh short peak — which in turn
+			# would arm the override after a single further short spike. The peak state is
 			# ended only in _track_peak when the load actually drops.
 			self.peak_after					= False
 		if self._log_fh:

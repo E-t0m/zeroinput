@@ -104,7 +104,7 @@ reserve = reserve_pct × max(red_window_demand,
 
 Neither estimate is redundant, because their blind spots are complementary: `red_window_demand` looks **broadly, but only up to the first surplus** (summing several separate red spans, and on a dull day the whole 24 hours), while `upcoming_red_demand` looks **narrowly, but across the surplus** (only the one next contiguous red block, yet visible even mid-surplus). Depending on the day, either can be the binding one.
 
-**The expected surplus is subtracted from it.** The assumption `red_window_demand` originally made — discharge overnight and through the morning, let PV recharge from midday on, discharge again in the red evening — is simply right on a sunny day; it was just never checked. `surplus_before_next_red` therefore sums the expected surplus of the hours between now and the start of the next red block and subtracts it from the demand. Only what the surplus does **not** cover is held back:
+**The expected surplus is subtracted from it.** On a sunny day the battery is discharged overnight and through the morning, recharged by PV from midday on and discharged again in the red evening. `surplus_before_next_red` therefore sums the expected surplus of the hours between now and the start of the next red block and subtracts it from the demand. Only what the surplus does **not** cover is held back:
 
 - If it covers the gap several times over (a typical sunny day), the reserve drops to 0 — the battery may discharge through the morning exactly as intended, and refills itself in the afternoon.
 - If it covers part of it, the uncovered remainder stays.
@@ -118,7 +118,7 @@ On the netting: `pvpt` already covers part of that demand directly (at the edges
 
 ### When the reserve runs short: the dirtiest hour first
 
-If current content does not cover the reserve (`content < reserve`), every red hour is no longer served unrestricted by default. Instead, within the same window (now up to the next surplus hour), the **one** red hour with the highest `dirt%` is identified — ties go to the chronologically earliest one in the window. Only that hour stays unrestricted; every other red hour in the window is capped simultaneously to `limit_discharge_rate` (Watt) **and** to `1/4 × (min(100 %, reserve_pct) × basic_load − measured PV)` for that hour (Wh, quarter-hour energy budget) (see Discharge by zone).
+If current content does not cover the reserve (`content < reserve`), within the same window (up to the next surplus hour) the **one** red hour with the highest `dirt%` is identified — ties go to the chronologically earliest one in the window. Only that hour stays unrestricted; every other red hour in the window is capped simultaneously to `limit_discharge_rate` (Watt) **and** to `1/4 × (min(100 %, reserve_pct) × basic_load − measured PV)` for that hour (Wh, quarter-hour energy budget) (see Discharge by zone).
 
 The window is rebuilt fresh from the current time on **every** run — an already-past dirtiest hour simply falls out of the (now shorter) window on the next run, and the dirtiest hour remaining then automatically becomes free, without any special-case rule needed for that. Green hours within the window do not count either way — only red hours are compared against each other.
 
@@ -156,7 +156,7 @@ The failsafe (see there) applies here too: a plain `ac_%` cap without a simultan
 
 ## Wallbox (optional, off by default)
 
-With `wallbox_enabled: true`, `dirt_shift` switches an EV wallbox's relay via a Tasmota device — a mechanism independent of the existing `basic_load` exclusion (see Discharge by zone) and additional to it.
+With `wallbox_enabled: true`, `dirt_shift` switches an EV wallbox's relay via a Tasmota device — a mechanism independent of the `basic_load` exclusion (see Discharge by zone) and additional to it.
 
 **No presence or charging-state detection.** Without feedback on the vehicle's state of charge (no SoC), no meaningful daily target can be formed — `dirt_shift` does not even attempt one. The relay is simply held closed whenever the conditions are met; if no vehicle is connected, nothing happens at all (no charging current, no harm).
 
@@ -212,7 +212,7 @@ This hysteresis state is tracked **separately from the owner marker** (key `volt
 
 **Why all conditions apply continuously, not just at switch-on:** because the paths are meant to run side by side, on equal footing — an hour clean enough may charge even if the energy condition doesn't (yet) hold; a comfortably full battery may charge even during a dirty hour; and a full battery may hand over its otherwise wasted surplus even when both other conditions argue against it. A relay `dirt_shift` itself switched on therefore stays on as long as **at least one** of the three conditions still holds, and only switches off once **all** fail at the same time.
 
-**On the voltage condition and `limit`/`stop`:** because the energy condition now uses the same reserve as the main mode, it can no longer keep a relay running while the battery itself is already being protected. That does not hold for the voltage condition, but there it is deliberate: a full battery should be allowed to hand over its surplus even under `limit`/`stop` — that is precisely the case it exists for (see below). Its own holding threshold bounds this: once voltage sags below 3.25 V/cell, the path falls away.
+**On the voltage condition and `limit`/`stop`:** because the energy condition uses the same reserve as the main mode, it cannot keep a relay running while the battery itself is already being protected. That does not hold for the voltage condition, but there it is deliberate: a full battery should be allowed to hand over its surplus even under `limit`/`stop` — that is precisely the case it exists for (see below). Its own holding threshold bounds this: once voltage sags below 3.25 V/cell, the path falls away.
 
 One boundary condition follows from the dirtiness condition: in the red zone, `free` also holds at the **dirtiest hour itself** (where the reserve is meant to be deliberately spent), regardless of battery content. On a uniformly "deep red" night where no hour clears both dirtiness thresholds on its own, the wallbox may therefore still start charging during that one reddest hour, provided it itself stays under `wallbox_absolute_max` — a deliberately accepted boundary condition, not a gap.
 

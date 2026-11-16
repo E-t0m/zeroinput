@@ -24,6 +24,7 @@
 	.msg { margin: 16px 24px 0; padding: 10px 16px; border-radius: var(--radius); font-size: 12px; display: none; }
 	.msg.ok  { background: rgba(79,195,161,.12); border: 1px solid var(--ok);  color: var(--ok); display: block; }
 	.msg.err { background: rgba(245,108,108,.12); border: 1px solid var(--err); color: var(--err); display: block; }
+	.msg.warn { background: rgba(230,162,60,.12); border: 1px solid #e6a23c; color: #e6a23c; display: block; }
 	.container { padding: 20px 24px; display: none; }
 	.container.active { display: block; }
 	.grid { display: grid; grid-template-columns: 300px 300px 1fr; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
@@ -295,7 +296,7 @@ const LOCKED = [
 const SECTIONS = {
 	'Paths & hardware':  ['vzlogger_log_file','persistent_vz_file','chargers','inverters','webconfig_port'],
 	'Inverters':         ['max_input_power','max_bat_discharge','single_inverter_threshold','multi_inverter_wait'],
-	'PV & battery':      ['PV_to_AC_efficiency','bat_voltage_const','cell_count','free_power_export'],
+	'PV & battery':      ['PV_to_AC_efficiency','bat_voltage_const','cell_count','free_power_export','free_export_voltage_start','free_export_voltage_full'],
 	'Heat protection':   ['heat_temp_low','heat_temp_high'],
 	'Zero shift':        ['zero_shifting'],
 	'Prediction':        ['load_prediction', 'predictor_log', 'min_spread_w'],
@@ -311,7 +312,7 @@ function msg(text, type) {
 	const el = document.getElementById('msg');
 	el.textContent = text; el.className = 'msg ' + type;
 	clearTimeout(msg._t);
-	msg._t = setTimeout(() => el.className = 'msg', 4000);
+	msg._t = setTimeout(() => el.className = 'msg', type === 'warn' ? 15000 : 4000);
 }
 
 function tab(name) {
@@ -348,12 +349,20 @@ async function loadConf() {
 			heat_temp_low_help: 'heat protection: below this sensor temperature (°C) the full max_input_power is allowed',
 			heat_temp_high_help: 'heat protection: at/above this sensor temperature (°C) power_demand is capped to zero (inverter off); linear in between. Select the trigger sensor in the chargers tab.',
 			cell_count: 16,
-			cell_count_help: 'number of LiFePO4 cells in series (16 = 51.2V, 15 = 48V, 8 = 24V/28V). All battery voltage thresholds scale with this; 16 reproduces the original behaviour exactly.',
+			cell_count_help: 'number of LiFePO4 cells in series (16 = 51.2V, 15 = 48V, 8 = 24V/28V). The built-in battery voltage thresholds scale with this (free_export_voltage_start/_full are pack voltages and do not).',
+			free_export_voltage_start: 54.5,
+			free_export_voltage_start_help: '[V] battery pack voltage where free export begins; divided by cell_count it should be within 3.2-3.65 V per cell (54.5 V = 3.406 V/cell at 16S)',
+			free_export_voltage_full: 57.0,
+			free_export_voltage_full_help: '[V] battery pack voltage where free export reaches max_input_power, must be above the start voltage; set it to the MPPT absorption/float voltage (57.0 V = 3.5625 V/cell at 16S)',
 		};
 		_confAddedDefaults = {};
 		Object.entries(CONF_DEFAULTS).forEach(([k, v]) => {
 			if (!(k in confData)) { confData[k] = v; _confAddedDefaults[k] = true; }
 		});
+		// free export defaults depend on the pack size: 3.40625 / 3.5625 V per cell
+		const _cells = parseInt(confData.cell_count) || 16;
+		if (_confAddedDefaults.free_export_voltage_start) confData.free_export_voltage_start = Math.round(3.40625 * _cells * 100) / 100;
+		if (_confAddedDefaults.free_export_voltage_full)  confData.free_export_voltage_full  = Math.round(3.5625  * _cells * 100) / 100;
 		helpMap  = parseHelp(confData);
 		deviceList = [{name:'', type:null}, {name:'combined', type:'combined'}];
 		if (confData.chargers) Object.values(confData.chargers).forEach(d => {
@@ -474,6 +483,18 @@ async function saveConf() {
 			if (JSON.stringify(updates[k]) === JSON.stringify(confData[k])) delete updates[k];
 		}
 	});
+	// free export voltages: start must be > 0 and below full; per cell (÷ cell_count) within 3.2-3.65 V
+	const _fxv = k => (k in updates) ? updates[k] : confData[k];
+	const _fxs = _fxv('free_export_voltage_start'), _fxf = _fxv('free_export_voltage_full');
+	if (!(_fxs > 0 && _fxf > _fxs)) {
+		msg('free_export_voltage_start must be > 0 and below free_export_voltage_full — cannot save', 'err');
+		return;
+	}
+	const _fxc = parseInt(_fxv('cell_count')) || 16;
+	const _fxo = [_fxs, _fxf].some(v => v / _fxc < 3.2 || v / _fxc > 3.65);
+	if (_fxo && !confirm('free export voltages ' + _fxs + ' / ' + _fxf + ' V are ' +
+		(_fxs/_fxc).toFixed(3) + ' / ' + (_fxf/_fxc).toFixed(3) + ' V per cell at cell_count ' + _fxc +
+		', outside 3.2-3.65 V per cell. Save anyway?')) return;
 	if (!Object.keys(updates).length) { msg('No changes', 'ok'); return; }
 	try {
 		const r = await fetch(API + '/api/conf', {
@@ -481,7 +502,18 @@ async function saveConf() {
 			body: JSON.stringify({updates})
 		});
 		const d = await r.json();
-		if (d.ok) { msg('Config saved', 'ok'); Object.assign(confData, updates); }
+		if (d.ok) {
+			Object.assign(confData, updates);
+			// capacity of the saved inverter config (confData.inverters: id -> device config)
+			const items = Object.entries(confData.inverters || {}).map(([id, d]) => {
+				const st = [].concat(d.stage ?? []);
+				return {id, count: d.count, max_power: d.max_power, stage1: st.includes(1), stage2: st.includes(2)};
+			});
+			const note = capacityNote(parseInt(confData.max_input_power) || 0,
+				invMaxCapacity(items, parseInt(confData.single_inverter_threshold) || 0));
+			if (note) msg('Config saved. Note: ' + note, 'warn');
+			else      msg('Config saved', 'ok');
+		}
 		else msg('Error: ' + d.error, 'err');
 	} catch(e) { msg('Error: ' + e, 'err'); }
 }
@@ -1470,6 +1502,25 @@ function invValidate() {
 	return true;
 }
 
+// capacity — mirrors input_power_staging.max_capacity (Python):
+// max(min(stage-1 capacity, single_inverter_threshold), stage-2 capacity)
+function invMaxCapacity(items, singleThreshold) {
+	let cap1 = 0, cap2 = 0;
+	items.filter(it => it.id).forEach(it => {
+		const c = (parseInt(it.count)||1) * (parseInt(it.max_power)||0);
+		if (it.stage1) cap1 += c;
+		if (it.stage2) cap2 += c;
+	});
+	return Math.max(Math.min(cap1, singleThreshold), cap2);
+}
+
+// text for max_input_power above capacity, '' if it fits
+function capacityNote(maxInputPower, cap) {
+	if (maxInputPower <= cap) return '';
+	return 'max_input_power ' + maxInputPower + ' W exceeds the inverter capacity ' + cap +
+		' W — demand above ' + cap + ' W is requested but not delivered';
+}
+
 // coverage-gap check — mirrors input_power_staging.find_coverage_gaps (Python).
 // Returns array of [from_w, to_w] uncovered delivered-power bands.
 function invFindGaps(items, singleThreshold, maxInputPower) {
@@ -1589,7 +1640,13 @@ async function invSave() {
 			body: JSON.stringify({updates})
 		});
 		const d = await r.json();
-		if (d.ok) { msg('Inverters saved — restart zeroinput to apply', 'ok'); Object.assign(confData, updates); }
+		if (d.ok) {
+			Object.assign(confData, updates);
+			const note = capacityNote(parseInt(confData.max_input_power) || 0,
+				invMaxCapacity(invItems, parseInt(confData.single_inverter_threshold) || 0));
+			if (note) msg('Inverters saved — restart zeroinput to apply. Note: ' + note, 'warn');
+			else      msg('Inverters saved — restart zeroinput to apply', 'ok');
+		}
 		else      { msg('Error: ' + d.error, 'err'); }
 	} catch(e) { msg('Error: ' + e.message, 'err'); }
 }

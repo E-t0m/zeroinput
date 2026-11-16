@@ -150,13 +150,15 @@ Key settings:
 |---|---|
 | `chargers` | MPPT chargers and temperature sensors (port → device config). Structural — restart required. |
 | `inverters` | Feed-in inverters (id → device config). Structural — restart required. |
-| `max_input_power` | Maximum total feed-in power of all inverters combined (W). Set to 0 to disable feed-in. |
+| `max_input_power` | Maximum total feed-in power of all inverters combined (W). Set to 0 to disable feed-in. A value above the inverter capacity produces a warning. |
 | `max_bat_discharge` | Maximum battery discharge power (W) |
 | `single_inverter_threshold` | Demand level above which stage 2 activates (W) |
 | `multi_inverter_wait` | Seconds before falling back to stage 1 |
-| `cell_count` | Number of LiFePO4 cells in series (16 = 51.2 V, 15 = 48 V, 8 = 24/28 V). All battery voltage thresholds scale with this value. |
+| `cell_count` | Number of LiFePO4 cells in series (16 = 51.2 V, 15 = 48 V, 8 = 24/28 V). The built-in battery voltage thresholds scale with this value. |
 | `bat_voltage_const` | Voltage-correction factor under load (V/kW, 0 = disabled) |
 | `free_power_export` | Free export at high battery voltage (true/false) |
+| `free_export_voltage_start` | Free export: pack voltage (V) where export begins (default 54.5 V; per cell, i.e. divided by `cell_count`, sensibly 3.2–3.65 V) |
+| `free_export_voltage_full` | Free export: pack voltage (V) at which `max_input_power` is reached (default 57.0 V). Must be above the start voltage. |
 | `heat_temp_low` | Heat protection: below this sensor temperature (°C), full power |
 | `heat_temp_high` | Heat protection: at/above this sensor temperature (°C) the inverter is switched off, linear in between. Trigger sensor via `heat_protect` flag on a charger in the web interface. |
 | `webconfig_port` | Web server port (default 8081, 0 = disabled) |

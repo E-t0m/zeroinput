@@ -197,13 +197,14 @@ done. 2025-10-05 14:14:31
 At first the consumption data is taken from volkszähler's database. This gets cached hourly.
 PV power, inverter input, net demand, car, charger, climate is used to calculate a 7 day average profile. (similar to [profiler.py](https://github.com/E-t0m/zeroinput/blob/main/profiler.py))
 
-Then the energy content gets fetched: It searches for the latest empty battery voltage and calculates the remaining battery content.
+Then the energy content gets fetched: It searches for the latest empty battery state and calculates the remaining battery content from there. Empty means the voltage stays at or below 3.03125 V per cell (48.5 V at 16S) for at least 2 minutes; shorter dips are ignored, and samples below 2.5 V per cell are discarded as sensor errors. The cell count is read from zeroinput.conf (`zeroinput_conf` in tib_zero_tas.conf). Inverter output always reduces the content, independent of the sign of the volkszähler channel.
 
-The tasmota timers (and switches) are set by price thresholds.
+The tasmota timers are set by price thresholds: every run sets the timer for the start of the next quarter hour. A device with `_on` in its name gets its timer set if that quarter hour's price is below its `max_price`, a device with `_off` in its name if the price is at or above its `max_price`.
 
 The zeroinput timer file is calculated with descending prices as far as tibber allows the foresight.
 The coming, price sorted quarter hours get summed with their 7-day-average energy usage. This is done as long there is energy in the battery.
-This information is written to zeroinput's timer file, which rules the inverter.
+The current and the next quarter hour of this plan are written to zeroinput's timer file, which rules the inverter, followed by an unrestricted line 30 minutes later. zeroinput resets its energy counter whenever the last line of the timer file changes; as that line moves forward with every run, the energy limit of a quarter hour applies to that quarter hour alone. If tib_zero_tas stops running, the unrestricted line falls into the past and zeroinput runs without limits.
+If volkszähler or the price file cannot be read, tib_zero_tas writes an unrestricted timer file and stops. Every volkszähler and tasmota request has a timeout.
 
 PVpt is PV pass through, where the PV energy is directly transformed by the inverter, because of the small price gap to the next sheduled hour with input from battery.
 

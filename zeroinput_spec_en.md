@@ -32,7 +32,7 @@ Inverters are configured in the `inverters` block. Each entry is one **group** o
 - `count` — number of identical units on the port (default 1)
 - `max_power` / `min_power` — **per single unit**, in W. Below `min_power` a group sleeps.
 
-**Two stages**, selected by the demand history with the same hysteresis as before (`single_inverter_threshold`, smoothed, `multi_inverter_wait` before falling back):
+**Two stages**, selected by the demand history with hysteresis (`single_inverter_threshold`, smoothed, `multi_inverter_wait` before falling back):
 
 - **Stage 1** — only groups whose `stage` list contains 1 carry the base load.
 - **Stage 2** — every eligible group shares `power_demand` in **equal per-unit parts**, independent of each unit's `max_power`. As demand grows, the shared per-unit value rises until the smallest units reach their `max_power`; those saturate and the remaining load is re-split equally among the still-open units. The largest unit (e.g. the MultiPlus) therefore saturates last and effectively becomes the top stage on its own — by capacity, not by a special rule.
@@ -42,6 +42,8 @@ Each group sends exactly one command per cycle: a Soyosource group broadcasts on
 **Stage transitions.** When the stage drops from 2 to 1 (after the full `multi_inverter_wait` hysteresis), the demand switches directly to the stage-1 distribution in the same cycle; the single remaining stage-1 unit takes over the whole demand in one step. Because the inverters need a few seconds to settle after this hard switch and the meter briefly sees the transition transient, `power_demand` is held at its value from the moment of the transition for a few cycles — the distribution deliberately bypasses the freshly computed value so the control loop does not fight its own transition. A running ramp, or a load rise that pulls the stage back to 2, discards the hold at once, so a genuine load change is served immediately. Stage-up (1→2) is immediate, without the `multi_inverter_wait` delay and without a hold. While at stage 2, the verbose/web output appends `Nc` (N cycles) to the unit line — a conditional estimate of how many cycles remain until the stage would return to 1 *if every future value stays at or below the threshold*. It grows again whenever a new high value enters the history, since stage-down needs the whole window to settle.
 
 **Coverage-gap check.** At startup (and on saving the inverters config in the web interface) zeroinput sweeps the requested power from the smallest `min_power` up to `max_input_power` along the real control path and reports any power band that no inverter combination can deliver. In stage 2 the equal-share split moves delivered power in steps of about the active-unit count — that is the inherent control resolution and is not a gap; only jumps larger than that are flagged. Gapless coverage is required: a gap (e.g. a stage-1 unit ending at 900 W while the only stage-2 unit has `min_power` 1500 W) produces an unmissable warning. Feed-in is disabled via `max_input_power = 0` or the timer, not by leaving gaps.
+
+**Capacity check.** At startup and after every configuration reload that changes `max_input_power` or `single_inverter_threshold`, zeroinput compares `max_input_power` with the reachable inverter capacity: max(min(stage-1 capacity, `single_inverter_threshold`), stage-2 capacity), each as the sum of `count × max_power` of the groups in that stage; groups without a stage do not count. If `max_input_power` is higher, a warning is printed; the value is not changed. Background: the power history stores the requested power, not the delivered power, and battery derating by voltage, free export and the heat-protection fallback scale with `max_input_power` — a value that is too high distorts them. The web interface shows the same note after saving the inverters or the settings.
 
 The number of active units (sum of `count` over groups that received power) feeds ramp handling.
 
@@ -56,7 +58,7 @@ Inverters are handled by a generic driver layer (`inverter_drivers.py`). Each ty
 - GTN-1000LIM (24/36/48/72/96 V) and the GTN-1200 / GTN-2000 limiter variants
 - Display, WiFi, and OEM-dongle hardware variants all expose the same RS485 limiter command
 - The waterproof **GTW** outdoor housing has **no** limiter/RS485 and is not controllable
-- A larger unit such as the GTN-2000 is just an entry with `max_power: 2000`; no code change, only config (verify packet compatibility on real hardware first)
+- A larger unit such as the GTN-2000 is just an entry with `max_power: 1600` (battery mode rating); no code change, only config (verify packet compatibility on real hardware first)
 
 **Victron MultiPlus** (`type: victron_mk3`) — active ESS power setpoint over VE.Bus via an MK2/MK3-USB adapter (see *MultiPlus / VE.Bus control*). Requirements:
 
@@ -87,11 +89,11 @@ A configurable offset applied to the power demand target:
 
 ## Battery management
 
-- **Configurable cell count** (`cell_count`): all battery voltage thresholds are stored per cell and scale with the number of LiFePO4 cells in series. Default is 16S (51.2 V nominal); 15S (48 V), 8S (24/28 V) and other values are possible. The voltages below are for 16S and scale accordingly.
+- **Configurable cell count** (`cell_count`): the built-in battery voltage thresholds are stored per cell and scale with the number of LiFePO4 cells in series. Default is 16S (51.2 V nominal); 15S (48 V), 8S (24/28 V) and other values are possible. The voltages below are for 16S and scale accordingly; the free export voltages are an exception, they are configured as pack voltages.
 - **Voltage curve** (48–51 V at 16S, i.e. 3.00–3.19 V/cell): battery discharge power is limited by a power curve; full discharge allowed above the upper bound.
 - **Undervoltage protection**: below the lower bound (48 V at 16S) the inverter is disabled for 1 minute.
 - **Voltage correction** (`bat_voltage_const`): compensates voltage drop under load using a configurable factor (V/kW).
-- **Free export** (`free_power_export`): above the export threshold (54.5 V at 16S), excess energy is deliberately fed into the grid; scales linearly to `max_input_power` at the MPPT float voltage (57 V at 16S).
+- **Free export** (`free_power_export`): from the pack voltage `free_export_voltage_start` on, excess energy is deliberately fed into the grid; the power rises linearly up to `max_input_power` at the pack voltage `free_export_voltage_full`. Both values are voltages of the whole battery pack in volts and are compared directly with the measured battery voltage. Default: 54.5 V and 57.0 V; if the values are missing from the configuration, 3.40625 V and 3.5625 V per cell multiplied by `cell_count` apply. The full voltage should match the absorption/float voltage of the MPPT chargers. If the start voltage is not above 0 or not below the full voltage, these defaults apply and a warning is printed. If either value divided by `cell_count` lies outside 3.2–3.65 V per cell, it is still used, but reported with a warning. The web interface refuses to save values in the wrong order and asks for confirmation for values outside the cell range.
 - **Vbat plausibility filter and voltage hold**: when averaging battery voltage across multiple chargers, readings below 2.0 V/cell are discarded, since a LiFePO4 cell never runs that low in operation. A disturbed charger reporting 0 V or an implausibly low value therefore has no effect on the averaged voltage. If no charger reports a plausible value in a given cycle — for example at night, when the MPPTs enter sleep for lack of PV input voltage and stop sending telemetry — the last plausible measured voltage is held and passed on. A missing measurement thus never becomes 0 V, which would look like an empty battery and trip the undervoltage protection. This logic is fully contained in the charger aggregation; the control loop always receives a plausible voltage. As long as no valid value has ever been seen (cold start), the startup wait phase applies.
 
 **Startup wait for battery data.** Before entering the main loop, zeroinput calls `combine_charger_data()` repeatedly (every 0.2 s, up to 10 s) until `mppt_data['combined']['Vbat'] > 0`. Without this, the very first cycle would see `Vbat == 0` (no charger data polled/received yet) — indistinguishable from a real 0 V reading — and falsely trigger the 1-minute undervoltage timeout on every restart. This works for any charger type: synchronous readers (eSmart3, Modbus) already have data from `build_chargers()`'s warm-up read, while AGG/Victron reader threads deliver their first block within this window. If no charger ever reports `Vbat` within 10 s, zeroinput logs a warning and starts anyway.
@@ -190,7 +192,7 @@ One Modbus charger is supported per port entry (the conf key is the port path). 
 
 **AGG path** — `VEDirect.set_watts(ser, watts)` → firmware sends `SET <SER#> <watts>` → converts W→A (`reg = round(watts / Vbat × 10)`, register `0x2015`, 0.1A), writes and verifies. `VBAT_FALLBACK = 24V` until first Vbat received.
 
-**Conventional path** — zeroinput replicates firmware sequence after each complete VE.Direct block: SET HEX frame → ACK (400ms timeout) → GET readback → compare. Commands queued in `_victron_cmd_queues[port]` (maxsize=1).
+**Conventional path** — zeroinput replicates firmware sequence after each complete VE.Direct block: SET HEX frame → ACK (400ms timeout) → GET readback → compare. Commands queued in `_victron_cmd_queues[port]` (maxsize=1). The W→A conversion uses the battery voltage of that charger, else the averaged battery voltage of all chargers, else 3.2 V per cell × `cell_count`.
 
 ---
 

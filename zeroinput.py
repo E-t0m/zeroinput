@@ -232,22 +232,76 @@ HEAT_FAIL_FRACTION = 0.5	# heat-protect cap fraction of max_input_power when the
 STAGE_HOLD_CYCLES = 7		# hold power_demand this many cycles after a stage 2->1 transition: the inverters need ~4-5 s to settle after the hard switch, and reacting to that transient would make the control loop fight its own transition
 
 # battery voltage thresholds, expressed PER CELL so they scale with conf['cell_count'].
-# The original code was hard-wired to 16S LiFePO4 (51.2 V nominal); the 16S value is
-# noted next to each constant. cell_voltage(x) below multiplies by the configured cell
-# count, so at cell_count == 16 every threshold equals the original 16S figure exactly.
-VC_DERATE_LO   = 48.0  / 16		# 16S original: 48.0 V  (discharge derating lower bound, 0%)
-VC_DERATE_HI   = 51.0  / 16		# 16S original: 51.0 V  (discharge derating upper bound, 100%)
-VC_DERATE_OFF  = 46.93 / 16		# 16S original: 46.93 V (derating power-curve offset)
-VC_RAMP_OK     = 51.0  / 16		# 16S original: 51.0 V  (ramp: enough voltage for an up-ramp)
-VC_EXPORT      = 54.5  / 16		# 16S original: 54.5 V  (free-power-export threshold)
-VC_SATURATION  = 57.0  / 16		# 16S original: 57.0 V  (MPPT saturation / full-charge voltage)
-VC_INV_BASELOAD = 49.0 / 16		# 16S original: 49.0 V  (below this, subtract inverter base load by voltage)
-DERATE_EXP     = 3.281			# power-curve exponent (acts on total pack voltage, unchanged)
+# The value for a 16S LiFePO4 pack (51.2 V nominal) is noted next to each constant.
+# cell_voltage(x) below multiplies by the configured cell count.
+VC_DERATE_LO   = 48.0  / 16		# 48.0 V at 16S  (discharge derating lower bound, 0%)
+VC_DERATE_HI   = 51.0  / 16		# 51.0 V at 16S  (discharge derating upper bound, 100%)
+VC_DERATE_OFF  = 46.93 / 16		# 46.93 V at 16S (derating power-curve offset)
+VC_RAMP_OK     = 51.0  / 16		# 51.0 V at 16S  (ramp: enough voltage for an up-ramp)
+VC_INV_BASELOAD = 49.0 / 16		# 49.0 V at 16S  (below this, subtract inverter base load by voltage)
+DERATE_EXP     = 3.281			# power-curve exponent, applied to the 16S-equivalent voltage (see derate_percent)
+
+def derate_percent(bat_voltage):
+	"""Discharge power in percent over the derating band. The power curve is
+	defined on a 16S pack (46.93 V offset, exponent 3.281: 1.2 % at 48 V, 100 % at
+	51 V); the measured voltage is converted to its 16S equivalent first, so the
+	curve covers the same 1.2-100 % range for every cell_count."""
+	v16 = bat_voltage * 16 / conf.get('cell_count', 16)
+	return max(0.0, v16 - VC_DERATE_OFF * 16) ** DERATE_EXP
 
 def cell_voltage(per_cell):
 	"""Scale a per-cell threshold to the configured pack size. cell_count defaults
-	to 16, so an unconfigured (16S) system behaves exactly as the original code."""
+	to 16 when not configured."""
 	return per_cell * conf.get('cell_count', 16)
+
+# free power export: start and full voltage of the battery PACK, configurable in zeroinput.conf.
+# Defaults and the plausibility range are per cell and scale with cell_count.
+FREE_EXPORT_CELL_V_START_DEFAULT	= 3.40625	# 54.5 V at 16S: export begins
+FREE_EXPORT_CELL_V_FULL_DEFAULT		= 3.5625	# 57.0 V at 16S: export reaches max_input_power
+FREE_EXPORT_CELL_V_MIN			= 3.2		# plausible LiFePO4 range per cell for both values
+FREE_EXPORT_CELL_V_MAX			= 3.65
+_free_export_warned = None			# last reported (start, full, cell_count), avoids repeating the warning every cycle
+
+def free_export_voltages():
+	"""Return (v_start, v_full) as pack voltages for the free power export.
+	Reads free_export_voltage_start / _full [V, whole pack] from conf.
+	Missing or invalid values (not numeric, <= 0, start >= full) fall back to
+	the per-cell defaults multiplied by cell_count. Values that are valid but
+	outside FREE_EXPORT_CELL_V_MIN..MAX per cell (divided by cell_count) are
+	used as configured, with a warning. Each warning is printed once per
+	(start, full, cell_count) combination."""
+	global _free_export_warned
+	cells = conf.get('cell_count', 16)
+	start = conf.get('free_export_voltage_start', cell_voltage(FREE_EXPORT_CELL_V_START_DEFAULT))
+	full  = conf.get('free_export_voltage_full',  cell_voltage(FREE_EXPORT_CELL_V_FULL_DEFAULT))
+	key = (start, full, cells)
+	try:
+		start = float(start)
+		full  = float(full)
+		valid = 0 < start < full
+	except (TypeError, ValueError):
+		valid = False
+	if not valid:
+		d_start = cell_voltage(FREE_EXPORT_CELL_V_START_DEFAULT)
+		d_full  = cell_voltage(FREE_EXPORT_CELL_V_FULL_DEFAULT)
+		if _free_export_warned != key:
+			print('WARNING: free_export_voltage_start (%s) must be > 0 and below '
+			      'free_export_voltage_full (%s) - using defaults %.2f / %.2f V' % (
+			      key[0], key[1], d_start, d_full))
+			_free_export_warned = key
+		return d_start, d_full
+	c_start, c_full = start / cells, full / cells
+	out = [n for n, v in (('start', c_start), ('full', c_full))
+	       if not FREE_EXPORT_CELL_V_MIN <= v <= FREE_EXPORT_CELL_V_MAX]
+	if out:
+		if _free_export_warned != key:
+			print('WARNING: free_export_voltage %s outside %.2f-%.2f V per cell at cell_count %i '
+			      '(start %.3f V/cell, full %.3f V/cell) - check the values' % (
+			      '/'.join(out), FREE_EXPORT_CELL_V_MIN, FREE_EXPORT_CELL_V_MAX, cells, c_start, c_full))
+			_free_export_warned = key
+	else:
+		_free_export_warned = None
+	return start, full
 
 # stage-transition demand hold (owned by send_to_inverters)
 _hold_cnt          = 0		# remaining hold cycles (0 = no hold in progress)
@@ -330,6 +384,18 @@ def check_saw(power_demand, send_history, block_saw_detection):
 		if verbose: print('no saw detected')
 	return power_demand
 
+
+def check_max_input_power(drivers, conf):
+	"""Inform if max_input_power exceeds what the inverters can deliver.
+	The value is only reported, never changed. Returns the capacity."""
+	cap = staging.max_capacity(drivers, conf['single_inverter_threshold'])
+	if conf['max_input_power'] > cap:
+		print('WARNING: max_input_power %i W exceeds the inverter capacity %i W. '
+		      'Demand above %i W is requested but not delivered; the power history '
+		      '(predictor, stage selection), battery derating, free export and the '
+		      'heat-protection fallback are scaled to max_input_power.' % (
+		      conf['max_input_power'], cap, cap))
+	return cap
 
 def heat_protect_cap(mppt_data, max_input_power):
 	"""Heat protection: linear power cap driven by one selected temperature sensor.
@@ -618,6 +684,8 @@ if __name__ =="__main__":
 			print('WARNING: stage-1 inverter capacity %i W is below '
 			      'single_inverter_threshold %i W — base load cannot be fully '
 			      'served by stage 1 alone' % (_s1_cap, conf['single_inverter_threshold']))
+		check_max_input_power(inverter_drivers, conf)							# capacity check, informational
+		_checked_max_input = (conf['max_input_power'], conf['single_inverter_threshold'])
 		# coverage-gap check: power ranges no inverter combination can deliver
 		_gaps = staging.find_coverage_gaps(
 			inverter_drivers, conf['single_inverter_threshold'], conf['max_input_power'])
@@ -674,6 +742,9 @@ if __name__ =="__main__":
 									else [0] * (n - len(long_send_history)) + long_send_history)
 			if conf['zero_shifting'] != 0: zero_shift = conf['zero_shifting']					# apply new zero_shift if not in auto mode
 			max_input_power = conf['max_input_power']											# apply new max_input_power
+			if (conf['max_input_power'], conf['single_inverter_threshold']) != _checked_max_input:	# re-check capacity after a reload changed it
+				check_max_input_power(inverter_drivers, conf)
+				_checked_max_input = (conf['max_input_power'], conf['single_inverter_threshold'])
 			if conf['discharge_timer'] and timer is None: timer = discharge_times()				# init timer if newly enabled
 			if not conf['discharge_timer']: timer = None										# disable timer if turned off
 			display_stats(in_pc, timer if conf['discharge_timer'] else None)							# console / web output
@@ -707,7 +778,7 @@ if __name__ =="__main__":
 					if verbose: print('ABORTED ramp - opposite direction detected')
 
 				# high change of power consumption, on rise: no active power limitation, sufficient bat_voltage
-				if (ls_change < -400) or (ls_change > 400 and not adjusted_power and bat_voltage > cell_voltage(VC_RAMP_OK)):	# 16S original: 51.0 V
+				if (ls_change < -400) or (ls_change > 400 and not adjusted_power and bat_voltage > cell_voltage(VC_RAMP_OK)):	# 51.0 V at 16S
 					if not dropped_first_up_ramp and ls_change > 400: 								# don't delay down ramps
 						dropped_first_up_ramp = True
 						if verbose: print('DROPPED first Ramp')
@@ -744,7 +815,7 @@ if __name__ =="__main__":
 			else:
 				adjusted_power = False
 				
-				if bat_voltage <= cell_voltage(VC_DERATE_LO) or (conf['discharge_timer'] and					# 16S original: 48 V; set a new battery timeout
+				if bat_voltage <= cell_voltage(VC_DERATE_LO) or (conf['discharge_timer'] and					# 48 V at 16S; set a new battery timeout
 					( (not timer.battery or (timer.battery and (in_pc/3600) > timer.energy) ) and (not timer.inverter) )):
 					adjusted_power = True
 					power_demand		= 0																	# disable input
@@ -752,8 +823,8 @@ if __name__ =="__main__":
 					timeout_repeat = datetime.now() + timedelta(minutes = 1)							# repeat in one minute
 				
 				else:
-					_v_bl = cell_voltage(VC_INV_BASELOAD)												# 16S original: 49 V
-					_v_bl_slope = 50 * 16 / conf.get('cell_count', 16)									# 16S original: 50 W/V; scaled so the per-cell derating slope is unchanged
+					_v_bl = cell_voltage(VC_INV_BASELOAD)												# 49 V at 16S
+					_v_bl_slope = 50 * 16 / conf.get('cell_count', 16)									# 50 W/V at 16S, scaled with cell_count so the slope per cell voltage is the same for every pack size
 					pv_bat_minus = 0 if bat_voltage > _v_bl else (_v_bl-bat_voltage)*_v_bl_slope * n_active_inverters	# reduction by battery voltage in relation to the base consumption of the inverter(s)
 					avg_pv		= avg(pv_history[-3:])													# use a shorter span than pv_cont
 					pv_eff		= avg_pv-(avg_pv * conf['PV_to_AC_efficiency'] * 0.01)					# efficiency gap
@@ -767,14 +838,15 @@ if __name__ =="__main__":
 							adjusted_power = True
 							if verbose and pv_cont:	status_text	+= ((' limited, PV -%i W' % round(pv_p_minus)) if pv_p_minus else ' ') + ', no battery discharge'
 					
-					elif bat_voltage >= cell_voltage(VC_DERATE_LO) and bat_voltage <= cell_voltage(VC_DERATE_HI):	# 16S original: 48-51 V, limit battery power, pass through pv power
-						bat_power_percent_by_voltage	= (bat_voltage - cell_voltage(VC_DERATE_OFF)) **DERATE_EXP	# 16S original offset 46.93 V; powercurve over the derating band, results in 1-100%
+					elif bat_voltage >= cell_voltage(VC_DERATE_LO) and bat_voltage <= cell_voltage(VC_DERATE_HI):	# 48-51 V at 16S, limit battery power, pass through pv power
+						bat_power_percent_by_voltage	= derate_percent(bat_voltage)					# power curve over the derating band, 1.2-100 %
 						bat_power_by_voltage			= int(0.01 * max_input_power * bat_power_percent_by_voltage)	# 100% above the upper bound
 						
 						if verbose: status_text = ', Bat %i W (%.1f%%)'	% (bat_power_by_voltage, bat_power_percent_by_voltage) + ', PV %i W (-%i W)'% (pv_power, pv_p_minus) if pv_power  != 0 else ''
 					
-					if conf['free_power_export'] and bat_voltage >= cell_voltage(VC_EXPORT):						# 16S original: 54.5 V; give some free power to the world = "pull down the zero line" (not zero shift!)
-						free_power = int( (1.0/(cell_voltage(VC_SATURATION)-cell_voltage(VC_EXPORT))) * (bat_voltage - cell_voltage(VC_EXPORT)) * conf['max_input_power'] )	# 16S original: 57 V saturation, 54.5 V export; full energy input at maximum bat voltage, depends on mppt chargers "saturation charging voltage"
+					_v_exp_start, _v_exp_full = free_export_voltages() if conf['free_power_export'] else (0, 0)
+					if conf['free_power_export'] and bat_voltage >= _v_exp_start:							# give some free power to the world = "pull down the zero line" (not zero shift!)
+						free_power = int( (bat_voltage - _v_exp_start) / (_v_exp_full - _v_exp_start) * conf['max_input_power'] )	# linear from start voltage up to max_input_power at full voltage
 						if free_power > 0:
 							power_demand += free_power
 							adjusted_power = True

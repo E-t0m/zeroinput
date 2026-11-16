@@ -21,7 +21,7 @@
 
 def active_stage(long_send_history, single_threshold):
 	"""Return 1 or 2 from the smoothed demand history.
-	Mirrors the original single/multi hysteresis: the 4th-largest recent value
+	Hysteresis: the 4th-largest recent value
 	must exceed the threshold to advance; the whole multi_inverter_wait-length
 	history must drop back to/below it to return to stage 1."""
 	if len(long_send_history) >= 4:
@@ -185,6 +185,17 @@ def check_stage1_capacity(drivers, single_threshold):
 	single_inverter_threshold? Returns (ok, stage1_capacity)."""
 	cap = sum(d.group_capacity() for d in drivers if 1 in d.stages)
 	return (cap >= single_threshold, cap)
+
+
+def max_capacity(drivers, single_threshold):
+	"""Highest total power the inverter configuration can deliver.
+	Stage 1 serves demand up to single_threshold with the stage-1 groups,
+	stage 2 everything above with the stage-2 groups, so the reachable
+	maximum is max(min(stage-1 capacity, single_threshold), stage-2 capacity).
+	Groups without any stage are disabled and do not count."""
+	cap1 = sum(d.group_capacity() for d in drivers if 1 in d.stages)
+	cap2 = sum(d.group_capacity() for d in drivers if 2 in d.stages)
+	return max(min(cap1, single_threshold), cap2)
 
 
 def delivered_power(power_demand, drivers, single_threshold):

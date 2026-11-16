@@ -150,13 +150,15 @@ Wichtige Einstellungen:
 |---|---|
 | `chargers` | MPPT-Lader und Temperatursensoren (Port → Gerätekonfig). Strukturell — Neustart erforderlich. |
 | `inverters` | Einspeise-Wechselrichter (id → Gerätekonfig). Strukturell — Neustart erforderlich. |
-| `max_input_power` | Maximale Gesamteinspeiseleistung aller Wechselrichter (W). Auf 0 setzen um Einspeisung zu deaktivieren. |
+| `max_input_power` | Maximale Gesamteinspeiseleistung aller Wechselrichter (W). Auf 0 setzen um Einspeisung zu deaktivieren. Liegt der Wert über der Kapazität der Wechselrichter, erscheint eine Warnung. |
 | `max_bat_discharge` | Maximale Batterieentladeleistung (W) |
 | `single_inverter_threshold` | Laststufe ab der Stufe 2 aktiviert (W) |
 | `multi_inverter_wait` | Sekunden vor dem Zurückschalten auf Stufe 1 |
-| `cell_count` | Anzahl der LiFePO4-Zellen in Serie (16 = 51,2 V, 15 = 48 V, 8 = 24/28 V). Alle Batteriespannungs-Schwellen skalieren mit diesem Wert. |
+| `cell_count` | Anzahl der LiFePO4-Zellen in Serie (16 = 51,2 V, 15 = 48 V, 8 = 24/28 V). Die fest eingebauten Batteriespannungs-Schwellen skalieren mit diesem Wert. |
 | `bat_voltage_const` | Faktor der Spannungskorrektur unter Last (V/kW, 0 = deaktiviert) |
 | `free_power_export` | Freie Einspeisung bei hoher Batteriespannung (true/false) |
+| `free_export_voltage_start` | Freie Einspeisung: Packspannung (V), ab der eingespeist wird (Standard 54,5 V; pro Zelle, also geteilt durch `cell_count`, sinnvoll 3,2–3,65 V) |
+| `free_export_voltage_full` | Freie Einspeisung: Packspannung (V), bei der `max_input_power` erreicht wird (Standard 57,0 V). Muss über der Startspannung liegen. |
 | `heat_temp_low` | Hitzeschutz: unterhalb dieser Sensortemperatur (°C) volle Leistung |
 | `heat_temp_high` | Hitzeschutz: ab dieser Sensortemperatur (°C) wird der Wechselrichter abgeschaltet, dazwischen linear. Auslöse-Sensor per `heat_protect`-Markierung an einem Lader in der Weboberfläche. |
 | `webconfig_port` | Webserver-Port (Standard 8081, 0 = deaktiviert) |

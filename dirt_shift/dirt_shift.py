@@ -642,10 +642,10 @@ def _smard_series(filter_id, today):
 	holding the requested date: in the small hours of a Monday the week that
 	just began is already indexed but not yet filled, while the values for that
 	very day — published day-ahead over the weekend — sit in the batch before
-	it. Taking the newest batch alone therefore returned an empty day every
-	Monday night. This walks back up to SMARD_BATCH_TRIES batches and keeps the
+	it. Taking the newest batch alone would return an empty day on Monday
+	nights. This walks back up to SMARD_BATCH_TRIES batches and keeps the
 	first that actually covers the date, which costs an extra request only in
-	the cases that used to fail outright."""
+	those cases."""
 	base = 'https://www.smard.de/app/chart_data'
 	idx = get(url='%s/%i/%s/index_hour.json' % (base, filter_id, SMARD_REGION), timeout=15)
 	idx.raise_for_status()
@@ -1045,7 +1045,7 @@ def get_vz_bat_cap():
 	end = datetime.today().replace(microsecond=0)
 	endstamp = str(int(end.timestamp())).ljust(13, '0')
 
-	_empty_v = 3.0625 * conf.get('cell_count', 16)		# 16S original: 49 V (empty-battery anchor)
+	_empty_v = 3.0625 * conf.get('cell_count', 16)		# 49 V at 16S (empty-battery anchor)
 	anchor_ts = None
 	while True:
 		begin = (datetime.today() - timedelta(days=days_back)).replace(hour=0, minute=0, second=0, microsecond=0)
@@ -1074,7 +1074,7 @@ def get_vz_bat_cap():
 
 	if anchor_ts is None:
 		# no sustained empty state within the search window: anchor at the
-		# deepest sample as a last resort (integration then unbounded, as before)
+		# deepest sample as a last resort (integration then unbounded)
 		min_ts, min_v = None, 999
 		for ts, v, s in jresp['data'][0]['tuples']:
 			if v <= min_v: min_ts, min_v = ts, v
@@ -1907,9 +1907,8 @@ def main():
 	# it — reserve, mode and precharge all hinge on content — so it goes free.
 	# But the wallbox side is redundant: its dirt path needs no content, so the
 	# run continues to the wallbox block below rather than aborting, and only
-	# the content-dependent wallbox path (energy) drops out there. If SMARD was
-	# fine, this is the one place a missing battery reading no longer kills the
-	# whole run.
+	# the content-dependent wallbox path (energy) drops out there. If SMARD is
+	# fine, a missing battery reading therefore does not stop the whole run.
 	battery_steerable = content is not None
 
 	r = grid_data['ratio'][now.hour]
@@ -2117,9 +2116,9 @@ def main():
 	# the car must go to the grid so the forced-free discharge is not spent on
 	# it. Where content covers the reserve, the surplus above it may go to the
 	# car and the battery still ends the slot above its reserve. Downgrading
-	# regardless was wrong: with the reserve at 0 on a sunny day (the coming
-	# yield refills the battery anyway) it stopped the battery from discharging
-	# at all, even though nothing needed protecting.
+	# regardless would be wrong: with the reserve at 0 on a sunny day (the coming
+	# yield refills the battery anyway) it would stop the battery from discharging
+	# at all, even though nothing needs protecting.
 	if battery_steerable and wallbox_on and mode == 'free' and content <= reserve and not (energy_ok or voltage_ok):
 		mode = 'limit'
 		detail += ' [free->limit: wallbox on grid terms]'
