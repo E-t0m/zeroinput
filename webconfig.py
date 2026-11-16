@@ -33,17 +33,15 @@ def _dirt_shift_log_path():
 	return p if p.startswith('/') else join(DIRT_SHIFT_DIR, p)
 
 _DIRT_LOG_TS_RE = re.compile(
-	r'^(?:===\s*(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s*==='			# dirt_shift's own per-run separator, written straight to the logfile
-	r'|dirt_shift\s+(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}))', re.M)		# dirt_shift's verbose header line
+	r'^===\s*(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s*===', re.M)		# dirt_shift's own per-run separator, written straight to the logfile
 
 def _dirt_shift_log_last_24h(path):
 	"""Return the tail of the dirt_shift log covering roughly the last 24
-	hours. Two timestamp anchors are recognised: the '=== <timestamp> ==='
-	separator dirt_shift writes to the logfile at the start of every run, and
-	its own 'dirt_shift  <timestamp>' verbose header. The separator goes only
+	hours. The anchor is the '=== <timestamp> ===' separator dirt_shift
+	writes to the logfile at the start of every run. The separator goes only
 	into the file (never to the console) and is written before anything else,
 	so it anchors a run even if that run then fails early and prints nothing.
-	This scans for those anchors and cuts the file just before the first one
+	This scans for these anchors and cuts the file just before the first one
 	still within 24 hours of now, so whole runs are kept intact (a run's
 	output printed before its own anchor line is not split off). If every
 	anchor is older than 24 hours the result is empty; if the file has no
@@ -58,7 +56,7 @@ def _dirt_shift_log_last_24h(path):
 		return text
 	keep_from = 0
 	for m in matches:
-		stamp = m.group(1) or m.group(2)			# whichever anchor form matched
+		stamp = m.group(1)
 		try:
 			ts = datetime.strptime(stamp, '%Y-%m-%d %H:%M:%S')
 		except (ValueError, TypeError):

@@ -1,4 +1,5 @@
 # dirt_shift — Overview
+*v2.0*
 
 ## Purpose
 
@@ -9,9 +10,10 @@ choose *when* the battery covers consumption instead of the grid saves the most 
 the dirtiest hours. `dirt_shift` therefore steers the available battery content into exactly
 those hours.
 
-The program never touches the hardware itself: every fifteen minutes it writes a `timer.txt`,
+The program does not control the battery itself: every fifteen minutes it writes a `timer.txt`,
 which **zeroinput** reads and acts on. PV pass-through to the house is left untouched as a rule
-— only battery discharge is limited.
+— only battery discharge is limited. The only thing `dirt_shift` switches directly is the
+optional wallbox.
 
 ## Data basis
 
@@ -45,8 +47,9 @@ so the reserve is zero). The mode for each hour follows from that:
 
 - **green, content above the reserve** → free discharge.
 - **green, content below it** → no discharge (the house runs off the grid), so the content stays
-  available for the dirty hours — but only if those are noticeably dirtier than now; otherwise
-  the battery keeps covering the running consumption.
+  available for the dirty hours — but only if those are noticeably dirtier than the current hour
+  and the coming surplus would not overfill the battery; otherwise the battery keeps covering the
+  running consumption.
 - **red** → free discharge if the content suffices; otherwise capped to the house's share, with
   the single dirtiest hour of the window served without limit.
 
@@ -58,19 +61,23 @@ sustained higher load onto the grid instead of the battery.
 
 **Wallbox.** `dirt_shift` can switch a wallbox's relay via a Tasmota device whenever one of
 three — mutually independent — conditions holds: the hour ranks among the cleanest of the
-window, the battery has surplus above its reserve, or the battery is full. If the reading a path
+window, the battery has surplus above its reserve, or the battery is full while PV
+is producing surplus. If the reading a path
 needs is missing (e.g. the battery content), only that path drops out; the others keep deciding.
 Only if none of the three can decide is the relay left unchanged. A car has to be charged from
 the grid one way or another — the point is to pick the cleanest hour for it. If the wallbox is
 charging via the cleanliness path while the battery does not cover its reserve and has no
 surplus either, its discharge is capped to the house's share, so the charging current comes from
 the grid rather than draining the overnight reserve. Only a relay `dirt_shift` switched on itself
-is switched off again; a manual charge is left alone.
+is switched off again; a manual charge is left alone. The wallbox is controlled even while the
+timer is disabled.
 
-**Precharge.** In the cleanest hours, PV surplus can be steered deliberately into the battery
-instead of the house — but only when surplus would otherwise genuinely be lost because it no
-longer fits the battery's free room. On a modestly sized battery this rarely engages. Inverter
-pass-through is never throttled all the way to 0, so zeroinput always recognises the timer line
+**Precharge.** In the cleanest hours, PV can be steered into the battery instead of the house;
+the house then imports from the grid during that clean hour, so more charge is available for the dirty
+hours later. That costs the round-trip loss and only pays off while the battery would not fill
+up anyway — on windy, dull days rather than sunny ones. The `round_trip_margin` setting decides
+how clear the CO₂ gain must be: close to 1 as clean as possible, larger more economical. Precharge uses real SMARD data only and is off in
+emergency mode. Inverter pass-through is never throttled all the way to 0, so zeroinput always recognises the timer line
 as valid.
 
 ## Operation
