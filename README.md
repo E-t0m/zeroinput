@@ -47,7 +47,7 @@ zeroinput runs directly from the cloned folder `/opt/zeroinput` as user `vzlogge
 | `docs/` | documentation in English and German, screenshots |
 | `v1/` | zeroinput version 1 |
 
-##  An example how a day can look like in volkszaehler browser
+## An example day in the volkszaehler browser
 - red shows the imported power from the net
 - green is the generated power from the inverters
 - yellow shows the PV power
