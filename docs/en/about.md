@@ -1,6 +1,6 @@
 # zeroinput – Introduction
 
-zeroinput is a zero export control for PV systems with a battery. A small computer reads the house electricity meter every second and adjusts the power of the grid-tie inverters so that the meter stays at zero: the house draws nothing from the grid, and nothing flows into it.
+zeroinput is a zero export control for PV systems with a battery. A Linux device reads the house electricity meter every second and adjusts the power of the grid-tie inverters so that the meter stays at zero: the house draws nothing from the grid, and nothing flows into it.
 
 A fixed order applies. **First**, the PV power covers the consumption in the house. Whatever is left **after that** charges the battery. If the PV is not enough, the battery supplies the rest. The timer can set different rules.
 
@@ -21,7 +21,7 @@ Only the add-ons that plan discharge times need the internet. They fetch forecas
 | Part | What fits |
 |---|---|
 | Electricity meter | Smart meter with an optical reading head, or another meter that vzlogger can read. The meter must provide the value `1-0:16.7.0`, the net power balanced over all three phases. Without this value the control is not possible. |
-| Computer | A small Linux computer with USB, tested with Raspberry Pi 3 and 4 |
+| Computer | A Linux device with USB |
 | Grid-tie inverters | Soyosource GTN with RS485 limiter port or Victron MultiPlus with MK3-USB adapter, in any mix and number |
 | Charge controllers | eSmart3, Victron MPPT, EPever Tracer, Renogy Rover or Morningstar TriStar, in any mix and number |
 | Battery | LiFePO4, the cell count is configurable (16S, 15S, 8S and others) |

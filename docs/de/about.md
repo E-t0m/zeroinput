@@ -1,6 +1,6 @@
 # zeroinput – Vorstellung
 
-zeroinput ist eine Nulleinspeisung für PV-Anlagen mit Akku. Ein Kleinrechner liest den Stromzähler des Hauses jede Sekunde aus und stellt die Leistung der Netzwechselrichter so nach, dass der Zähler bei null bleibt: Das Haus bezieht nichts aus dem Netz, und es fließt nichts hinein.
+zeroinput ist eine Nulleinspeisung für PV-Anlagen mit Akku. Ein Linux-Gerät liest den Stromzähler des Hauses jede Sekunde aus und stellt die Leistung der Netzwechselrichter so nach, dass der Zähler bei null bleibt: Das Haus bezieht nichts aus dem Netz, und es fließt nichts hinein.
 
 Dabei gilt eine feste Reihenfolge. **Zuerst** deckt die PV-Leistung den Verbrauch im Haus. Was **dann** übrig bleibt, lädt den Akku. Reicht die PV nicht, liefert der Akku den Rest. Die Zeitsteuerung kann davon abweichende Vorgaben machen.
 
@@ -21,7 +21,7 @@ Das Internet brauchen nur die Zusatzprogramme, die Entladezeiten planen. Sie ruf
 | Teil | Was passt |
 |---|---|
 | Stromzähler | Moderne Messeinrichtung mit Lesekopf oder ein anderes Messgerät, das vzlogger auslesen kann. Der Zähler muss den Wert `1-0:16.7.0` liefern, die saldierte Leistung über alle drei Phasen. Ohne diesen Wert ist die Regelung nicht möglich. |
-| Rechner | Ein Linux-Kleinrechner mit USB, getestet mit Raspberry Pi 3 und 4 |
+| Rechner | Ein Linux-Gerät mit USB |
 | Netzwechselrichter | Soyosource GTN mit RS485-Limiter-Anschluss oder Victron MultiPlus mit MK3-USB-Adapter, in beliebiger Mischung und Anzahl |
 | Laderegler | eSmart3, Victron MPPT, EPever Tracer, Renogy Rover oder Morningstar TriStar, in beliebiger Mischung und Anzahl |
 | Akku | LiFePO4, die Zellzahl ist einstellbar (16S, 15S, 8S und andere) |
