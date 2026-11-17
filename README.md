@@ -3,10 +3,10 @@ Zero export (Nulleinspeisung) for PV and battery systems: local control of grid-
 
 | English | Deutsch |
 |----------|---------|
+| [Introduction](docs/en/about.md) | [Vorstellung](docs/de/about.md) |
 | [Installation manual](docs/en/installation.md) | [Installationsanleitung](docs/de/installation.md) |
 | [Specifications](docs/en/spec.md) | [Spezifikationen](docs/de/spec.md) |
 | [Load predictor](docs/en/predictor_spec.md) | [Lastprediktor](docs/de/predictor_spec.md) |
-| [Introduction](docs/en/about.md) | [Vorstellung](docs/de/about.md) |
 
 ### [Screenshots of the webconfig](docs/screenshots.md)
 ![scheme](https://github.com/user-attachments/assets/ee5862bb-375d-429d-96a0-52863d9d64b7)
