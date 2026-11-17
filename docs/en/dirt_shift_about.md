@@ -57,6 +57,18 @@ The cap works two ways: as a power limit (watts) and as an energy budget per qua
 (measured against the actually measured PV). That pushes both a brief load spike and a
 sustained higher load onto the grid instead of the battery.
 
+## A day in operation
+
+![dirt_shift on a November day](../screenshots/dirt_shift_day.png)
+
+A Saturday in November, recorded in the volkszähler. Purple is the grid dirtiness (right axis), red the grid import, yellow the PV power and green the feed-in of the inverters; PV and feed-in are plotted downwards.
+
+- **Morning and midday, dirtiness 30–45 %:** The grid is clean. The feed-in stays throttled to a small part of the PV power (precharge), the rest of the PV charges the battery. During this time the house draws its power from the grid.
+- **From 3 pm, dirtiness 60–68 %:** The grid is at its dirtiest. The battery discharges freely, the feed-in follows the consumption, and the grid import is zero.
+- **From about 7:30 pm:** The battery is empty, the feed-in fades out, and the house draws from the grid again.
+
+The energy stored in the battery thus replaces grid power in the dirtiest hours of the day instead of the cleanest.
+
 ## Optional extra features
 
 **Wallbox.** `dirt_shift` can switch a wallbox's relay via a Tasmota device whenever one of
