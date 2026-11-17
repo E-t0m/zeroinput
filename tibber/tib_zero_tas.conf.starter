@@ -26,7 +26,6 @@
 
 "disable_pvpt":				false,		"help":"true / false, PV pass through",
 "disable_battery_discharge":false,		"help":"true / false, battery discharge",
-"disable_battery_charge":	true,		"help":"true / false, battery charge",
 "disable_tasmota_timer":	true,		"help":"true / false, tasmota timers",
 "disable_zeroinput_timer":	false,		"help":"true / false, zeroinput.py timer file",
 "disable_past_time_output":	false,		"help":"true / false, output prices of the past",

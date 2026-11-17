@@ -284,10 +284,15 @@ HTTP-Server, gestartet mit `-httpd`. Bietet:
 - **zeroinput.conf-Tab** — Live-Bearbeitung aller hot-reloadbaren Schlüssel; Pfad-Schlüssel zeigen Neustart-Hinweis. Der `/api/conf`-Endpoint ist strukturunabhängig und bearbeitet das JSON direkt, die Blöcke `chargers` und `inverters` sind hier also als Rohwerte editierbar.
 - **chargers-Tab** — strukturierter Editor für MPPT-Lader und Temperatursensoren (eSmart3, Victron, Aggregator mit SER#-Tabelle, EPever, Renogy, Morningstar). Modbus-Typen zeigen ein `unit`-Feld (Slave-Adresse). Neustart nach dem Speichern erforderlich. PVp-Feld bei `type: temp` ausgeblendet. Pro Sensor wählbare Hitzeschutz-Markierung (nur einer gültig).
 - **inverters-Tab** — strukturierter Editor für Einspeise-Wechselrichter (Typ, Port, Stufen-Checkboxen, count, max/min-Leistung, ESS-Vorzeichen). Prüft beim Speichern auf Leistungslücken. Neustart erforderlich.
+- **alarms-Tab** — Temperaturalarme je Gerät (eSmart3: int\_hi/int\_lo/ext\_hi/ext\_lo; temp\_sensor: ext\_hi/ext\_lo). Gerätebezeichnungen nutzen den Namen aus `temp_display`, falls gesetzt. Die Karten sind beim Laden eingeklappt.
 - **VZ-Kanäle-Tab** — Tabelleneditor für Volkszähler-Kanalzuordnung
 - **timer.txt-Tab** — Texteditor für Entladeregeln; Hinweis wenn Timer in conf deaktiviert
+- **dirt-shift-Tab** — Editor für `dirt_shift.conf` (nur sichtbar, wenn `dirt_shift/dirt_shift.conf` vorhanden ist)
+- **dirt-shift-log-Tab** — die letzten 24 Stunden des dirt_shift-Logs, nur lesend (nur sichtbar, wenn in `dirt_shift.conf` ein `logfile` gesetzt ist); **previous run** / **next run** springen an den Anfang eines Laufs, **latest** ans Ende
 - **Restart-Tab** — Neustart der Dienste zeroinput und vzlogger per Knopf (je ein Button; setzt passende sudoers-Einträge voraus)
 - **Status-Tab** — Live-HTML-Statusseite (nur mit `-web`)
+
+Die Schaltflächen **A−** / **A+** in der Kopfzeile stellen die Schriftgröße der Ansichten status, timer.txt und dirt shift log ein (50–400 % in Schritten von 25 %); die Einstellung wird pro Browser gespeichert.
 
 ---
 

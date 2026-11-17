@@ -132,19 +132,38 @@ A running ramp is aborted if the meter step now points in the opposite direction
 
 ## Load predictor (`predictor.py`)
 
-Detects cyclic loads (washing machine, dishwasher, oven) using k-means clustering on estimated load history:
+The load predictor detects cyclic loads (washing machine, dishwasher, stove) and
+recurring short high-load peaks and prevents the export they would otherwise cause.
+It runs two mechanisms: k-means level stabilisation for cyclic loads and a
+peak/override mechanism for recurring short peaks. A peak counts as short as long
+as it does not exceed the length threshold; if it does, it is classified as a long
+load and excluded from the peak mechanism. The override is only armed by two real
+short peaks within the observation window, so a single long load does not trigger
+an override.
 
-- Identifies two stable load levels: **LOW** and **HIGH**
-- Once confirmed (≥ 4 phase transitions), applies a predictive offset to hold the inverter at LOW level regardless of current phase — the HIGH load draws its additional power directly from the grid
-- **Peak detection**: short but high repeated Ls_read **load surges** arm `ramp_override`, which holds the inverter at LOW level and ignores the surge entirely. The reason: these surges rise and fall faster than the inverter can ramp — by the time the inverter reaches the target, the load is already gone, producing significant export. It is better not to respond at all. A surge counts as short while it stays below `PEAK_SHORT_MAX_N` cycles above `MIN_PEAK_W`; beyond that it is reclassified as a long load and excluded from the surge mechanism. The override is armed only after two genuine short surges fall within `PEAK_WINDOW_N` cycles, so a single long load never triggers it.
-- `MIN_PEAK_W`, `PEAK_SHORT_MAX_N`, `PEAK_WINDOW_N` are module-level constants in `predictor.py`, hot-reloaded on file change via `reload_predictor_if_changed`
-- `min_spread_w` and `load_prediction` and `predictor_log` are conf keys, hot-reloadable from `zeroinput.conf` without predictor module reload
+It is an optional, exchangeable module. zeroinput only requires a `LoadPredictor`
+class with `update(Ls_read, last2_send)`, `reload_conf(conf)`, `status()` and the
+attributes `enabled`, `offset` and `ramp_override_by_predictor`. Own strategies can
+be implemented by replacing `predictor.py`, without changing zeroinput itself.
 
-The predictor design is intentionally open and modular: zeroinput only requires a `LoadPredictor` class with `update(Ls_read, last2_send)`, `reload_conf(conf)`, `status()`, and the attributes `enabled`, `offset`, and `ramp_override_by_predictor`. Custom prediction strategies can be implemented by replacing `predictor.py` without touching zeroinput itself.
+If `predictor.py` is present, zeroinput always instantiates a real `LoadPredictor`
+at startup — regardless of the initial value of `load_prediction` — and switches it
+on/off only via `reload_conf`. The stub object (no-op `update`/`reload_conf` with
+`enabled=False`) is only used if `predictor.py` is missing entirely
+(`ImportError`). `load_prediction` is therefore fully hot-switchable in both
+directions: switching on re-initialises the predictor's learning state
+(`reload_conf` calls `_init_state()` on the off→on transition), switching off takes
+effect immediately through the `enabled` check below.
 
-If `predictor.py` is present, zeroinput always instantiates a real `LoadPredictor` at startup — regardless of the initial `load_prediction` value — and toggles it on/off purely via `reload_conf`. The stub object (a no-op `update`/`reload_conf` with `enabled=False`) is only used when `predictor.py` is missing entirely (`ImportError`). This makes `load_prediction` fully hot-toggleable in both directions: switching it on re-initialises the predictor's learning state (`reload_conf` calls `_init_state()` on the off→on transition), and switching it off takes effect immediately via the `enabled` check below.
+zeroinput honours `ramp_override_by_predictor` only while `predictor.enabled` is
+true. This guards against a stale override flag left over from before
+`load_prediction` was switched off at runtime — without this `enabled` check such a
+flag would force `ramp_cnt` to 0 every cycle and no ramp could run.
 
-zeroinput only honours `ramp_override_by_predictor` while `predictor.enabled` is true. This guards against a stale override flag left over from before `load_prediction` was disabled at runtime — without the `enabled` check, such a flag would force `ramp_cnt` to 0 every cycle and prevent any ramp from running.
+The complete description — both mechanisms, the spread window, the cycle-based
+time model and all constants — is in
+**[predictor_spec.md](predictor_spec.md)**.
+
 
 ---
 
@@ -226,19 +245,12 @@ REC output deferred via `_drain_rec_msgs()` helper.
 
 ## Predictor
 
-`predictor_log: true/false` (conf, hot-reloadable) — controls `/tmp/predictor.log` and verbose column header output on startup. Default `true`.
+The predictor's configuration keys (`load_prediction`, `min_spread_w`,
+`predictor_log`) and its internal behaviour are fully documented in
+**[predictor_spec.md](predictor_spec.md)**.
 
-`min_spread_w` (conf, hot-reloadable) — minimum spread between LOW and HIGH k-means centroid for prediction to activate. Default `150` W. If the load spread is too small, prediction deactivates and zeroinput reverts to reactive control.
+---
 
-`_kmeans2` rejects unimodal distributions: both groups must contain ≥ 15% of history values, otherwise `None, None` returned. During learning (`transition_cnt < TRANSITIONS_MIN`) this resets the learned levels; once stable, learned levels are preserved to survive brief unimodal periods caused by good regulation.
-
-A `UNIMODAL_TOLERANCE = 5` counter requires consecutive bad k-means results before learning restarts — single fluctuations do not discard progress.
-
-`transition_cnt` is capped at `TRANSITIONS_MIN` — values above carry no meaning and would otherwise grow unbounded over days of operation.
-
-A single peak threshold: peaks `< LONG_PEAK_MIN` are short (count toward override activation), peaks `>= LONG_PEAK_MIN` are long (clear peak history, cancel override). There is no grey zone between the two.
-
-`MAX_HIST = 60` and `TRANSITIONS_MIN = 4` are module-level constants in `predictor.py`.
 ## Temperature alarms
 
 Configured in the `alarms` conf block (separate from `chargers`), keyed by device name. Applies to eSmart3, EPever, Renogy and Morningstar devices (internal + external sensor) and AGG `temp_sensor` devices (external only).
@@ -276,8 +288,12 @@ HTTP server started with `-httpd`. Provides:
 - **alarms tab** — per-device temperature alarms (eSmart3: int\_hi/int\_lo/ext\_hi/ext\_lo; temp\_sensor: ext\_hi/ext\_lo). Device labels use `temp_display` name when set. Cards collapsed on load.
 - **vz channels tab** — table editor for Volkszähler channel mapping
 - **timer.txt tab** — text editor for discharge rules; shows notice when timer is disabled in conf
+- **dirt shift tab** — editor for `dirt_shift.conf` (only visible when `dirt_shift/dirt_shift.conf` exists)
+- **dirt shift log tab** — the last 24 hours of the dirt_shift log, read-only (only visible when `logfile` is set in `dirt_shift.conf`); **previous run** / **next run** jump to the start of a run, **latest** to the end
 - **restart tab** — restarts the zeroinput and vzlogger services via button (one each; requires the matching sudoers entries). Shows a warning about the inverter output interruption.
 - **status tab** — live HTML status page (only with `-web`)
+
+The buttons **A−** / **A+** in the header set the text size of the status, timer.txt and dirt shift log views (50–400 % in steps of 25 %); the setting is stored per browser.
 
 ---
 
