@@ -172,9 +172,9 @@ Gedacht als Nebenausgabe für das Projekt [Ortsnetz-Auslastung](https://github.c
 
 ### Fehlerverhalten
 
-Fehlt der **Akkuenergieinhalt** (volkszähler-Lücke bei der Spannung), lässt sich die Batterie nicht steuern — sie wird freigegeben (Frei-Timer). Die **Wallbox-Steuerung läuft trotzdem weiter**: Ihre drei Pfade sind redundant, ein fehlender Wert lässt nur seinen eigenen Pfad entfallen (ohne Inhalt der Energie-Pfad, ohne Spannungsmessung der Spannungs-Pfad), die übrigen entscheiden normal. Nur wenn **alle** Wallbox-Pfade mangels Daten nicht entscheidbar sind, bleibt das Relais unverändert (kein Ein- oder Ausschalten). Ebenso bei fehlenden SMARD-Daten: Dort speist der Notmodus die Zonen, und der ganze Lauf inklusive Wallbox läuft normal.
+Fehlt der **Akkuenergieinhalt** (volkszähler-Lücke bei der Spannung), lässt sich die Batterie nicht steuern — sie wird freigegeben (Frei-Timer). Die **Wallbox-Steuerung läuft trotzdem weiter**: Ihre drei Pfade sind redundant, ein fehlender Wert lässt nur seinen eigenen Pfad entfallen (ohne Inhalt der Energie-Pfad, ohne Spannungsmessung der Spannungs-Pfad), die übrigen entscheiden normal. Nur wenn **alle** Wallbox-Pfade mangels Daten nicht entscheidbar sind, bleibt das Relais unverändert (kein Ein- oder Ausschalten). Ebenso bei fehlenden SMARD-Daten: Dort speist der Notmodus die Zonen, und der ganze Lauf inklusive Wallbox läuft normal. Ist der **volkszähler nicht erreichbar**, arbeitet `dirt_shift` mit den gecachten Verbrauchsmittelwerten und der gecachten PV-Kurve weiter; da dann auch der Akkuinhalt fehlt, wird die Batterie freigegeben, und die Wallbox läuft über den Sauberkeits-Pfad weiter. Jeder folgende Lauf versucht den Abruf erneut.
 
-Nur bei einem wirklich harten Fehler (volkszähler liefert keine vollständigen Tage für die Mittelung, oder weder SMARD noch das Wetter-Modell verfügbar) bricht `dirt_shift` ab, schreibt aber zuvor — sofern der Timer-Pfad bekannt ist und `disable_zeroinput_timer` auf `false` steht — eine „Alles-erlaubt"-Zeile mit dem aktuellen Datum, damit zeroinput nicht durch eine veraltete Begrenzung blockiert wird; das Wallbox-Relais bleibt dabei unangetastet:
+Nur bei einem wirklich harten Fehler (volkszähler liefert keine vollständigen Tage für die Mittelung, volkszähler nicht erreichbar und keine gecachten Mittelwerte, oder weder SMARD noch das Wetter-Modell verfügbar) bricht `dirt_shift` ab, schreibt aber zuvor — sofern der Timer-Pfad bekannt ist und `disable_zeroinput_timer` auf `false` steht — eine „Alles-erlaubt"-Zeile mit dem aktuellen Datum, damit zeroinput nicht durch eine veraltete Begrenzung blockiert wird; das Wallbox-Relais bleibt dabei unangetastet:
 
 ```
 2026-07-09 00:00:00 100 100 -1
@@ -193,6 +193,8 @@ Ist nicht einmal die `zeroinput.conf` lesbar (Timer-Pfad unbekannt), bleibt nur 
 **„cannot read zeroinput.conf".** Der Pfad in `zeroinput_conf` stimmt nicht. Er wird relativ zum Verzeichnis von `dirt_shift.py` aufgelöst.
 
 **„no complete days returned by volkszähler".** Der volkszähler hat für den abgefragten Zeitraum keine vollständigen Tage. Erst nach einigen Betriebstagen liefert die Mittelung sinnvolle Werte. Bis dahin greift der Frei-Timer-Fallback.
+
+**„volkszähler consumption query failed" / „keeping cached averages".** Der volkszähler ist nicht erreichbar oder antwortet nicht verwertbar. `dirt_shift` arbeitet mit den gecachten Werten weiter und gibt die Batterie frei. Prüfen, ob volkszähler läuft und `vz_host_port` stimmt. Steht statt dessen „volkszähler unreachable and no cached averages", gab es noch nie einen erfolgreichen Abruf; dann schreibt `dirt_shift` einen Freigabe-Timer und bricht ab.
 
 **„SMARD load forecast for ... unavailable — using profile from ...".** Kein Fehler: SMARD veröffentlicht Erzeugungs- und Verbrauchsprognose unabhängig, und die Verbrauchsprognose hinkt oft einen Tag hinterher. `dirt_shift` verwendet dann das Lastprofil des zuletzt verfügbaren Tages, damit die Zonen überhaupt gebildet werden können — die Erzeugungskurve, die den Tagesgang bestimmt, ist ja aktuell.
 

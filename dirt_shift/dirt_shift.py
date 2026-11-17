@@ -213,7 +213,10 @@ if verbose and html:
 # ── volkszähler queries ─────────────────────────────────────────────────────
 
 def get_average(n_days):
-	"""Hourly weighted average basic_load over n_days days (real home consumption Wh/h) from volkszähler."""
+	"""Hourly weighted average basic_load over n_days days (real home consumption Wh/h) from volkszähler.
+	Returns None if volkszähler cannot be reached or answers with unusable data
+	(the caller then keeps the cached averages); aborts via die() if it answers
+	but has no complete day."""
 	hours = {}
 	counted_days = 0
 	keys = ['Inverter', 'Import', 'Auto']
@@ -243,7 +246,12 @@ def get_average(n_days):
 
 		if verbose:
 			print(day, '\tbegin', begin, '\tend', end, '\t', end='')
-		jresp = get(url=url, timeout=VZ_TIMEOUT_S).json()
+		try:
+			jresp = get(url=url, timeout=VZ_TIMEOUT_S).json()
+			jresp['data'][0]['rows']
+		except Exception as e:
+			print('dirt_shift: volkszähler consumption query failed: %s' % e)
+			return None
 
 		# a complete day reports 26 rows: 24 hourly values + the average + the
 		# consumption summary row that volkszähler appends per channel.
@@ -286,7 +294,8 @@ def get_pv_curve(n_days):
 	own measured output, it automatically reflects the real roof geometry
 	(several sections with different orientation, seasonal shading) without any
 	panel configuration. Returns a 24-value list, or None if no complete day was
-	available (the caller then keeps the previously cached curve)."""
+	available or volkszähler could not be reached (the caller then keeps the
+	previously cached curve)."""
 	daily = []			# one 24-value list per complete day
 	if verbose: print('query volkszähler for %i day PV curve:' % n_days)
 
@@ -300,8 +309,12 @@ def get_pv_curve(n_days):
 
 		if verbose:
 			print(day, '\tbegin', begin, '\tend', end, '\t', end='')
-		jresp = get(url=url, timeout=VZ_TIMEOUT_S).json()
-		row = jresp['data'][0]
+		try:
+			row = get(url=url, timeout=VZ_TIMEOUT_S).json()['data'][0]
+			row['rows']
+		except Exception as e:
+			print('dirt_shift: volkszähler PV query failed: %s' % e)
+			return None
 
 		if row['rows'] == 26:						# only complete days (24 hours + average + consumption)
 			day_hours = [0.0] * 24
@@ -339,6 +352,18 @@ def read_average():
 			vz_in['timestamp'] = 1000000.123456
 	if avgnew or datetime.fromtimestamp(vz_in['timestamp']).strftime('%Y-%m-%d %H') != datetime.now().strftime('%Y-%m-%d %H'):
 		avg = get_average(conf['average_days'])
+		if avg is None:							# volkszähler unreachable: keep the cached averages, retry on the next run
+			if 'basic_load' not in vz_in:			# -avgnew skipped the cache read above
+				try:
+					with open(join(dirname(__file__), 'dirt_avg_cache.json'), 'r') as fi:
+						vz_in = json_load(fi)
+				except Exception:
+					pass
+			if 'basic_load' not in vz_in:
+				die('volkszähler unreachable and no cached averages', conf['timer.txt'])
+			print('dirt_shift: keeping cached averages from %s'
+			      % datetime.fromtimestamp(vz_in['timestamp']).strftime('%Y-%m-%d %H:%M'))
+			return vz_in
 		vz_in['basic_load'] = avg['basic_load']
 		vz_in['timestamp'] = datetime.now().timestamp()
 		with open(join(dirname(__file__), 'dirt_avg_cache.json'), 'w') as fo:
@@ -376,7 +401,7 @@ def read_pv_curve():
 			with open(join(dirname(__file__), 'dirt_pv_curve_cache.json'), 'w') as fo:
 				json_dump(vz_in, fo)
 		elif verbose:
-			print('PV curve refresh failed (no complete days) — keeping previous curve')
+			print('PV curve refresh failed (no complete days or volkszähler unreachable) — keeping previous curve')
 	elif verbose:
 		print('using cached PV curve from',
 		      datetime.fromtimestamp(last_ts).strftime('%Y-%m-%d %H:%M') if last_ts else 'never')

@@ -269,8 +269,9 @@ Missing data drops only the affected part wherever possible:
 | SMARD beyond one day | emergency mode |
 | radiation forecast | unscaled reference curve |
 | load forecast | profile of the most recent available day |
+| volkszähler unreachable | cached averages and PV curve; battery free, as the battery content is missing |
 
-Only if there are no complete days for the average, or neither SMARD nor weather is available, does `dirt_shift` abort. Beforehand it writes an "all-allowed" line dated today (`write_free_timer`), except with `disable_zeroinput_timer: true`; the wallbox relay is left untouched. If not even `zeroinput.conf` is readable, only the error message remains.
+Only if there are no complete days for the average, volkszähler is unreachable and no cached averages exist, or neither SMARD nor weather is available, does `dirt_shift` abort. Beforehand it writes an "all-allowed" line dated today (`write_free_timer`), except with `disable_zeroinput_timer: true`; the wallbox relay is left untouched. If not even `zeroinput.conf` is readable, only the error message remains.
 
 ---
 

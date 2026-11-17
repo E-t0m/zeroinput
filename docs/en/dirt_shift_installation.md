@@ -172,9 +172,9 @@ Intended as a side output for the [Ortsnetz-Auslastung](https://github.com/thoma
 
 ### Error behaviour
 
-If the **battery energy content** is missing (a volkszähler gap on the voltage), the battery cannot be steered and is freed (all-allowed timer). The **wallbox control still runs**: its three paths are redundant, a missing input drops only its own path (no content → the energy path, no voltage reading → the voltage path), the others decide as usual. Only if **all** wallbox paths are undecidable for lack of data is the relay left unchanged (no switching either way). Likewise for missing SMARD data: there the emergency mode feeds the zones and the whole run, wallbox included, proceeds normally.
+If the **battery energy content** is missing (a volkszähler gap on the voltage), the battery cannot be steered and is freed (all-allowed timer). The **wallbox control still runs**: its three paths are redundant, a missing input drops only its own path (no content → the energy path, no voltage reading → the voltage path), the others decide as usual. Only if **all** wallbox paths are undecidable for lack of data is the relay left unchanged (no switching either way). Likewise for missing SMARD data: there the emergency mode feeds the zones and the whole run, wallbox included, proceeds normally. If **volkszähler is unreachable**, `dirt_shift` continues with the cached consumption averages and the cached PV curve; as the battery content is then missing too, the battery is freed and the wallbox continues via the cleanliness path. Every following run retries the query.
 
-Only on a genuinely hard error (volkszähler returns no complete days for the average, or neither SMARD nor the weather model is available) does `dirt_shift` abort, but first — if the timer path is known and `disable_zeroinput_timer` is `false` — writes an "all-allowed" line dated with the current date, so zeroinput is not blocked by a stale limit; the wallbox relay is left untouched:
+Only on a genuinely hard error (volkszähler returns no complete days for the average, volkszähler unreachable and no cached averages, or neither SMARD nor the weather model is available) does `dirt_shift` abort, but first — if the timer path is known and `disable_zeroinput_timer` is `false` — writes an "all-allowed" line dated with the current date, so zeroinput is not blocked by a stale limit; the wallbox relay is left untouched:
 
 ```
 2026-07-09 00:00:00 100 100 -1
@@ -193,6 +193,8 @@ If not even `zeroinput.conf` is readable (timer path unknown), only the abort wi
 **"cannot read zeroinput.conf".** The path in `zeroinput_conf` is wrong. It is resolved relative to the directory of `dirt_shift.py`.
 
 **"no complete days returned by volkszähler".** The volkszähler has no complete days for the requested period. Only after a few days of operation does the average return sensible values. Until then the free-timer fallback applies.
+
+**"volkszähler consumption query failed" / "keeping cached averages".** volkszähler is unreachable or does not answer usefully. `dirt_shift` continues with the cached values and frees the battery. Check that volkszähler is running and that `vz_host_port` is correct. If it says "volkszähler unreachable and no cached averages" instead, there has never been a successful query; `dirt_shift` then writes an all-allowed timer and aborts.
 
 **"SMARD load forecast for ... unavailable — using profile from ...".** Not an error: SMARD publishes the generation and load forecasts independently, and the load forecast often lags by a day. `dirt_shift` then uses the load profile of the most recent available day so the zones can be computed at all — the generation curve, which shapes the daily pattern, is current.
 

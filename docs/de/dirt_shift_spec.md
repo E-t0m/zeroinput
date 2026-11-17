@@ -269,8 +269,9 @@ Fehlende Daten lassen so weit wie möglich nur den betroffenen Teil entfallen:
 | SMARD über einen Tag | Notmodus |
 | Strahlungsprognose | unskalierte Referenzkurve |
 | Verbrauchsprognose | Profil des letzten verfügbaren Tages |
+| volkszähler nicht erreichbar | gecachte Mittelwerte und PV-Kurve; da der Akkuinhalt fehlt, Batterie frei |
 
-Nur wenn für die Mittelung keine vollständigen Tage vorliegen oder weder SMARD noch Wetter verfügbar sind, bricht `dirt_shift` ab. Zuvor schreibt es eine „Alles-erlaubt"-Zeile mit aktuellem Datum (`write_free_timer`), außer bei `disable_zeroinput_timer: true`; das Wallbox-Relais bleibt unangetastet. Ist nicht einmal `zeroinput.conf` lesbar, bleibt nur die Fehlermeldung.
+Nur wenn für die Mittelung keine vollständigen Tage vorliegen, der volkszähler nicht erreichbar ist und keine gecachten Mittelwerte vorhanden sind, oder weder SMARD noch Wetter verfügbar sind, bricht `dirt_shift` ab. Zuvor schreibt es eine „Alles-erlaubt"-Zeile mit aktuellem Datum (`write_free_timer`), außer bei `disable_zeroinput_timer: true`; das Wallbox-Relais bleibt unangetastet. Ist nicht einmal `zeroinput.conf` lesbar, bleibt nur die Fehlermeldung.
 
 ---
 
