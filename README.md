@@ -1,5 +1,5 @@
 # zeroinput v2.3
-set power import to zero, using grid inverters and charge controllers
+Zero export (Nulleinspeisung) for PV and battery systems: local control of grid-tie inverters and MPPT chargers, no cloud.
 
 | English | Deutsch |
 |----------|---------|
