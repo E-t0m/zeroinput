@@ -4,7 +4,7 @@ zeroinput ist eine Nulleinspeisung für PV-Anlagen mit Akku. Ein Linux-Gerät li
 
 Dabei gilt eine feste Reihenfolge. **Zuerst** deckt die PV-Leistung den Verbrauch im Haus. Was **dann** übrig bleibt, lädt den Akku. Reicht die PV nicht, liefert der Akku den Rest. Die Zeitsteuerung kann davon abweichende Vorgaben machen.
 
-![Aufbau](https://github.com/user-attachments/assets/8d767329-15f9-4098-b4b4-a9e70d0d98c9)
+![Aufbau](https://github.com/user-attachments/assets/ee5862bb-375d-429d-96a0-52863d9d64b7)
 
 ## Der Gedanke hinter dem Namen
 

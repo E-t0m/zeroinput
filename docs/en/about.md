@@ -4,7 +4,7 @@ zeroinput is a zero export control for PV systems with a battery. A Linux device
 
 A fixed order applies. **First**, the PV power covers the consumption in the house. Whatever is left **after that** charges the battery. If the PV is not enough, the battery supplies the rest. The timer can set different rules.
 
-![Structure](https://github.com/user-attachments/assets/8d767329-15f9-4098-b4b4-a9e70d0d98c9)
+![Structure](https://github.com/user-attachments/assets/ee5862bb-375d-429d-96a0-52863d9d64b7)
 
 ## The idea behind the name
 
