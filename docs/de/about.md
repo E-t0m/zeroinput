@@ -134,7 +134,9 @@ Im Beispiel oben wurden aus 7,7 kWh PV-Erzeugung 7,3 kWh Einspeisung, das sind e
 
 Dieser Abschnitt ist eine Einschätzung und keine Rechtsberatung.
 
-Nach meinem Verständnis ist eine Anlage dieser Art in Deutschland beim Netzbetreiber und im Marktstammdatenregister anzumelden. Für den Soyosource GTN liegt nach meinem Kenntnisstand kein Zertifikat nach VDE-AR-N 4105 vor. Ohne dieses Zertifikat darf das Gerät in Deutschland nicht am Stromnetz betrieben werden.
+Nach meinem Verständnis ist eine Anlage dieser Art in Deutschland in jedem Fall anmeldepflichtig, beim Netzbetreiber und im Marktstammdatenregister. Das gilt unabhängig vom Wechselrichter.
+
+Am Stromnetz betrieben werden dürfen nur Wechselrichter mit einem Zertifikat nach VDE-AR-N 4105. Für den Victron MultiPlus-II liegt dieses [Zertifikat](https://www.victronenergy.com/upload/documents/Certificate-VDE-AR-N-4105-2018-11-EZE-MultiPlus-II-%28GX%29-24V-3k%2C-48V-3k-4k5-5k-6k5.pdf) vor, eingestellt auf den Netzcode für Deutschland. Für den Soyosource GTN ist mir kein Zertifikat bekannt. Ob er in Deutschland am Netz betrieben werden darf, ist daher unsicher.
 
 ## Weiter
 

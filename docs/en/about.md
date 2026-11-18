@@ -134,7 +134,9 @@ In the example above, 7.7 kWh of PV generation became 7.3 kWh of feed-in, about 
 
 This section is an assessment, not legal advice.
 
-As I understand it, a system of this kind must be registered in Germany with the grid operator and in the Marktstammdatenregister. To my knowledge there is no certificate according to VDE-AR-N 4105 for the Soyosource GTN. Without this certificate the device must not be operated on the grid in Germany. Other countries have their own rules.
+As I understand it, a system of this kind must always be registered in Germany, with the grid operator and in the Marktstammdatenregister. This applies regardless of the inverter.
+
+Only inverters with a certificate according to VDE-AR-N 4105 may be operated on the grid. The Victron MultiPlus-II has this [certificate](https://www.victronenergy.com/upload/documents/Certificate-VDE-AR-N-4105-2018-11-EZE-MultiPlus-II-%28GX%29-24V-3k%2C-48V-3k-4k5-5k-6k5.pdf), set to the grid code for Germany. I know of no certificate for the Soyosource GTN. Whether it may be operated on the grid in Germany is therefore uncertain. Other countries have their own rules.
 
 ## Further reading
 
