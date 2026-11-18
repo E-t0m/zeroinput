@@ -77,7 +77,7 @@ Weitere Ansichten zeigt die Seite [Screenshots](../screenshots.md).
 
 Beide Programme planen, wann der Akku entladen wird, und schreiben dafür die Timer-Datei. Es läuft immer nur eines von beiden.
 
-**dirt_shift** verschiebt die Entladung in die Stunden, in denen der Netzstrom am meisten CO₂ verursacht. Es nutzt dafür die Prognosen von SMARD und Open-Meteo, den eigenen Verbrauch der letzten Tage und den rekonstruierten Akkuinhalt. Auf Wunsch schaltet es eine Wallbox in die saubersten Stunden. Mehr dazu in der [Kurzübersicht](dirt_shift_about.md), der [Installationsanleitung](dirt_shift_installation.md) und der [Spezifikation](dirt_shift_spec.md).
+**dirt_shift** verschiebt die Entladung in die Stunden, in denen der Netzstrom am meisten CO₂ verursacht. Es nutzt dafür die Netzprognose der Energy-Charts-Stromampel (ersatzweise SMARD), die Wetterprognose von Open-Meteo, den eigenen Verbrauch der letzten Tage und den rekonstruierten Akkuinhalt. Auf Wunsch schaltet es eine Wallbox in die saubersten Stunden. Mehr dazu in der [Kurzübersicht](dirt_shift_about.md), der [Installationsanleitung](dirt_shift_installation.md) und der [Spezifikation](dirt_shift_spec.md).
 
 ![dirt_shift an einem Novembertag](../screenshots/dirt_shift_day.png)
 

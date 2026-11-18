@@ -1,5 +1,5 @@
 # dirt_shift – Functional Specification
-*v2.0*
+*v2.1*
 
 This specification describes **what** `dirt_shift` does; it applies to the version the script carries as `VERSION`. The detailed rationale for individual rules lives in the docstring of the function named in each case, in `dirt_shift.py`.
 
@@ -18,7 +18,8 @@ This specification describes **what** `dirt_shift` does; it applies to the versi
   - **Energy content** — reconstructed from PV and inverter energy since the last empty state, with `PV_to_bat_efficiency` and `bat_to_AC_efficiency` (`get_vz_bat_cap`, fresh every run).
   - **PV generation** — basis of the PV reference curve; the mean over the last 15 minutes (`recent_pv_power`) feeds the energy budget and the wallbox voltage condition.
   - **Battery voltage** (`Vbat`) — empty anchor of the energy content and the wallbox voltage condition.
-- **SMARD** (Bundesnetzagentur) — day-ahead forecasts of wind+solar generation and consumption, basis of the zones.
+- **Energy-Charts power signal** ("Stromampel", Fraunhofer ISE, licence CC BY 4.0) — forecast share of all renewables in the load, in quarter hours; first source of the zones (`get_ampel_zones`).
+- **SMARD** (Bundesnetzagentur) — day-ahead forecasts of wind+solar generation and consumption; second source of the zones (`get_smard_zones`).
 - **Open-Meteo** — radiation and wind forecast (`shortwave_radiation`, `wind_speed_100m`) in one call.
 
 **Empty anchor.** Only a **sustained** empty state counts as the integration's zero point: voltage ≤ 3.0625 V/cell (49 V at 16 cells, scaled by `cell_count`) for at least `EMPTY_MIN_DURATION_S` (120 s); a brief dip under load sets no anchor (`_empty_anchor`). Voltage samples below `IMPLAUSIBLE_V_PER_CELL` (2.5 V/cell, 40 V at 16S) are physically impossible and discarded on read. Both channels are processed sign-independently (magnitude, fixed direction).
@@ -29,7 +30,9 @@ This specification describes **what** `dirt_shift` does; it applies to the versi
 
 ## CO₂ intensity profile
 
-From the SMARD forecasts `dirt_shift` computes the renewables/load ratio per hour and from it the **dirtiness** `dirt% = (1 − ratio) × 100` — negative when renewables exceed load.
+From the grid forecast `dirt_shift` computes the renewables/load ratio per hour and from it the **dirtiness** `dirt% = (1 − ratio) × 100` — negative when renewables exceed load.
+
+**Source** (`get_grid_zones`): first the power signal, whose quarter-hour values are averaged per hour (`_ampel_days`); if it reports `substitute: true` (estimated from historical data), it counts as unavailable. Otherwise SMARD. A run uses exactly **one** source for the whole window: the power signal counts all renewables, SMARD only wind and solar, so the values sit on different scales and must not be mixed in the median cut. A day counts as covered from `GRID_MIN_HOURS` (20) hours. The source in use is named in the cache lines and above the debug table.
 
 Today and tomorrow are assembled into a **rolling 24-hour window** starting at the current hour. The median is taken **once** over that window (`_cut_zones`):
 
@@ -40,10 +43,10 @@ A median always splits roughly in half, even on uniformly clean or dirty days. T
 
 **Gap filling:**
 - If a day's load forecast is missing, the profile of the most recent available day is used, up to seven days back (`_smard_load_series`); if the generation forecast is missing, the day is dropped.
-- Hours of tomorrow not yet published use today's values.
-- Fetched hourly (`dirt_smard_cache.json`); a failed attempt is only retried the next hour.
+- Hours of tomorrow not yet published use today's values from the same source; tomorrow is not filled in from the other source. Both sources usually publish the next day from about 19:00.
+- Fetched hourly (`dirt_grid_cache.json`, with the source); a failed attempt is only retried the next hour.
 
-**Outage.** The cache may bridge exactly **one day**, since data fetched yesterday holds today's day-ahead forecast. Beyond that an **emergency mode** takes over (`emergency_zones`): a relative dirtiness curve is modelled from solar and wind forecasts and a fixed, normalised **nationwide** grid-load profile, then cut as usual. It is coarse but accounts for wind. The emergency mode is clearly flagged in every output, never cached and **not** exported to volkszähler. If the weather cannot be fetched either, `dirt_shift` aborts (see Error behaviour).
+**Outage.** If both sources deliver nothing, the cache may bridge exactly **one day**, but only if the data fetched yesterday actually holds a forecast for today (`_substitute_day`); yesterday's own values are never passed off as today. Beyond that an **emergency mode** takes over (`emergency_zones`): a relative dirtiness curve is modelled from solar and wind forecasts and a fixed, normalised **nationwide** grid-load profile, then cut as usual. It is coarse but accounts for wind. The emergency mode is clearly flagged in every output, never cached and **not** exported to volkszähler. If the weather cannot be fetched either, `dirt_shift` aborts (see Error behaviour).
 
 ---
 
@@ -138,7 +141,7 @@ divert        = min(divertable[now], usable × divertable[now] / Σ divertable)
 ac_%          = max(PRECHARGE_AC_FLOOR, round(100 × (exp_PV[now] − divert) / exp_PV[now]))
 ```
 
-**Real data only:** the precharge window runs from the current hour to the last hour with real SMARD data. It ends at the first hour that is only a substitute (today's value for a tomorrow not yet published) or has no value. Rank, the red block's mean and demand, and the distribution use only hours inside that window; if the red block lies wholly beyond it, `ac_%` stays at 100. In emergency mode precharge is off. Discharge control keeps using the full window.
+**Real data only:** the precharge window runs from the current hour to the last hour with real grid data. It ends at the first hour that is only a substitute (today's value for a tomorrow not yet published) or has no value. Rank, the red block's mean and demand, and the distribution use only hours inside that window; if the red block lies wholly beyond it, `ac_%` stays at 100. In emergency mode precharge is off. Discharge control keeps using the full window.
 
 `PRECHARGE_AC_FLOOR` (20) keeps zeroinput from rejecting the line as invalid. Precharge typically engages on days with a clean grid but little PV surplus of one's own, not on sunny days. It does not affect the wallbox.
 
@@ -219,7 +222,7 @@ If a run caps, stops or throttles, an "all-allowed" line (`100 100 -1`) follows 
 
 ## Exporting grid dirtiness
 
-If `vz_dirtiness_uuid` is set, every run writes the current `dirt%` value to that volkszähler channel via HTTP POST; on the first run of an hour it also writes the previous hour's value one second before the hour boundary, so the curve forms a clean step (`write_dirtiness_to_vz`). Nothing is exported in emergency mode. A failure is only reported with `-v`.
+If `vz_dirtiness_uuid` is set, every run writes the current `dirt%` value to that volkszähler channel via HTTP POST; on the first run of an hour it also writes the previous hour's value one second before the hour boundary, so the curve forms a clean step (`write_dirtiness_to_vz`). The value follows the scale of the source in use: with the power signal it sits lower than with SMARD; when the source changes, the step to the previous hour is skipped. A jump in the curve without a matching change in the weather therefore marks a source change; the `-v` output and the logfile name the source in use. Nothing is exported in emergency mode. A failure is only reported with `-v`.
 
 ---
 
@@ -237,9 +240,9 @@ Once per calendar day, `write_daily_pv_forecast` writes next to `dirt_shift.py` 
 
 ## Output: -v and -debug
 
-The first line gives the version (`dirt_shift 2.0`).
+The first line gives the version (`dirt_shift 2.1`).
 
-**Cache lines** give the fetch time and the reach of the data, e.g. `using cached SMARD zones from 2026-09-10 20:00, data until 2026-09-11 19:00`.
+**Cache lines** give the fetch time and the reach of the data, e.g. `using cached Energy-Charts zones from 2026-11-18 06:00, data until 2026-11-18 23:00`, naming the source in use (`Energy-Charts` or `SMARD`).
 
 **Mode line:**
 
@@ -249,7 +252,7 @@ content ... Wh (SoC%)   reserve(...%) ... Wh [window|upcoming: .../...-...pv] ->
 
 The bracket names the binding estimate, both raw values and the subtracted surplus. Suffixes such as `(comfortable)`, `[red block +N dirt]` or `[stop would overflow ...]` explain the mode.
 
-**Debug table** (`_hourly_debug_table`): 24 rows in chronological order from the current hour, across midnight.
+**Debug table** (`_hourly_debug_table`): a header line `dirt% source: ...` naming the source (`Energy-Charts`, `SMARD`, or `model` in emergency mode), then 24 rows in chronological order from the current hour, across midnight.
 
 - `chg`: `L` charging hour (`exp_PV > basic_load`), `D` discharging hour; `!D` = dirtiest hour, `!L` = cleanest charging hour (informational only).
 - `balance` = `exp_PV − basic_load`.
@@ -266,12 +269,13 @@ Missing data drops only the affected part wherever possible:
 | Missing | Consequence |
 |---|---|
 | battery content | battery free, wallbox still steered via the other paths |
-| SMARD beyond one day | emergency mode |
+| power signal | SMARD |
+| power signal and SMARD | yesterday's cache if it holds a forecast for today, otherwise emergency mode |
 | radiation forecast | unscaled reference curve |
-| load forecast | profile of the most recent available day |
+| SMARD load forecast | profile of the most recent available day |
 | volkszähler unreachable | cached averages and PV curve; battery free, as the battery content is missing |
 
-Only if there are no complete days for the average, volkszähler is unreachable and no cached averages exist, or neither SMARD nor weather is available, does `dirt_shift` abort. Beforehand it writes an "all-allowed" line dated today (`write_free_timer`), except with `disable_zeroinput_timer: true`; the wallbox relay is left untouched. If not even `zeroinput.conf` is readable, only the error message remains.
+Only if there are no complete days for the average, volkszähler is unreachable and no cached averages exist, or neither grid data nor weather is available, does `dirt_shift` abort. Beforehand it writes an "all-allowed" line dated today (`write_free_timer`), except with `disable_zeroinput_timer: true`; the wallbox relay is left untouched. If not even `zeroinput.conf` is readable, only the error message remains.
 
 ---
 

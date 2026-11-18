@@ -1,5 +1,5 @@
 # dirt_shift — Kurzübersicht
-*v2.0*
+*v2.1*
 
 ## Zweck
 
@@ -20,10 +20,11 @@ Bei jedem Lauf werden zusammengeführt: der **Hausverbrauch** (7-Tage-Mittel aus
 volkszähler), der aktuelle **Akkuinhalt** (aus Lade-/Entladeenergie seit dem letzten
 anhaltenden Leerzustand rekonstruiert, gegen kurze Spannungsausreißer und Sensorfehler
 abgesichert), die **PV-Prognose** (empirische Anlagenkurve, skaliert mit der
-Strahlungsvorhersage von Open-Meteo) und die **Netz-CO₂-Intensität** (Day-Ahead-Prognose von
-SMARD für erneuerbare Erzeugung und Last). Fehlende Daten werden mehrstufig abgefedert: Fällt
-die Verbrauchsprognose aus, dient das Profil des letzten verfügbaren Tages als Ersatz; fällt
-SMARD aus, überbrückt ein Cache einen Tag. Reicht auch das nicht, modelliert ein **Notmodus**
+Strahlungsvorhersage von Open-Meteo) und die **Netz-CO₂-Intensität** (Anteil der Erneuerbaren
+an der Last aus der Stromampel von Energy-Charts, ersatzweise die Day-Ahead-Prognose von SMARD).
+Fehlende Daten werden mehrstufig abgefedert: Fällt die Stromampel aus, springt SMARD ein; fehlt
+dort die Verbrauchsprognose, dient das Profil des letzten verfügbaren Tages als Ersatz; fallen
+beide Quellen aus, überbrückt ein Cache einen Tag, sofern er eine Prognose für heute enthält. Reicht auch das nicht, modelliert ein **Notmodus**
 aus Solar- und Windprognose (Open-Meteo) sowie einem festen bundesweiten Lastprofil einen
 relativen Dreckigkeitsverlauf — deutlich gekennzeichnet, nie mit echten Daten verwechselt. Erst
 wenn selbst das Wetter nicht abrufbar ist, hinterlässt `dirt_shift` einen „Alles-erlaubt"-Timer,
@@ -89,7 +90,7 @@ werden; das Haus bezieht in dieser sauberen Stunde aus dem Netz, damit später m
 dreckigen Stunden bereitsteht. Das kostet den Rundlaufverlust und lohnt nur, solange der Akku
 nicht ohnehin voll wird — also eher an windigen, trüben Tagen als an Sonnentagen. Die Stellschraube
 `round_trip_margin` legt fest, wie deutlich der CO₂-Gewinn sein muss: nahe 1 so sauber wie
-möglich, größer sparsamer. Precharge rechnet nur mit echten SMARD-Daten und ist im Notmodus aus. Die Wechselrichter-Durchleitung wird nie auf 0 gedrosselt, damit
+möglich, größer sparsamer. Precharge rechnet nur mit echten Netzdaten und ist im Notmodus aus. Die Wechselrichter-Durchleitung wird nie auf 0 gedrosselt, damit
 zeroinput die Timer-Zeile in jedem Fall als gültig erkennt.
 
 ## Betrieb

@@ -1,5 +1,5 @@
 # dirt_shift — Overview
-*v2.0*
+*v2.1*
 
 ## Purpose
 
@@ -21,9 +21,11 @@ Every run brings together: the **house load** (7-day average from volkszähler),
 **battery content** (reconstructed from charge/discharge energy since the last sustained empty
 state, hardened against brief voltage outliers and sensor faults), the **PV forecast**
 (empirical system curve, scaled by Open-Meteo's radiation forecast), and the **grid CO₂
-intensity** (SMARD's day-ahead forecast for renewable generation and load). Missing data is
-cushioned in stages: if the load forecast fails, the most recent available day's profile
-substitutes for it; if SMARD fails, a cache bridges one day. If even that is not enough, an
+intensity** (the renewable share of load from the Energy-Charts power signal, with SMARD's
+day-ahead forecast as the fallback). Missing data is cushioned in stages: if the power signal
+fails, SMARD steps in; if SMARD's load forecast is missing, the most recent available day's
+profile substitutes for it; if both sources fail, a cache bridges one day, provided it holds a
+forecast for today. If even that is not enough, an
 **emergency mode** models a relative dirtiness curve from solar and wind forecasts (Open-Meteo)
 together with a fixed nationwide load profile — clearly flagged, never mistaken for real data.
 Only when even the weather cannot be fetched does `dirt_shift` leave an "all-allowed" timer
@@ -88,7 +90,7 @@ timer is disabled.
 the house then imports from the grid during that clean hour, so more charge is available for the dirty
 hours later. That costs the round-trip loss and only pays off while the battery would not fill
 up anyway — on windy, dull days rather than sunny ones. The `round_trip_margin` setting decides
-how clear the CO₂ gain must be: close to 1 as clean as possible, larger more economical. Precharge uses real SMARD data only and is off in
+how clear the CO₂ gain must be: close to 1 as clean as possible, larger more economical. Precharge uses real grid data only and is off in
 emergency mode. Inverter pass-through is never throttled all the way to 0, so zeroinput always recognises the timer line
 as valid.
 

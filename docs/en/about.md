@@ -77,7 +77,7 @@ More views are on the [screenshots](../screenshots.md) page.
 
 Both programs plan when the battery is discharged and write the timer file for it. Only one of them runs at a time.
 
-**dirt_shift** shifts the discharge into the hours in which grid power causes the most CO₂. It uses the forecasts of SMARD and Open-Meteo, the own consumption of the last days and the reconstructed battery content. Optionally it switches a wallbox into the cleanest hours. More in the [overview](dirt_shift_about.md), the [installation guide](dirt_shift_installation.md) and the [specification](dirt_shift_spec.md).
+**dirt_shift** shifts the discharge into the hours in which grid power causes the most CO₂. It uses the grid forecast of the Energy-Charts power signal (SMARD as fallback), the weather forecast of Open-Meteo, the own consumption of the last days and the reconstructed battery content. Optionally it switches a wallbox into the cleanest hours. More in the [overview](dirt_shift_about.md), the [installation guide](dirt_shift_installation.md) and the [specification](dirt_shift_spec.md).
 
 ![dirt_shift on a November day](../screenshots/dirt_shift_day.png)
 

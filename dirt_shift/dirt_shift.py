@@ -17,18 +17,19 @@
 # of energy available and required overnight.
 #
 # This is a standalone tool. It queries volkszähler for basic_load/PV averages
-# and battery content, derives the hourly CO2-intensity profile from SMARD
-# day-ahead grid data, and writes the same timer.txt interface zeroinput reads
+# and battery content, derives the hourly CO2-intensity profile from day-ahead
+# grid data (Energy-Charts 'Stromampel', else SMARD), and writes the same timer.txt interface zeroinput reads
 # for discharge control. Optionally it also switches an EV wallbox directly
 # (Tasmota relay), independently of the timer.
 #
 # Concept (see comments at each step):
-#   1. intensity profile: SMARD's forecasted wind+solar generation and load
-#      give an hourly renewables/load ratio; the rolling 24-hour window from
+#   1. intensity profile: the forecast renewable share of load (Energy-
+#      Charts; SMARD's wind+solar generation and load if that fails) gives
+#      an hourly renewables/load ratio; the rolling 24-hour window from
 #      now is split once at its median into two zones (see _cut_zones):
 #        red   (dirtier half of the window)
 #        green (cleaner half of the window)
-#      If the SMARD fetch fails, cached data substitutes for one more day;
+#      If both sources fail, cached data substitutes for one more day;
 #      beyond that zones are modelled from the weather forecast (see
 #      emergency_zones). Only if that fails too does dirt_shift abort,
 #      leaving an all-allowed timer.
@@ -59,12 +60,12 @@ from requests import get, post
 from sys import argv as sys_argv
 import sys
 
-VERSION = '2.0'	# shown by -h and as the first -v line, so every log records which release ran; the specs and guides carry the same number
+VERSION = '2.1'	# shown by -h and as the first -v line, so every log records which release ran; the specs and guides carry the same number
 
 if '-h' in sys_argv or '--help' in sys_argv:
 	print('dirt_shift %s' % VERSION)
 	print(' -v\t\tverbose console output\n', '-html\t\thtml header/footer\n',
-	      '-debug\t\tmore output\n', '-avgnew\t\tforce a fresh 7-day average, PV curve, radiation forecast and SMARD query')
+	      '-debug\t\tmore output\n', '-avgnew\t\tforce a fresh 7-day average, PV curve, radiation forecast and grid data query')
 	exit(0)
 
 PV_CURVE_DAYS       = 14	# days of history for the PV reference curve (see get_pv_curve); independent of average_days
@@ -72,6 +73,9 @@ PV_CURVE_PERCENTILE = 95	# percentile of the daily hourly PV values used as the 
 PV_CURVE_REFRESH_HOUR = 4	# local hour from which the once-daily curve refresh may run (quiet, pre-sunrise; no same-day PV data yet to compete with)
 CLEAR_SKY_A          = 1098.0	# Haurwitz (1945) clear-sky GHI model coefficient, W/m^2
 CLEAR_SKY_B          = 0.059	# Haurwitz clear-sky GHI model exponent coefficient
+AMPEL_URL = 'https://api.energy-charts.info/signal?country=de'	# Energy-Charts 'Stromampel' (Fraunhofer ISE, CC BY 4.0): renewable share of load in percent, 15-minute steps, from today's midnight until the forecast ends — the primary grid source (see get_grid_zones)
+AMPEL_TIMEOUT_S = 15	# HTTP timeout for the Energy-Charts request
+GRID_MIN_HOURS = 20	# a calendar day counts as covered only with at least this many hours of data, from either source — fewer leave the median cut too little to split
 SMARD_REGION        = 'DE'		# SMARD region code (see the SMARD API's region parameter)
 SMARD_FILTER_WIND_SOLAR = 5097	# 'Prognostizierte Erzeugung: Wind und Photovoltaik' (day-ahead, combined)
 SMARD_FILTER_LOAD       = 411	# 'Prognostizierter Verbrauch' (day-ahead) — less firmly confirmed than the generation filter, but the fallback below covers a wrong/broken value
@@ -91,7 +95,7 @@ EMPTY_MIN_DURATION_S = 120	# how long battery voltage must STAY at/below the emp
 IMPLAUSIBLE_V_PER_CELL = 2.5	# any battery voltage below this per cell (2.5 V = 40 V at 16S, the LiFePO4 discharge cut-off where every BMS disconnects) cannot be a real state — it is a sensor fault, a dropped connection, or a read error. Such samples are discarded on read, so they can neither be mistaken for an empty-battery anchor (even a sustained one, which the duration test alone would accept) nor pull latest_voltage down
 NEG_CONTENT_WARN_FRACTION = 0.05	# fraction of battery_capacity_wh below zero at which a negative reconstructed content raises a warning. A content below empty is physically impossible, so a clear breach means more discharge was counted than charge since the last empty state — an inverter logging demand it did not deliver (tripped RCD, blown fuse, failed unit), or an anchor too many days back with accumulated efficiency drift. Small negatives just above zero are normal integration noise right after an empty state and must not cry wolf, hence a fraction of capacity rather than a raw 0
 
-# ── emergency zones (SMARD unavailable beyond the one-day cache) ──────────────
+# ── emergency zones (no grid source available beyond the one-day cache) ──────
 # When real grid data cannot be had at all, zones are MODELLED from weather
 # instead of left to the free timer: renewables = solar (the radiation forecast
 # already fetched) + wind (fetched here), load = a fixed normalised profile of
@@ -505,7 +509,7 @@ def read_radiation_forecast():
 		except Exception:
 			pass
 
-	last_ts = vz_in.get('attempt') or vz_in.get('timestamp')	# see read_smard_zones: counted from the last attempt so a failure is retried next hour, not next run
+	last_ts = vz_in.get('attempt') or vz_in.get('timestamp')	# see read_grid_zones: counted from the last attempt so a failure is retried next hour, not next run
 	needs_refresh = (avgnew or last_ts is None or
 	                  datetime.fromtimestamp(last_ts).strftime('%Y-%m-%d %H') != datetime.now().strftime('%Y-%m-%d %H'))
 
@@ -728,7 +732,7 @@ def _smard_load_series(date):
 	for back in range(SMARD_LOAD_FALLBACK_DAYS + 1):
 		d = date - timedelta(days=back)
 		series = _smard_series(SMARD_FILTER_LOAD, d)
-		if len(series) >= 20:
+		if len(series) >= GRID_MIN_HOURS:
 			return series, d
 	return {}, None
 
@@ -745,7 +749,7 @@ def _smard_zones_for_date(date):
 	_smard_load_series) rather than sinking the whole date.
 
 	No classification happens here: the red/green median cut is taken once
-	over the ASSEMBLED rolling 24 hours instead (see read_smard_zones).
+	over the ASSEMBLED rolling 24 hours instead (see read_grid_zones).
 	Cutting per calendar day would make 'red' mean 'dirty for that day', which
 	is not comparable across the midnight boundary the rolling window crosses
 	every evening — a clean day's own median can classify an hour as green
@@ -754,12 +758,12 @@ def _smard_zones_for_date(date):
 	serve."""
 	try:
 		renewable = _smard_series(SMARD_FILTER_WIND_SOLAR, date)
-		if len(renewable) < 20:							# no point hunting for a load profile this date cannot use
+		if len(renewable) < GRID_MIN_HOURS:				# no point hunting for a load profile this date cannot use
 			raise ValueError('incomplete day (%i/24 generation hours)' % len(renewable))
 		load, load_date = _smard_load_series(date)
 
 		hours = [h for h in range(24) if h in load and h in renewable]
-		if len(hours) < 20:								# too few hours for a meaningful split
+		if len(hours) < GRID_MIN_HOURS:					# too few hours for a meaningful split
 			raise ValueError('incomplete day (%i/24 hours)' % len(hours))
 		if verbose and load_date != date:				# reported only once the day is actually usable
 			print('SMARD load forecast for %s unavailable — using profile from %s' % (date, load_date))
@@ -785,6 +789,91 @@ def get_smard_zones():
 		return None, None
 	tomorrow = _smard_zones_for_date(today_local + timedelta(days=1))
 	return today, tomorrow
+
+
+def _ampel_days(unix_seconds, share, today):
+	"""Turn the Energy-Charts signal arrays into per-day hourly ratios, the
+	same shape the SMARD path produces: returns (today, tomorrow), each
+	{'ratio': 24-value list (None where not covered)} or None if that date has
+	fewer than GRID_MIN_HOURS covered hours. 'today' is a date. Each hour is
+	the mean of its quarter-hour shares; share is the renewable share of load
+	in percent, so ratio = share / 100 (renewables / load, like SMARD's).
+
+	The scale differs from SMARD's: the share counts every renewable source
+	(biomass and hydro too), SMARD only wind and solar. Both are used only
+	one at a time for the whole window (see get_grid_zones) — never mixed."""
+	acc = {}
+	for t, v in zip(unix_seconds, share):
+		if v is None:
+			continue
+		tl = datetime.fromtimestamp(t)
+		acc.setdefault((tl.date(), tl.hour), []).append(float(v))
+	days = []
+	for d in (today, today + timedelta(days=1)):
+		ratio = [None] * 24
+		for h in range(24):
+			vals = acc.get((d, h))
+			if vals:
+				ratio[h] = sum(vals) / len(vals) / 100.0
+		covered = sum(1 for r in ratio if r is not None)
+		days.append({'ratio': ratio} if covered >= GRID_MIN_HOURS else None)
+	return days[0], days[1]
+
+
+def get_ampel_zones():
+	"""Today's and tomorrow's ratio from the Energy-Charts 'Stromampel'
+	(AMPEL_URL). Returns (today, tomorrow) like get_smard_zones; (None, None)
+	if the request fails, today is not covered, or the response is flagged
+	'substitute'. That flag is one value for the whole response: Energy-Charts
+	then estimates missing data from history without saying which hours, so
+	the whole response is treated as unavailable rather than letting an
+	estimate pass as a forecast. Tomorrow is typically published from about
+	19:00; before that it is simply None."""
+	try:
+		resp = get(url=AMPEL_URL, timeout=AMPEL_TIMEOUT_S)
+		resp.raise_for_status()
+		j = resp.json()
+		if j.get('substitute'):
+			if verbose: print('Energy-Charts signal is a substitute (estimated from history) — not used')
+			return None, None
+		today, tomorrow = _ampel_days(j['unix_seconds'], j['share'], datetime.now().date())
+		if today is None:
+			if verbose: print('Energy-Charts signal does not cover today')
+			return None, None
+		if debug: print('Energy-Charts ratio by hour (today):', [None if r is None else round(r, 2) for r in today['ratio']])
+		return today, tomorrow
+	except Exception as e:
+		if verbose: print('Energy-Charts signal fetch failed:', e)
+		return None, None
+
+
+def get_grid_zones():
+	"""The grid-data source chain, tried in order: the Energy-Charts signal
+	(get_ampel_zones), then SMARD (get_smard_zones). Returns (today, tomorrow,
+	source) from the FIRST source that covers today, or (None, None, None).
+	Both halves always come from the same source: the two scales differ (the
+	signal counts all renewables, SMARD wind and solar only), so a window
+	stitched from both would compare unlike values in its median cut. A
+	tomorrow the chosen source has not published yet stays None — it is not
+	borrowed from the other source."""
+	today, tomorrow = get_ampel_zones()
+	if today is not None:
+		return today, tomorrow, 'Energy-Charts'
+	today, tomorrow = get_smard_zones()
+	if today is not None:
+		return today, tomorrow, 'SMARD'
+	return None, None, None
+
+
+def _substitute_day(cache):
+	"""Data for today from a cache fetched YESTERDAY, or None. Yesterday's
+	'tomorrow' half was the day-ahead forecast for what is now today, so it
+	may stand in for one day. If that half is missing — the source had not
+	published it by the last successful fetch — the cache holds nothing for
+	today: yesterday's own 'today' half is a different day's weather and is
+	never used in its place (it would pass for real data, since no hour of it
+	is marked as a substitute)."""
+	return cache.get('tomorrow')
 
 
 def _median(values):
@@ -828,8 +917,9 @@ def _cut_zones(ratio):
 	return ['green' if (r is not None and r >= median) else 'red' for r in ratio]
 
 
-def read_smard_zones():
-	"""Rolling 24-hour SMARD zones/ratio starting at the current hour: the
+def read_grid_zones():
+	"""Rolling 24-hour grid zones/ratio starting at the current hour, from the
+	source chain of get_grid_zones (Energy-Charts signal, else SMARD): the
 	ratio of each hour comes from the calendar day that hour actually falls
 	on — from now until midnight today's, after midnight tomorrow's — the
 	same rolling principle as read_radiation_forecast. The red/green cut is
@@ -837,17 +927,19 @@ def read_smard_zones():
 	calendar day, so 'red' means dirty relative to the 24 hours actually
 	being decided about rather than relative to whichever day an hour
 	happens to belong to. Built fresh on every call from the cached raw
-	today/tomorrow ratio dicts (see get_smard_zones), which are refetched
-	together once per hour in their own cache file. An hour missing from
+	today/tomorrow ratio dicts (see get_grid_zones), which are refetched
+	together once per hour in their own cache file, along with the source
+	they came from ('source' in the returned dict). An hour missing from
 	tomorrow (day-ahead data not yet published, or entirely absent) uses
 	today's ratio for that same hour — that hour is then really still
 	today's figure standing in for tomorrow, not tomorrow's own;
 	the returned dict's 'stale' key holds the set of such hours (see
-	_hourly_debug_table, which marks them with '.'). SMARD is a prerequisite:
-	if the fetch fails, the cached data may substitute for exactly one more
-	day (the cache carries fetch_date; data fetched yesterday still passes —
-	its 'tomorrow' half was the day-ahead forecast for what is now today).
-	Anything older, or no cache at all, returns None — the caller then falls
+	_hourly_debug_table, which marks them with '.'). If every source fails,
+	the cached data may substitute for exactly one more day (the cache
+	carries fetch_date; data fetched yesterday passes only if its 'tomorrow'
+	half exists — the day-ahead forecast for what is now today, see
+	_substitute_day). Anything older, a missing 'tomorrow' half, or no cache
+	at all returns None — the caller then falls
 	back to the modelled emergency zones (see emergency_zones).
 	The returned dict also carries 'backdate_ratio': the previous hour's
 	ratio (from the cache as it stood just before this call's refresh), only
@@ -860,7 +952,7 @@ def read_smard_zones():
 	vz_in = {}
 	if not avgnew:
 		try:
-			with open(join(dirname(__file__), 'dirt_smard_cache.json'), 'r') as fi:
+			with open(join(dirname(__file__), 'dirt_grid_cache.json'), 'r') as fi:
 				vz_in = json_load(fi)
 		except Exception:
 			pass
@@ -876,37 +968,45 @@ def read_smard_zones():
 			prev_hour = (datetime.now().hour - 1) % 24
 			backdate_ratio = old_today['ratio'][prev_hour]			# value that was valid up to this hour's boundary
 
-		today, tomorrow = get_smard_zones()
+		old_source = vz_in.get('source')
+		today, tomorrow, source = get_grid_zones()
 		vz_in['attempt'] = datetime.now().timestamp()		# recorded either way, so a failure is retried next hour and not next run
 		if today is not None:
+			if source != old_source:
+				backdate_ratio = None						# previous hour on the other source's scale: no flat step across a source change
 			vz_in['today'] = today
 			vz_in['tomorrow'] = tomorrow
+			vz_in['source'] = source
 			vz_in['fetch_date'] = datetime.now().strftime('%Y-%m-%d')
 			vz_in['timestamp'] = datetime.now().timestamp()
-			if verbose: print('SMARD zones refreshed')		# said out loud, so a silent absence of any line cannot be mistaken for a cache hit
+			if verbose: print('%s zones refreshed' % source)		# said out loud, so a silent absence of any line cannot be mistaken for a cache hit
 		elif verbose:
-			print('SMARD zone refresh failed — trying previous data')
+			print('grid zone refresh failed (Energy-Charts and SMARD) — trying previous data')
 		try:
-			with open(join(dirname(__file__), 'dirt_smard_cache.json'), 'w') as fo:
+			with open(join(dirname(__file__), 'dirt_grid_cache.json'), 'w') as fo:
 				json_dump(vz_in, fo)
 		except Exception as e:
-			if verbose: print('failed to write SMARD cache:', e)
+			if verbose: print('failed to write grid cache:', e)
 	_cache_notice = (not needs_refresh)			# print the 'using cached ... data until ...' line after the window is assembled
 
 	today = vz_in.get('today')
 	fetch_date = vz_in.get('fetch_date')
+	source = vz_in.get('source', '?')
 	if today is None or fetch_date is None:
 		return None
 	age_days = (datetime.now().date() - datetime.strptime(fetch_date, '%Y-%m-%d').date()).days
 	if age_days > 1:
-		if verbose: print('cached SMARD data is from %s — too old to substitute' % fetch_date)
+		if verbose: print('cached %s data is from %s — too old to substitute' % (source, fetch_date))
 		return None
 	now_hour = datetime.now().hour
 	if age_days == 1:
 		# fetched yesterday, substituting once: yesterday's 'tomorrow' half was
 		# the day-ahead forecast for what is now today.
-		if verbose: print('SMARD data from %s substituting for one day' % fetch_date)
-		today = vz_in.get('tomorrow') or today
+		today = _substitute_day(vz_in)
+		if today is None:
+			if verbose: print('cached %s data from %s has nothing for today — not used' % (source, fetch_date))
+			return None
+		if verbose: print('%s data from %s substituting for one day' % (source, fetch_date))
 		tomorrow = None
 	else:
 		tomorrow = vz_in.get('tomorrow')
@@ -929,17 +1029,17 @@ def read_smard_zones():
 			end = datetime.now().replace(minute=0, second=0, microsecond=0) + timedelta(hours=last_k)
 			until = end.strftime('%Y-%m-%d %H:00')
 		_ok_ts = vz_in.get('timestamp')
-		print('using cached SMARD zones from %s, data until %s' % (
+		print('using cached %s zones from %s, data until %s' % (source,
 			datetime.fromtimestamp(_ok_ts).strftime('%Y-%m-%d %H:%M') if _ok_ts else 'never', until))
 
 	if tomorrow is None:
 		_emit_cache_notice(today['ratio'], set(range(now_hour)))
 		return {'zones': _cut_zones(today['ratio']), 'ratio': today['ratio'],
-		        'stale': set(range(now_hour)), 'backdate_ratio': backdate_ratio}
+		        'stale': set(range(now_hour)), 'backdate_ratio': backdate_ratio, 'source': source}
 	ratio = [today['ratio'][h] if h >= now_hour else tomorrow['ratio'][h] for h in range(24)]
 	_emit_cache_notice(ratio, set())
 	return {'zones': _cut_zones(ratio), 'ratio': ratio, 'stale': set(),
-	        'backdate_ratio': backdate_ratio}
+	        'backdate_ratio': backdate_ratio, 'source': source}
 
 
 def read_wind_forecast():
@@ -978,7 +1078,7 @@ def _wind_index(v):
 
 
 def emergency_zones(expected_pv, basic_load):
-	"""Zones MODELLED from the weather forecast, for when SMARD gives nothing
+	"""Zones MODELLED from the weather forecast, for when no grid source gives anything
 	even from cache — the alternative to the free timer, not to real data.
 
 	dirtiness(h) = load_index(h) - generation_index(h), where generation is
@@ -991,7 +1091,7 @@ def emergency_zones(expected_pv, basic_load):
 	Both terms are 0..~1 and the median cut ranks the
 	result, so absolute scaling is irrelevant.
 
-	Returns the same dict shape read_smard_zones returns (zones/ratio/stale/
+	Returns the same dict shape read_grid_zones returns (zones/ratio/stale/
 	backdate_ratio) so main() is agnostic, plus emergency=True. ratio is a
 	pseudo-ratio (1 - dirtiness, offset into a positive-ish range) purely so
 	the existing dirt%/median machinery and the -v output keep working; its
@@ -1004,7 +1104,7 @@ def emergency_zones(expected_pv, basic_load):
 
 	pv_peak = max([p for p in expected_pv if p is not None] or [0.0]) or 1.0
 	dirt = [None] * 24
-	for h in range(24):								# h is the real hour-of-day (ratio is indexed by hour, like SMARD's)
+	for h in range(24):								# h is the real hour-of-day (ratio is indexed by hour, like the grid sources')
 		solar_i = (expected_pv[h] / pv_peak) if expected_pv[h] is not None else 0.0
 		wind_i  = _wind_index(wind[h]) or 0.0		# an unreported wind hour contributes nothing rather than breaking the sum
 		gen = EMERGENCY_SOLAR_WEIGHT * solar_i + EMERGENCY_WIND_WEIGHT * wind_i
@@ -1015,7 +1115,7 @@ def emergency_zones(expected_pv, basic_load):
 	# higher dirt%' exactly as with real data. The median cut only needs order.
 	ratio = [1.0 - d for d in dirt]
 	return {'zones': _cut_zones(ratio), 'ratio': ratio, 'stale': set(),
-	        'backdate_ratio': None, 'emergency': True}
+	        'backdate_ratio': None, 'emergency': True, 'source': 'model'}
 
 
 def _empty_anchor(tuples, empty_v):
@@ -1192,7 +1292,7 @@ def write_dirtiness_to_vz(value, ts_ms=None):
 	explicit slot-boundary timestamp (and, once per hour, a second call 1s
 	before the hour boundary with the previous hour's value) so volkszähler
 	shows a flat step at the hour boundary instead of interpolating a ramp
-	between two hourly values — see read_smard_zones' 'backdate_ratio'."""
+	between two hourly values — see read_grid_zones' 'backdate_ratio'."""
 	uuid = conf.get('vz_dirtiness_uuid', '')
 	if not uuid:
 		return None
@@ -1478,7 +1578,7 @@ def wallbox_should_be_on(dirt_now, all_dirt):
 
 	Precharge (see precharge_ac_pct) never enters this decision — the two
 	are fully independent. False if dirt_now or every entry in all_dirt is
-	unavailable (no SMARD coverage for that hour)."""
+	unavailable (no grid-data coverage for that hour)."""
 	rank = _dirt_rank_pct(dirt_now, all_dirt)
 	if rank is None:
 		return False
@@ -1575,7 +1675,7 @@ def reserved_red_hours(now, zones, basic_load, expected_pv):
 
 def reserved_red_dirt(now, zones, ratio, basic_load, expected_pv):
 	"""Mean dirt% of the red hours the reserve is held for (see
-	reserved_red_hours). None if none of them has SMARD coverage.
+	reserved_red_hours). None if none of them has grid-data coverage.
 
 	This is what 'stop' in a green hour weighs itself against (see main()):
 	holding the battery back now only pays in proportion to how much dirtier
@@ -1602,7 +1702,7 @@ def red_window_demand(basic_load, now, zones, expected_pv):
 	dull that expected PV never exceeds load, no surplus hour exists and all
 	red hours of the rolling 24 h are reserved for — correct, as no refill is
 	coming. 'zones' is a rolling 24-hour array anchored at 'now' (see
-	read_smard_zones, read_radiation_forecast): an hour before
+	read_grid_zones, read_radiation_forecast): an hour before
 	now.hour is really tomorrow's occurrence of that hour, with tomorrow's
 	own classification/value where available. A deficit red hour and the
 	(rare) surplus red hour offset each other within the window; only the
@@ -1763,13 +1863,13 @@ def precharge_ac_pct(now, zones, basic_load, expected_pv, ratio, content, reserv
 	     diverting in total is the smaller of the two; beyond it, extra charge
 	     would either not fit or not be spent.
 
-	Only real SMARD data counts. The precharge window runs from now to the
-	last hour SMARD genuinely covers: it ends at the first hour that is a
+	Only real grid data counts. The precharge window runs from now to the
+	last hour the grid source genuinely covers: it ends at the first hour that is a
 	substitute (today's value standing in for a tomorrow not yet published,
-	see read_smard_zones' 'stale') or has no value at all. Rank, the red
+	see read_grid_zones' 'stale') or has no value at all. Rank, the red
 	block's mean and demand, and the distribution all use only hours inside
 	that window; a red block lying wholly beyond it leaves nothing to judge,
-	so ac_% stays 100. In emergency mode (modelled zones, no SMARD data at
+	so ac_% stays 100. In emergency mode (modelled zones, no grid data at
 	all) precharge is off. The discharge decisions are unaffected — they
 	keep using the full window.
 
@@ -1781,12 +1881,12 @@ def precharge_ac_pct(now, zones, basic_load, expected_pv, ratio, content, reserv
 	memoryless: as content rises the remaining room shrinks, and ac_% climbs
 	back to 100."""
 	if not conf.get('precharge_enabled', False) or emergency:
-		return 100											# off, or no real SMARD data at all
+		return 100											# off, or no real grid data at all
 	capacity = conf.get('battery_capacity_wh', 0)
 	if capacity <= 0:
 		return 100											# capacity unknown: room cannot be judged
 
-	# precharge window: from now up to the last hour with real SMARD data
+	# precharge window: from now up to the last hour with real grid data
 	window, h = [], now.hour
 	for _ in range(24):
 		if h in stale or ratio[h] is None:
@@ -1846,7 +1946,7 @@ def _hourly_debug_table(now, pv_curve, radiation, expected_pv, basic_load, grid_
 	wrapping past midnight) combining the PV reference curve,
 	the shortwave-radiation forecast, the clear-sky index derived from it
 	(see scaled_pv_curve/clear_sky_ghi), expected PV, basic_load, whether
-	that hour charges or discharges, and the SMARD-derived dirtiness/zone
+	that hour charges or discharges, and the grid-derived dirtiness/zone
 	(the same rolling array _bridge_hours/red_window_demand/dirtiest_hour
 	use) — so everything the discharge decision draws on is visible at a
 	glance, in one place instead of six separate lists. 'balance' is
@@ -1878,21 +1978,21 @@ def _hourly_debug_table(now, pv_curve, radiation, expected_pv, basic_load, grid_
 	informational, not read by main()'s decision, since dirtiest_hour's own
 	window never contains an 'L' hour to begin with (it ends at the first
 	one it meets). An hour before now.hour (the rolling array's 'tomorrow'
-	portion, see read_radiation_forecast/read_smard_zones) that is still
+	portion, see read_radiation_forecast/read_grid_zones) that is still
 	really today's data standing in because no tomorrow-specific value was
 	available yet carries a leading '.' — on 'rad_Wm2' if it is the radiation
 	forecast that is stale for that hour (radiation_stale, from
-	read_radiation_forecast), on 'dirt%' if it is the SMARD classification
-	(grid_data['stale'], from read_smard_zones). The two are independent and
+	read_radiation_forecast), on 'dirt%' if it is the grid classification
+	(grid_data['stale'], from read_grid_zones). The two are independent and
 	can differ per hour, since they come from separate sources refreshed on
 	separate schedules. A final line sums expected_pv and basic_load each
 	across all 24 hours, their difference (the day's net balance), and the
-	unweighted average dirt% across every SMARD-covered hour — a quick
+	unweighted average dirt% across every grid-covered hour — a quick
 	overall read on the day's expected yield, consumption, and cleanliness,
 	rolling window included."""
 	zones = grid_data['zones']
 	ratio = grid_data['ratio']
-	smard_stale = grid_data.get('stale', set())
+	grid_stale = grid_data.get('stale', set())
 	radiation_stale = radiation_stale or set()
 	dh = None
 	if expected_pv is not None and basic_load is not None:
@@ -1920,7 +2020,8 @@ def _hourly_debug_table(now, pv_curve, radiation, expected_pv, basic_load, grid_
 	# with nothing to say so once tomorrow's data has arrived and the '.' stale
 	# prefix is gone.
 	if grid_data.get('emergency'):
-		print('*** zones below are MODELLED (SMARD unavailable) — solar+wind forecast vs. a fixed load profile, not real grid data ***')
+		print('*** zones below are MODELLED (grid data unavailable) — solar+wind forecast vs. a fixed load profile, not real grid data ***')
+	print('dirt%% source: %s' % grid_data.get('source', '?'))
 	print('%-3s %8s %8s %5s %8s %8s %8s %4s %6s %-8s' % ('hr', 'PV_curve', 'rad_Wm2', 'clr%', 'exp_PV', 'basic_ld', 'balance', 'chg', 'dirt%', 'zone'))
 	for k in range(24):
 		h = (now.hour + k) % 24
@@ -1947,7 +2048,7 @@ def _hourly_debug_table(now, pv_curve, radiation, expected_pv, basic_load, grid_
 		dirt_s = ('%.0f' % ((1.0 - ratio_h) * 100)) if ratio_h is not None else '-'
 		if h == now.hour and dirt_written is not None:
 			dirt_s = ('*' if dirt_written else '!') + dirt_s	# volkszähler write of this hour's value
-		if h in smard_stale: dirt_s = '.' + dirt_s				# still today's ratio, no tomorrow value yet
+		if h in grid_stale: dirt_s = '.' + dirt_s				# still today's ratio, no tomorrow value yet
 		print('%2d  %8s %8s %5s %8s %8s %8s %4s %6s %-8s' % (h, pv, rad_s, clr, exp, bl, bal, chg, dirt_s, zones[h]))	# the current hour is always the first row, no marker needed
 	if expected_pv is not None or basic_load is not None or any(r is not None for r in ratio):
 		dash8 = '-' * 8
@@ -1979,16 +2080,16 @@ def main():
 	radiation, radiation_stale = read_radiation_forecast()	# also refreshes the raw weather cache on disk if the hour changed — must run before write_daily_pv_forecast reads that same cache below, or the first run of a new day would still see yesterday's data
 	write_daily_pv_forecast(pv_curve, now)
 	expected_pv = scaled_pv_curve(pv_curve, radiation, now)	# drives red_window_demand/dirtiest_hour below
-	grid_data = read_smard_zones()					# before get_vz_bat_cap, so all cache notices print together
+	grid_data = read_grid_zones()					# before get_vz_bat_cap, so all cache notices print together
 	if grid_data is None:
-		# SMARD gives nothing, not even from cache: model zones from the weather
+		# no grid source gives anything, not even from cache: model zones from the weather
 		# forecast rather than dropping straight to the free timer. Clearly a
 		# fallback — flagged below and in the table — never mistaken for data.
 		grid_data = emergency_zones(expected_pv, basic_load)
 		if grid_data is not None:
-			print('*** SMARD unavailable — MODELLED emergency zones (solar+wind forecast, load profile); not real grid data ***')
+			print('*** grid data unavailable (Energy-Charts, SMARD) — MODELLED emergency zones (solar+wind forecast, load profile); not real grid data ***')
 	if grid_data is None:
-		die('SMARD zone data unavailable (fetch failed, no cache newer than one day, weather model unavailable)', conf['timer.txt'])
+		die('grid zone data unavailable (Energy-Charts and SMARD failed, no usable cache, weather model unavailable)', conf['timer.txt'])
 	_voltage, content = get_vz_bat_cap()
 	# content is None means the battery energy could not be reconstructed
 	# (volkszähler gap). The battery side genuinely cannot be steered without
@@ -2020,7 +2121,7 @@ def main():
 	if debug:
 		_hourly_debug_table(now, pv_curve, radiation, expected_pv, basic_load, grid_data, dirt_written, radiation_stale)
 
-	# decide this run's discharge mode. Two zones only (see _smard_zones_for_date):
+	# decide this run's discharge mode. Two zones only (see _cut_zones):
 	# 'green' (cleaner half of the day) and 'red' (dirtier half).
 	#
 	# the red reserve: basic_load demand over every red hour between now and

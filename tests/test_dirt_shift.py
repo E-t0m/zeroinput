@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """Unit/scenario tests for dirt_shift's pure decision functions.
 
-dirt_shift.py loads its config and touches volkszähler/SMARD at import time, so
+dirt_shift.py loads its config and touches volkszähler and the grid sources at import time, so
 this does NOT import it. It extracts the pure functions (the ones that take
 their inputs as arguments and touch nothing external) from the source and runs
 them against a stubbed conf, so regressions in the decision logic are caught
@@ -11,7 +11,7 @@ automatically.
 Run:  python3 tests/test_dirt_shift.py      (exit 0 = all passed)
 """
 import ast, sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from os.path import abspath, dirname, join
 
 SRC = join(dirname(dirname(abspath(__file__))), 'dirt_shift', 'dirt_shift.py')
@@ -21,7 +21,7 @@ SRC = join(dirname(dirname(abspath(__file__))), 'dirt_shift', 'dirt_shift.py')
 def _load_pure(names, constants):
 	src = open(SRC, encoding='utf-8').read()
 	tree = ast.parse(src)
-	ns = {'datetime': datetime}
+	ns = {'datetime': datetime, 'timedelta': timedelta}
 	# constants: assignments at module level
 	for node in tree.body:
 		if isinstance(node, ast.Assign):
@@ -46,14 +46,14 @@ FUNCS = ['_median', '_cut_zones', '_dirt_rank_pct', '_bridge_hours',
          'wallbox_should_be_on', 'wallbox_decide', 'wallbox_energy_ok',
          'wallbox_voltage_ok', 'precharge_ac_pct', '_wind_index',
          'emergency_zones', '_empty_anchor', '_neg_content_diagnosis',
-         'precharge_round_trip_gap']
+         'precharge_round_trip_gap', '_ampel_days', '_substitute_day']
 CONSTS = ['SLOT_MINUTES', 'SLOT_HOURS', 'STOP_MIN_DIRT_GAP',
           'WALLBOX_ENERGY_ON_FACTOR', 'WALLBOX_V_ON_PER_CELL',
           'WALLBOX_V_OFF_PER_CELL', 'PRECHARGE_AC_FLOOR',
           'EMERGENCY_WIND_V_CUTIN', 'EMERGENCY_WIND_V_RATED',
           'EMERGENCY_LOAD_PROFILE', 'EMERGENCY_WIND_WEIGHT',
           'EMERGENCY_SOLAR_WEIGHT', 'EMPTY_MIN_DURATION_S',
-          'IMPLAUSIBLE_V_PER_CELL', 'NEG_CONTENT_WARN_FRACTION']
+          'IMPLAUSIBLE_V_PER_CELL', 'NEG_CONTENT_WARN_FRACTION', 'GRID_MIN_HOURS']
 
 M = _load_pure(FUNCS, CONSTS)
 CONF = {
@@ -473,7 +473,41 @@ def test_neg_content_warn():
 	      diag(-8000, -frac * cap, cap) == 'efficiency')
 
 
-for t in (test_median_and_zones, test_rank, test_reserve_invariants,
+def test_ampel_parse():
+	print('\n[Energy-Charts signal -> hourly ratio]')
+	days = M['_ampel_days']
+	d0 = datetime(2026, 11, 18)
+	t0 = int(d0.timestamp())
+	# today fully covered (96 quarter hours), tomorrow only 10 hours
+	ts = [t0 + 900 * i for i in range(96 + 40)]
+	share = [40.0 + (i % 4) * 2 for i in range(96)] + [90.0] * 40		# quarters 40,42,44,46 -> hourly mean 43
+	today, tomorrow = days(ts, share, d0.date())
+	check('hour = mean of its quarter hours, ratio = share/100',
+	      today is not None and abs(today['ratio'][5] - 0.43) < 1e-9, today and today['ratio'][5])
+	check('tomorrow with < GRID_MIN_HOURS hours -> None (not yet published)', tomorrow is None)
+	# a None quarter is skipped, not counted as 0
+	share2 = list(share); share2[4] = None
+	t2, _ = days(ts, share2, d0.date())
+	check('None quarter skipped in the hourly mean', abs(t2['ratio'][1] - (42 + 44 + 46) / 300.0) < 1e-9, t2['ratio'][1])
+	# today barely covered -> None
+	t3, _ = days(ts[:19 * 4], share[:19 * 4], d0.date())
+	check('today with 19 hours -> None', t3 is None)
+	# both days complete
+	ts4 = [t0 + 900 * i for i in range(192)]
+	t4, m4 = days(ts4, [50.0] * 96 + [100.0] * 96, d0.date())
+	check('tomorrow complete -> own values', m4 is not None and m4['ratio'][0] == 1.0 and t4['ratio'][23] == 0.5)
+
+
+def test_substitute_day():
+	print('\n[one-day substitution only with real data for today]')
+	sub = M['_substitute_day']
+	tue = {'ratio': [0.3] * 24}; wed = {'ratio': [0.9] * 24}
+	check("yesterday's tomorrow half stands in for today", sub({'today': tue, 'tomorrow': wed}) is wed)
+	check("tomorrow half missing -> None, yesterday's today never reused", sub({'today': tue, 'tomorrow': None}) is None)
+	check('empty cache -> None', sub({}) is None)
+
+
+for t in (test_ampel_parse, test_substitute_day, test_median_and_zones, test_rank, test_reserve_invariants,
           test_reserved_red_hours_shared, test_wallbox_hysteresis,
           test_wallbox_dirt_path, test_wallbox_downgrade,
           test_wallbox_path_redundancy, test_stop_gap, test_stop_overflow_guard,

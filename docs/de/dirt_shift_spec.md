@@ -1,5 +1,5 @@
 # dirt_shift – Funktionsspezifikation
-*v2.0*
+*v2.1*
 
 Diese Spezifikation beschreibt, **was** `dirt_shift` tut; sie gilt für die Version, die das Skript als `VERSION` führt. Die ausführliche Begründung einzelner Regeln steht im Docstring der jeweils genannten Funktion in `dirt_shift.py`.
 
@@ -18,7 +18,8 @@ Die Batterie steuert `dirt_shift` nicht selbst, sondern schreibt die `timer.txt`
   - **Energieinhalt** — rekonstruiert aus PV- und Inverter-Energie seit dem letzten Leerzustand, mit `PV_to_bat_efficiency` und `bat_to_AC_efficiency` (`get_vz_bat_cap`, bei jedem Lauf frisch).
   - **PV-Erzeugung** — Grundlage der PV-Referenzkurve; der Mittelwert der letzten 15 Minuten (`recent_pv_power`) dient dem Energiebudget und der Spannungs-Bedingung der Wallbox.
   - **Batteriespannung** (`Vbat`) — Leer-Anker des Energieinhalts und Spannungs-Bedingung der Wallbox.
-- **SMARD** (Bundesnetzagentur) — Day-Ahead-Prognosen für Wind+Solar-Erzeugung und Stromverbrauch, Grundlage der Zonen.
+- **Energy-Charts-Stromampel** (Fraunhofer ISE, Lizenz CC BY 4.0) — prognostizierter Anteil aller Erneuerbaren an der Last in Viertelstunden, erste Quelle der Zonen (`get_ampel_zones`).
+- **SMARD** (Bundesnetzagentur) — Day-Ahead-Prognosen für Wind+Solar-Erzeugung und Stromverbrauch, zweite Quelle der Zonen (`get_smard_zones`).
 - **Open-Meteo** — Strahlungs- und Windprognose (`shortwave_radiation`, `wind_speed_100m`) in einem Aufruf.
 
 **Leer-Anker.** Als Nullpunkt der Integration zählt nur ein **anhaltender** Leerzustand: Spannung ≤ 3,0625 V/Zelle (49 V bei 16 Zellen, skaliert mit `cell_count`) für mindestens `EMPTY_MIN_DURATION_S` (120 s); ein kurzer Einbruch unter Last setzt keinen Anker (`_empty_anchor`). Spannungswerte unter `IMPLAUSIBLE_V_PER_CELL` (2,5 V/Zelle, 40 V bei 16S) sind physikalisch unmöglich und werden beim Einlesen verworfen. Beide Kanäle werden vorzeichenunabhängig verarbeitet (Betrag, Richtung fest).
@@ -29,7 +30,9 @@ Die Batterie steuert `dirt_shift` nicht selbst, sondern schreibt die `timer.txt`
 
 ## CO₂-Intensitätsprofil
 
-Aus den SMARD-Prognosen bildet `dirt_shift` je Stunde das Verhältnis Erneuerbare/Last und daraus den **Dreckigkeitswert** `dirt% = (1 − Verhältnis) × 100` — negativ, wenn die Erneuerbaren die Last übersteigen.
+Aus der Netzprognose bildet `dirt_shift` je Stunde das Verhältnis Erneuerbare/Last und daraus den **Dreckigkeitswert** `dirt% = (1 − Verhältnis) × 100` — negativ, wenn die Erneuerbaren die Last übersteigen.
+
+**Quelle** (`get_grid_zones`): zuerst die Stromampel, deren Viertelstundenwerte je Stunde gemittelt werden (`_ampel_days`); meldet sie `substitute: true` (aus historischen Daten geschätzt), gilt sie als nicht verfügbar. Sonst SMARD. Ein Lauf verwendet für das ganze Fenster genau **eine** Quelle: Die Stromampel zählt alle Erneuerbaren, SMARD nur Wind und Solar, die Werte liegen also auf verschiedenen Skalen und dürfen im Median-Schnitt nicht gemischt werden. Ein Tag gilt ab `GRID_MIN_HOURS` (20) Stunden als abgedeckt. Die verwendete Quelle steht in den Cache-Zeilen und über der Debug-Tabelle.
 
 Heute und morgen werden zu einem **rollierenden 24-Stunden-Fenster** ab der aktuellen Stunde zusammengesetzt. Über dieses Fenster wird **einmal** der Median gebildet (`_cut_zones`):
 
@@ -40,10 +43,10 @@ Der Median teilt immer etwa hälftig, auch an durchgehend sauberen oder dreckige
 
 **Lückenfüllung:**
 - Fehlt die Verbrauchsprognose eines Tages, wird das Profil des letzten verfügbaren Tages verwendet, bis zu sieben Tage zurück (`_smard_load_series`); fehlt die Erzeugungsprognose, entfällt der Tag.
-- Sind Stunden von morgen noch nicht veröffentlicht, gelten dort die heutigen Werte.
-- Abgerufen wird stündlich (`dirt_smard_cache.json`); ein Fehlversuch wird erst zur nächsten Stunde wiederholt.
+- Sind Stunden von morgen noch nicht veröffentlicht, gelten dort die heutigen Werte derselben Quelle; morgen wird nicht aus der anderen Quelle ergänzt. Beide Quellen veröffentlichen den Folgetag in der Regel ab etwa 19 Uhr.
+- Abgerufen wird stündlich (`dirt_grid_cache.json`, mit der Quelle); ein Fehlversuch wird erst zur nächsten Stunde wiederholt.
 
-**Ausfall.** Der Cache darf genau **einen Tag** überbrücken, weil gestern geholte Daten die Day-Ahead-Prognose für heute enthalten. Danach greift ein **Notmodus** (`emergency_zones`): Aus Solar- und Windprognose und einem festen, normierten Profil der **bundesweiten** Netzlast wird ein relativer Dreckigkeitsverlauf modelliert und wie gewohnt geschnitten. Er ist grob, bezieht aber den Wind ein. Der Notmodus wird in jeder Ausgabe deutlich gekennzeichnet, nicht zwischengespeichert und **nicht** nach volkszähler exportiert. Ist auch das Wetter nicht abrufbar, bricht `dirt_shift` ab (siehe Fehlerverhalten).
+**Ausfall.** Liefern beide Quellen nichts, darf der Cache genau **einen Tag** überbrücken, aber nur, wenn die gestern geholten Daten tatsächlich eine Prognose für heute enthalten (`_substitute_day`); die Werte von gestern selbst werden nie als heute ausgegeben. Danach greift ein **Notmodus** (`emergency_zones`): Aus Solar- und Windprognose und einem festen, normierten Profil der **bundesweiten** Netzlast wird ein relativer Dreckigkeitsverlauf modelliert und wie gewohnt geschnitten. Er ist grob, bezieht aber den Wind ein. Der Notmodus wird in jeder Ausgabe deutlich gekennzeichnet, nicht zwischengespeichert und **nicht** nach volkszähler exportiert. Ist auch das Wetter nicht abrufbar, bricht `dirt_shift` ab (siehe Fehlerverhalten).
 
 ---
 
@@ -138,7 +141,7 @@ Umlenkung    = min(umlenkbar[jetzt], Nutzbar × umlenkbar[jetzt] / Σ umlenkbar)
 ac_%         = max(PRECHARGE_AC_FLOOR, round(100 × (exp_PV[jetzt] − Umlenkung) / exp_PV[jetzt]))
 ```
 
-**Nur echte Daten:** Das Precharge-Fenster reicht von der aktuellen Stunde bis zur letzten Stunde mit echten SMARD-Daten. Es endet an der ersten Stunde, die nur ein Ersatzwert ist (heutiger Wert für ein noch nicht veröffentlichtes Morgen) oder keinen Wert hat. Rang, Mittelwert und Bedarf des roten Blocks sowie die Verteilung verwenden nur Stunden in diesem Fenster; liegt der rote Block ganz dahinter, bleibt `ac_%` bei 100. Im Notmodus ist Precharge aus. Die Entladesteuerung nutzt weiterhin das volle Fenster.
+**Nur echte Daten:** Das Precharge-Fenster reicht von der aktuellen Stunde bis zur letzten Stunde mit echten Netzdaten. Es endet an der ersten Stunde, die nur ein Ersatzwert ist (heutiger Wert für ein noch nicht veröffentlichtes Morgen) oder keinen Wert hat. Rang, Mittelwert und Bedarf des roten Blocks sowie die Verteilung verwenden nur Stunden in diesem Fenster; liegt der rote Block ganz dahinter, bleibt `ac_%` bei 100. Im Notmodus ist Precharge aus. Die Entladesteuerung nutzt weiterhin das volle Fenster.
 
 `PRECHARGE_AC_FLOOR` (20) verhindert, dass zeroinput die Zeile als ungültig verwirft. Precharge greift typischerweise an Tagen mit sauberem Netz, aber wenig eigenem PV-Überschuss, an Sonnentagen nicht. Es beeinflusst die Wallbox nicht.
 
@@ -219,7 +222,7 @@ Begrenzt, stoppt oder drosselt ein Lauf, folgt 30 Minuten später eine „Alles-
 
 ## Netz-Dreckigkeit exportieren
 
-Ist `vz_dirtiness_uuid` gesetzt, schreibt jeder Lauf den aktuellen `dirt%`-Wert per HTTP-POST in diesen volkszähler-Kanal; beim ersten Lauf einer Stunde zusätzlich den Wert der Vorstunde eine Sekunde vor der Stundengrenze, damit die Kurve eine saubere Stufe bildet (`write_dirtiness_to_vz`). Im Notmodus wird nichts exportiert. Ein Fehlschlag wird nur mit `-v` gemeldet.
+Ist `vz_dirtiness_uuid` gesetzt, schreibt jeder Lauf den aktuellen `dirt%`-Wert per HTTP-POST in diesen volkszähler-Kanal; beim ersten Lauf einer Stunde zusätzlich den Wert der Vorstunde eine Sekunde vor der Stundengrenze, damit die Kurve eine saubere Stufe bildet (`write_dirtiness_to_vz`). Der Wert folgt der Skala der jeweiligen Quelle: Mit der Stromampel liegt er niedriger als mit SMARD; wechselt die Quelle, entfällt die Stufe zur Vorstunde. Ein Sprung im Verlauf ohne entsprechende Wetteränderung zeigt deshalb einen Quellenwechsel an; welche Quelle gilt, nennen die `-v`-Ausgabe und das Logfile. Im Notmodus wird nichts exportiert. Ein Fehlschlag wird nur mit `-v` gemeldet.
 
 ---
 
@@ -237,9 +240,9 @@ Einmal pro Kalendertag schreibt `write_daily_pv_forecast` neben `dirt_shift.py` 
 
 ## Ausgabe: -v und -debug
 
-Die erste Zeile nennt die Version (`dirt_shift 2.0`).
+Die erste Zeile nennt die Version (`dirt_shift 2.1`).
 
-**Cache-Zeilen** nennen Abrufzeitpunkt und Reichweite der Daten, etwa `using cached SMARD zones from 2026-09-10 20:00, data until 2026-09-11 19:00`.
+**Cache-Zeilen** nennen Abrufzeitpunkt und Reichweite der Daten, etwa `using cached Energy-Charts zones from 2026-11-18 06:00, data until 2026-11-18 23:00`; dabei steht die verwendete Quelle (`Energy-Charts` oder `SMARD`).
 
 **Modus-Zeile:**
 
@@ -249,7 +252,7 @@ content ... Wh (SoC%)   reserve(...%) ... Wh [window|upcoming: .../...-...pv] ->
 
 Die Klammer nennt die bindende Schätzung, beide Rohwerte und den abgezogenen Überschuss. Zusätze wie `(comfortable)`, `[red block +N dirt]` oder `[stop would overflow ...]` begründen den Modus.
 
-**Debug-Tabelle** (`_hourly_debug_table`): 24 Zeilen chronologisch ab der aktuellen Stunde, über Mitternacht hinweg.
+**Debug-Tabelle** (`_hourly_debug_table`): eine Kopfzeile `dirt% source: ...` mit der Quelle (`Energy-Charts`, `SMARD` oder `model` im Notmodus), dann 24 Zeilen chronologisch ab der aktuellen Stunde, über Mitternacht hinweg.
 
 - `chg`: `L` Ladestunde (`exp_PV > basic_load`), `D` Entladestunde; `!D` = dreckigste Stunde, `!L` = sauberste Ladestunde (nur informativ).
 - `balance` = `exp_PV − basic_load`.
@@ -266,12 +269,13 @@ Fehlende Daten lassen so weit wie möglich nur den betroffenen Teil entfallen:
 | Fehlt | Folge |
 |---|---|
 | Akkuinhalt | Batterie frei, Wallbox über die übrigen Pfade weiter gesteuert |
-| SMARD über einen Tag | Notmodus |
+| Stromampel | SMARD |
+| Stromampel und SMARD | Cache vom Vortag, sofern er eine Prognose für heute enthält, sonst Notmodus |
 | Strahlungsprognose | unskalierte Referenzkurve |
-| Verbrauchsprognose | Profil des letzten verfügbaren Tages |
+| SMARD-Verbrauchsprognose | Profil des letzten verfügbaren Tages |
 | volkszähler nicht erreichbar | gecachte Mittelwerte und PV-Kurve; da der Akkuinhalt fehlt, Batterie frei |
 
-Nur wenn für die Mittelung keine vollständigen Tage vorliegen, der volkszähler nicht erreichbar ist und keine gecachten Mittelwerte vorhanden sind, oder weder SMARD noch Wetter verfügbar sind, bricht `dirt_shift` ab. Zuvor schreibt es eine „Alles-erlaubt"-Zeile mit aktuellem Datum (`write_free_timer`), außer bei `disable_zeroinput_timer: true`; das Wallbox-Relais bleibt unangetastet. Ist nicht einmal `zeroinput.conf` lesbar, bleibt nur die Fehlermeldung.
+Nur wenn für die Mittelung keine vollständigen Tage vorliegen, der volkszähler nicht erreichbar ist und keine gecachten Mittelwerte vorhanden sind, oder weder Netzdaten noch Wetter verfügbar sind, bricht `dirt_shift` ab. Zuvor schreibt es eine „Alles-erlaubt"-Zeile mit aktuellem Datum (`write_free_timer`), außer bei `disable_zeroinput_timer: true`; das Wallbox-Relais bleibt unangetastet. Ist nicht einmal `zeroinput.conf` lesbar, bleibt nur die Fehlermeldung.
 
 ---
 
