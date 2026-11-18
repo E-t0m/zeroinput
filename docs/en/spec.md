@@ -211,7 +211,7 @@ One Modbus charger is supported per port entry (the conf key is the port path). 
 
 `set_victron_power(device_key, watts)` — unified interface for both AGG and conventional Victron ports.
 
-**AGG path** — `VEDirect.set_watts(ser, watts)` → firmware sends `SET <SER#> <watts>` → converts W→A (`reg = round(watts / Vbat × 10)`, register `0x2015`, 0.1A), writes and verifies. `VBAT_FALLBACK = 24V` until first Vbat received.
+**AGG path** — `VEDirect.set_watts(ser, watts)` → firmware sends `SET <SER#> <watts>` → converts W→A (`reg = round(watts / Vbat × 10)`, register `0x2015`, 0.1A), writes and verifies. Until the first Vbat value of a device has been received, the firmware rejects SET for that device with `ERR <SER#> vbat unknown`; the next setpoint one second later then takes effect.
 
 **Conventional path** — zeroinput replicates firmware sequence after each complete VE.Direct block: SET HEX frame → ACK (400ms timeout) → GET readback → compare. Commands queued in `_victron_cmd_queues[port]` (maxsize=1). The W→A conversion uses the battery voltage of that charger, else the averaged battery voltage of all chargers, else 3.2 V per cell × `cell_count`.
 

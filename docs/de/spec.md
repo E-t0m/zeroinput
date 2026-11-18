@@ -210,7 +210,7 @@ Pro Port-Eintrag wird ein Modbus-Lader unterstützt (der conf-Schlüssel ist der
 
 `set_victron_power(device_key, watts)` — einheitliche Schnittstelle für AGG- und konventionelle Victron-Ports.
 
-**AGG-Pfad** — `VEDirect.set_watts(ser, watts)` → Firmware sendet `SET <SER#> <watts>` → wandelt W→A um (`reg = round(watts / Vbat × 10)`, Register `0x2015`, 0,1A), schreibt und verifiziert per Readback. `VBAT_FALLBACK = 24V` bis erste Vbat-Messung vorliegt.
+**AGG-Pfad** — `VEDirect.set_watts(ser, watts)` → Firmware sendet `SET <SER#> <watts>` → wandelt W→A um (`reg = round(watts / Vbat × 10)`, Register `0x2015`, 0,1A), schreibt und verifiziert per Readback. Bis die erste Vbat-Messung eines Geräts vorliegt, lehnt die Firmware SET für dieses Gerät mit `ERR <SER#> vbat unknown` ab; der nächste Sollwert eine Sekunde später greift dann.
 
 **Konventioneller Pfad** — zeroinput repliziert die Firmware-Sequenz nach jedem vollständigen VE.Direct-Block: SET-HEX-Frame → ACK (400 ms Timeout) → GET-Readback → Vergleich. Befehle in `_victron_cmd_queues[port]` (maxsize=1) gepuffert. Für die Umrechnung W→A dient die Batteriespannung des jeweiligen Ladereglers, ersatzweise die gemittelte Batteriespannung aller Regler, ersatzweise 3,2 V pro Zelle × `cell_count`.
 
