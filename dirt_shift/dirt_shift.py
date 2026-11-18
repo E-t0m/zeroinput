@@ -283,9 +283,7 @@ def get_average(n_days):
 		hours['basic_load'][i] = (hours['Import'][i] + abs(hours['Inverter'][i])
 		                     - hours['Auto'][i])		# real consumption Wh; Auto is a separately metered plannable load and removed. Demand-driven loads (e.g. air conditioning) stay in: they are part of the load to cover and captured by the 7-day average.
 
-	if debug:
-		print('\nhour\tbasic_load')
-		for i in range(0, 24): print('%i\t%.0f' % (i, hours['basic_load'][i]))
+	if debug: print('basic_load by hour:', [int(round(v)) for v in hours['basic_load']])
 	return hours
 
 
@@ -339,9 +337,7 @@ def get_pv_curve(n_days):
 		idx = min(len(values) - 1, int(round(PV_CURVE_PERCENTILE / 100.0 * (len(values) - 1))))
 		curve[h] = values[idx]
 
-	if debug:
-		print('\nhour\tPV curve (p%i over %i days)' % (PV_CURVE_PERCENTILE, len(daily)))
-		for h in range(24): print('%i\t%.0f' % (h, curve[h]))
+	if debug: print('PV curve by hour (p%i over %i days):' % (PV_CURVE_PERCENTILE, len(daily)), [int(round(v)) for v in curve])
 	return curve
 
 
