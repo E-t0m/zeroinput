@@ -7,6 +7,7 @@ Zero export (Nulleinspeisung) for PV and battery systems: local control of grid-
 | [Installation manual](docs/en/installation.md) | [Installationsanleitung](docs/de/installation.md) |
 | [Specifications](docs/en/spec.md) | [Spezifikationen](docs/de/spec.md) |
 | [Load predictor](docs/en/predictor_spec.md) | [Lastprediktor](docs/de/predictor_spec.md) |
+| [Screenshots of the webconfig](docs/screenshots.md) | |
 
 <picture>
 	<source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dirt_shift_day_dark.png">
@@ -15,8 +16,7 @@ Zero export (Nulleinspeisung) for PV and battery systems: local control of grid-
 
 dirt_shift moves the battery discharge into the hours with the dirtiest grid power (purple, right axis).
 
-### [Screenshots of the webconfig](docs/screenshots.md)
-![scheme](https://github.com/user-attachments/assets/ee5862bb-375d-429d-96a0-52863d9d64b7)
+![Structure of a zeroinput system](https://github.com/user-attachments/assets/ee5862bb-375d-429d-96a0-52863d9d64b7)
 
 This script uses a https://volkszaehler.org/ installation for energy meter input and data display.
 
