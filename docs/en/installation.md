@@ -20,7 +20,7 @@ zeroinput integrates naturally into an existing Volkszähler setup without repla
 | `input_power_staging.py` | Two-stage power distribution logic |
 | `inverter_drivers.py` | Inverter driver abstraction (Soyosource, Victron MK3) |
 | `charger_drivers.py` | MPPT charger drivers (eSmart3, Victron, EPever, Renogy, Morningstar) |
-| `vebus.py` | VE.Bus MK2/MK3 protocol driver (only needed for Victron MultiPlus) |
+| [`vebus.py`](https://github.com/martiby/multiplus2) | VE.Bus protocol driver from martiby/multiplus2 (optional, only for Victron MultiPlus-II); not part of the repository, fetched during installation |
 | `predictor.py` | Load predictor (k-means, optional) |
 | `webconfig.py` | HTTP configuration server (optional, requires `-httpd`) |
 | [`ve_aggregator.py`](https://github.com/E-t0m/ve.direct-aggregator) | VE.Direct Aggregator client (optional, only for `victron_agg`) |
@@ -58,7 +58,7 @@ zeroinput integrates naturally into an existing Volkszähler setup without repla
 sudo apt install git python3 python3-serial vzlogger
 ```
 
-For Victron MultiPlus support, pyserial is already included above. No additional libraries required — `vebus.py` uses only the standard serial port.
+The Victron MultiPlus-II additionally needs `vebus.py` from the project [martiby/multiplus2](https://github.com/martiby/multiplus2). The file is not part of the repository; it is fetched into the zeroinput folder during installation, pinned to a tested version. It only needs pyserial.
 
 ---
 
@@ -75,6 +75,7 @@ sudo -u vzlogger git clone https://github.com/E-t0m/zeroinput.git /opt/zeroinput
 cd /opt/zeroinput
 sudo -u vzlogger cp zeroinput.conf.starter zeroinput.conf
 sudo -u vzlogger cp timer.txt.example timer.txt   # optional, for the discharge timer
+sudo -u vzlogger wget -O vebus.py https://raw.githubusercontent.com/martiby/multiplus2/f28e8dc3c002e21a9d71cd0b58308490e76da529/vebus.py   # only for Victron MultiPlus-II
 sudo ln -s /opt/zeroinput/zerooutput.sh /usr/local/bin/zerooutput.sh   # optional, live status as a command
 ```
 
@@ -285,6 +286,8 @@ cd /opt/zeroinput
 sudo -u vzlogger git pull
 sudo systemctl restart zeroinput
 ```
+
+With a Victron MultiPlus-II, `vebus.py` must be in the folder; if it is missing, fetch it with the `wget` command from the installation.
 
 New configuration keys are listed in `zeroinput.conf.starter`. The web interface adds keys that are missing from your own `zeroinput.conf` with their default values when it is opened and writes them to the file on the next save.
 

@@ -219,7 +219,7 @@ One Modbus charger is supported per port entry (the conf key is the port path). 
 
 ## MultiPlus / VE.Bus control (`vebus.py`)
 
-The MultiPlus is controlled directly over the VE.Bus MK2 protocol through an MK2/MK3-USB adapter at 2400 baud — no GX device. `vebus.py` is derived from martiby/multiplus2, adapted to the zeroinput style.
+The MultiPlus is controlled directly over the VE.Bus MK2 protocol through an MK2/MK3-USB adapter at 2400 baud — no GX device. The protocol is spoken by `vebus.py` from [martiby/multiplus2](https://github.com/martiby/multiplus2) (Martin Steppuhn); the file is not part of the repository and is fetched during installation. If it is missing, the driver stays inactive. With `-v`, `vebus.py` reports through the Python `logging` module.
 
 Startup sequence per device: open port → version probe (soft) → `init_address` (the real connectivity gate) → `scan_ess_assistant`, which walks the assistant RAM records from ID 128 to locate the ESS assistant and resolve the setpoint RAM-ID automatically (robust across models, not hard-coded to 131). If any step fails the driver stays inactive and the rest of zeroinput keeps running.
 
