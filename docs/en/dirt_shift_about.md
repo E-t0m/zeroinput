@@ -61,9 +61,12 @@ sustained higher load onto the grid instead of the battery.
 
 ## A day in operation
 
-![dirt_shift on a November day](../screenshots/dirt_shift_day.png)
+<picture>
+	<source media="(prefers-color-scheme: dark)" srcset="../screenshots/dirt_shift_day_dark.png">
+	<img src="../screenshots/dirt_shift_day.png" alt="dirt_shift on a November day">
+</picture>
 
-A Saturday in November, recorded in the volkszähler. Purple is the grid dirtiness (right axis), red the grid import, yellow the PV power and green the feed-in of the inverters; PV and feed-in are plotted downwards.
+A Saturday in November, recorded in the volkszähler. Purple is the grid dirtiness (right axis), red the grid import, yellow the PV power and green the feed-in of the inverters; PV and feed-in are plotted downwards. Precharge was active with `round_trip_margin` 1.
 
 - **Morning and midday, dirtiness 30–45 %:** The grid is clean. The feed-in stays throttled to a small part of the PV power (precharge), the rest of the PV charges the battery. During this time the house draws its power from the grid.
 - **From 3 pm, dirtiness 60–68 %:** The grid is at its dirtiest. The battery discharges freely, the feed-in follows the consumption, and the grid import is zero.
