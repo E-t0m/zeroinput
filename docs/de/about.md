@@ -22,7 +22,7 @@ Das Internet brauchen nur die Zusatzprogramme, die Entladezeiten planen. Sie ruf
 |---|---|
 | Stromzähler | Moderne Messeinrichtung mit Lesekopf oder ein anderes Messgerät, das vzlogger auslesen kann. Der Zähler muss den Wert `1-0:16.7.0` liefern, die saldierte Leistung über alle drei Phasen. Ohne diesen Wert ist die Regelung nicht möglich. |
 | Rechner | Ein Linux-Gerät mit USB |
-| Netzwechselrichter | Soyosource GTN mit RS485-Limiter-Anschluss oder Victron MultiPlus mit MK3-USB-Adapter, in beliebiger Mischung und Anzahl |
+| Netzwechselrichter | Soyosource GTN mit RS485-Limiter-Anschluss oder Victron MultiPlus-II mit MK3-USB-Adapter, in beliebiger Mischung und Anzahl |
 | Laderegler | eSmart3, Victron MPPT, EPever Tracer, Renogy Rover oder Morningstar TriStar, in beliebiger Mischung und Anzahl |
 | Akku | LiFePO4, die Zellzahl ist einstellbar (16S, 15S, 8S und andere) |
 | Software | [Volkszähler](https://www.volkszaehler.org/) mit vzlogger für die Zählerdaten und die Aufzeichnung |

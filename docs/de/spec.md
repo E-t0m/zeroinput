@@ -5,7 +5,7 @@
 
 zeroinput steuert einen oder mehrere Batterie-Netzwechselrichter für Nulleinspeisung (Eigenverbrauchsoptimierung). Der Stromzähler wird kontinuierlich ausgelesen; die Wechselrichterleistung wird jeden Zyklus so angepasst, dass der Zähler möglichst nahe an null bleibt — weder Bezug noch Einspeisung.
 
-Die Wechselrichterseite ist eine generische Mehrtyp-Treiberarchitektur: Soyosource-Limiter-Wechselrichter und Victron MultiPlus (ESS) werden unterstützt, in beliebiger Mischung und Anzahl, verteilt auf zwei Leistungsstufen.
+Die Wechselrichterseite ist eine generische Mehrtyp-Treiberarchitektur: Soyosource-Limiter-Wechselrichter und Victron MultiPlus-II (ESS) werden unterstützt, in beliebiger Mischung und Anzahl, verteilt auf zwei Leistungsstufen.
 
 ## Regelkreis
 

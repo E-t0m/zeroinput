@@ -22,7 +22,7 @@ Only the add-ons that plan discharge times need the internet. They fetch forecas
 |---|---|
 | Electricity meter | Smart meter with an optical reading head, or another meter that vzlogger can read. The meter must provide the value `1-0:16.7.0`, the net power balanced over all three phases. Without this value the control is not possible. |
 | Computer | A Linux device with USB |
-| Grid-tie inverters | Soyosource GTN with RS485 limiter port or Victron MultiPlus with MK3-USB adapter, in any mix and number |
+| Grid-tie inverters | Soyosource GTN with RS485 limiter port or Victron MultiPlus-II with MK3-USB adapter, in any mix and number |
 | Charge controllers | eSmart3, Victron MPPT, EPever Tracer, Renogy Rover or Morningstar TriStar, in any mix and number |
 | Battery | LiFePO4, the cell count is configurable (16S, 15S, 8S and others) |
 | Software | [volkszähler](https://www.volkszaehler.org/) with vzlogger for the meter data and the recording |

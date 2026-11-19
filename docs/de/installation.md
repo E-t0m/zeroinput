@@ -4,7 +4,7 @@
 ## Überblick
 
 zeroinput ist ein Python-Skript für PV-Nulleinspeisung (Eigenverbrauchsoptimierung) auf einem Linux-Gerät.
-Es liest den Stromzähler über vzlogger aus und steuert einen oder mehrere Batterie-Netzwechselrichter über RS485 oder USB — je nach Last zwischen Leistungsstufen umschaltend. Unterstützte Wechselrichtertypen: Soyosource-GTN-Limiter-Serie und Victron MultiPlus (ESS über MK3-USB-Adapter).
+Es liest den Stromzähler über vzlogger aus und steuert einen oder mehrere Batterie-Netzwechselrichter über RS485 oder USB — je nach Last zwischen Leistungsstufen umschaltend. Unterstützte Wechselrichtertypen: Soyosource-GTN-Limiter-Serie und Victron MultiPlus-II (ESS über MK3-USB-Adapter).
 
 zeroinput nutzt **vzlogger** aus dem [Volkszähler](https://www.volkszaehler.org/)-Projekt auf zwei Arten:
 - als **Zählerdatenquelle** — vzlogger liest den Stromzähler und streamt den Wirkleistungswert (`1-0:16.7.0`) über ein FIFO an zeroinput

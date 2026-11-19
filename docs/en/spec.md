@@ -5,7 +5,7 @@
 
 zeroinput controls one or more battery grid-tie inverters to achieve zero feed-in (self-consumption optimisation). The electricity meter is continuously read; the inverter output is adjusted each cycle so that the meter reads as close to zero as possible — neither importing nor exporting.
 
-The inverter side is a generic, multi-type driver architecture: Soyosource limiter inverters and Victron MultiPlus (ESS) are supported, in any mix and any number, distributed across two power stages.
+The inverter side is a generic, multi-type driver architecture: Soyosource limiter inverters and Victron MultiPlus-II (ESS) are supported, in any mix and any number, distributed across two power stages.
 
 ## Core control loop
 
