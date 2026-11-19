@@ -53,13 +53,6 @@ zeroinput runs directly from the cloned folder `/opt/zeroinput` as user `vzlogge
 | `tests/` | tests that run without hardware |
 | `docs/` | documentation in English and German, screenshots |
 
-## An example day in the volkszaehler browser
-- red shows the imported power from the net
-- green is the generated power from the inverters
-- yellow shows the PV power
-
-![basic](https://user-images.githubusercontent.com/110770475/183761064-bd2632d8-4438-4288-b05c-e8126de78463.png)
-
 Version 1 is kept under the tag [v1](https://github.com/E-t0m/zeroinput/tree/v1/v1).
 
 ## License
