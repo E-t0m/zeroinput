@@ -9,14 +9,14 @@ Zero export (Nulleinspeisung) for PV and battery systems: local control of grid-
 | [Load predictor](docs/en/predictor_spec.md) | [Lastprediktor](docs/de/predictor_spec.md) |
 | [Screenshots of the webconfig](docs/screenshots.md) | |
 
+![Structure of a zeroinput system](https://github.com/user-attachments/assets/ee5862bb-375d-429d-96a0-52863d9d64b7)
+
 <picture>
 	<source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/dirt_shift_day_dark.png">
 	<img src="docs/screenshots/dirt_shift_day.png" alt="dirt_shift on a November day: PV covers the house in the morning, the battery takes over when the grid is dirtiest">
 </picture>
 
 dirt_shift moves the battery discharge into the hours with the dirtiest grid power (purple, right axis).
-
-![Structure of a zeroinput system](https://github.com/user-attachments/assets/ee5862bb-375d-429d-96a0-52863d9d64b7)
 
 This script uses a https://volkszaehler.org/ installation for energy meter input and data display.
 
