@@ -58,11 +58,13 @@ Version 1 is found here: [zeroinput v1](v1)
 
 ## License
 
-zeroinput is released under [CC0 1.0](LICENSE). This covers the code written for this project.
+zeroinput is released under the [MIT License](LICENSE).
 
-Two parts are derived from other projects. Their repositories state no license, so the rights to these parts remain with their authors:
+The eSmart3 driver in `charger_drivers.py` is an own implementation; its frame layout follows the protocol description in [skagmo/esmart_mppt](https://github.com/skagmo/esmart_mppt).
 
-| Part | Derived from |
+Not covered by the MIT License:
+
+| Part | Source |
 |---|---|
-| class `esmart` in `charger_drivers.py` | [skagmo/esmart_mppt](https://github.com/skagmo/esmart_mppt), skagmo.com |
-| `vebus.py` | [martiby/multiplus2](https://github.com/martiby/multiplus2), Martin Steppuhn |
+| `vebus.py` for the Victron MultiPlus-II, not part of the repository, fetched during installation | [martiby/multiplus2](https://github.com/martiby/multiplus2), Martin Steppuhn |
+| class `esmart` in `v1/zeroinput.py` (version 1) | derived from [skagmo/esmart_mppt](https://github.com/skagmo/esmart_mppt), skagmo.com; no license is stated there, so the rights to this part remain with its author |
