@@ -14,6 +14,7 @@
 #   4. add entries with the new "type" to conf['inverters']
 # No change to zeroinput.py staging logic is required.
 
+import logging
 from serial import Serial, SerialException
 from time import sleep as _sleep
 
@@ -148,10 +149,14 @@ class VictronMK3Driver(InverterDriver):
 		try:
 			import vebus
 		except ImportError:
-			if self.verbose:
-				print('%s: vebus module not found — MK3 disabled' % self.name)
+			print('%s: vebus.py not found — MK3 inactive. Get it as described in '
+			      'the installation manual (martiby/multiplus2).' % self.name)
 			return
-		self._bus = vebus.VEBus(self.port, verbose=self.verbose)
+		log = logging.getLogger('vebus')			# vebus.py reports through logging
+		if self.verbose and not log.handlers:
+			log.addHandler(logging.StreamHandler())
+			log.setLevel(logging.INFO)
+		self._bus = vebus.VEBus(self.port)
 		ver = self._bus.get_version()			# soft connection probe (may be None on some fw)
 		if not self._bus.init_address():		# init_address is the real connectivity gate
 			print('%s: no VE.Bus response on %s — MK3 inactive' % (self.name, self.port))
@@ -168,8 +173,10 @@ class VictronMK3Driver(InverterDriver):
 	def stop(self):
 		if self._bus is not None:
 			try:
-				self._bus.set_power(0)		# leave in passthrough
-				self._bus.close()
+				if self._ready:
+					self._bus.set_power(0)	# leave in passthrough
+				if self._bus.serial:
+					self._bus.serial.close()
 			except Exception:
 				pass
 

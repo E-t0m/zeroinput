@@ -509,30 +509,53 @@ def set_victron_power(device_key, watts, conf):
 			except Exception: pass
 
 
-# ── eSmart3 class ──────────────────────────────────────────────────────────────
+# ── eSmart3 MPPT charger (RS485, 9600 baud) ───────────────────────────────────
+# Frame layout as documented by skagmo (https://github.com/skagmo/esmart_mppt):
+#   0xAA, 5 header bytes (the 5th is the payload length n), n payload bytes,
+#   1 checksum byte; all bytes of a frame add up to 0 (mod 256).
+#   Header byte 3 = 3 marks a status reply, header byte 4 = 0 the charge block.
+
+_ESM_START		= 0xAA
+_ESM_HEADER		= 5						# header bytes after the start byte
+_ESM_REQUEST	= bytes([0xAA, 0x01, 0x01, 0x01, 0x00, 0x03, 0x00, 0x00, 0x1E])
+_ESM_REQUEST	+= bytes([-sum(_ESM_REQUEST) & 0xFF])	# status request incl. checksum
+
+# charge block fields: name -> (payload offset, divisor); 16 bit little endian
+_ESM_WORDS = {
+	'CS':		(2, 1),
+	'VPV':		(4, 10.0),
+	'Vbat':		(6, 10.0),
+	'Ibat':		(8, 10.0),
+	'Vload':	(12, 10.0),
+	'Iload':	(14, 10.0),
+	'PPV':		(16, 1),
+	'Pload':	(18, 1),
+}
+_ESM_TEMPS = {'ext_temp': 20, 'int_temp': 22}	# one byte each, values from 200 on are negative
+
+
+def _esm_temp(b):
+	return b - 256 if b >= 200 else b
+
 
 class esmart:
-	"""eSmart3 MPPT charger driver.
-	Original lib by skagmo.com 2018 (https://github.com/skagmo/esmart_mppt,
-	no license stated there), adapted for zeroinput."""
+	"""eSmart3 MPPT charger, polled once per second over RS485."""
 
 	def __init__(self, verbose=False):
-		self.state      = 0
-		self.data       = []
-		self.port       = ''
-		self.name       = ''		# device name from conf — set via set_port(port, conf)
-		self.timeout    = 0
-		self.verbose    = verbose
-		self.ser        = None
+		self.port		= ''
+		self.name		= ''				# device name from conf, set via set_port()
+		self.verbose	= verbose
+		self.ser		= None
+		self._rx		= bytearray()
+		self._last_req	= 0.0
 
-	def __del__(self): self.close()
+	def __del__(self):
+		self.close()
 
 	def set_port(self, port, conf=None):
 		self.port = port
-		if conf is not None:
-			self.name = conf.get('chargers', {}).get(port, {}).get('name', port)
-		else:
-			self.name = port
+		chargers = (conf or {}).get('chargers', {})
+		self.name = chargers.get(port, {}).get('name', port)
 
 	def open(self):
 		try:
@@ -543,73 +566,71 @@ class esmart:
 			self.ser = None
 
 	def close(self):
-		try:
-			self.ser.close()
-			self.ser = False
-		except AttributeError:
-			pass
+		if self.ser:
+			try: self.ser.close()
+			except Exception: pass
+		self.ser = None
 
-	def parse(self, data):
-		for c in data:
-			if self.state == 0:
-				if c == 0xaa:
-					self.state      = 1
-					self.data       = []
-					self.target_len = 255
-			elif self.state == 1:
-				self.data.append(c)
-				if len(self.data) == 5:
-					self.target_len = 6 + self.data[4]
-				if len(self.data) == self.target_len:
-					self.state = 0
-					if (0xaa + sum(self.data)) & 0xFF != 0:
-						if self.verbose:
-							print('esmart checksum error on %s — packet discarded' % self.port)
-						continue
-					if self.data[2] == 3:
-						if self.data[3] == 0:
-							ts = time()
-							if self.verbose:
-								msg, _ = _rec_msg(self.port, self.name, mppt_data[self.port])
-								_rec_msgs.put(msg)
-							_new = {}
-							_new['CS']		= int.from_bytes(self.data[7:9],  byteorder='little')
-							_new['VPV']		= int.from_bytes(self.data[9:11], byteorder='little') / 10.0
-							_new['Vbat']	= int.from_bytes(self.data[11:13],byteorder='little') / 10.0
-							_new['Ibat']	= int.from_bytes(self.data[13:15],byteorder='little') / 10.0
-							_new['Vload']	= int.from_bytes(self.data[17:19],byteorder='little') / 10.0
-							_new['Iload']	= int.from_bytes(self.data[19:21],byteorder='little') / 10.0
-							_new['PPV']		= int.from_bytes(self.data[21:23],byteorder='little')
-							_new['Pload']	= int.from_bytes(self.data[23:25],byteorder='little')
-							_new['ext_temp']= self.data[25] if self.data[25] < 200 else self.data[25] - 256
-							_new['int_temp']= self.data[27] if self.data[27] < 200 else self.data[27] - 256
-							_new['ts']		= ts
-							mppt_data[self.port] = _new
+	def parse(self, chunk):
+		"""Feed received bytes; every complete charge block updates mppt_data."""
+		self._rx += chunk
+		while True:
+			start = self._rx.find(_ESM_START)
+			if start < 0:
+				self._rx.clear()
+				return
+			del self._rx[:start]
+			if len(self._rx) < 1 + _ESM_HEADER:
+				return
+			size = 1 + _ESM_HEADER + self._rx[_ESM_HEADER] + 1
+			if len(self._rx) < size:
+				return
+			frame = bytes(self._rx[:size])
+			del self._rx[:size]
+			if sum(frame) & 0xFF:
+				if self.verbose: print('esmart checksum error on %s — packet discarded' % self.port)
+				continue
+			if frame[3] == 3 and frame[4] == 0:
+				self._store(frame[1 + _ESM_HEADER:-1])
+
+	def _store(self, payload):
+		if self.verbose:
+			msg, _ = _rec_msg(self.port, self.name, mppt_data[self.port])
+			_rec_msgs.put(msg)
+		values = {}
+		for key, (ofs, div) in _ESM_WORDS.items():
+			raw = int.from_bytes(payload[ofs:ofs + 2], 'little')
+			values[key] = raw / div if div != 1 else raw
+		for key, ofs in _ESM_TEMPS.items():
+			values[key] = _esm_temp(payload[ofs])
+		values['ts'] = time()
+		mppt_data[self.port] = values
 
 	def esmart_status_request(self):
+		"""Read pending bytes, then ask for a new status block once per second."""
 		if self.ser is None: return
 		try:
 			while self.ser.inWaiting():
 				self.parse(self.ser.read(100))
-			if (time() - self.timeout) > 1:
-				self.ser.write(b'\xaa\x01\x01\x01\x00\x03\x00\x00\x1e\x32')
-				self.timeout = time()
+			if time() - self._last_req > 1:
+				self.ser.write(_ESM_REQUEST)
+				self._last_req = time()
 		except IOError:
-			if self.verbose: print('Serial port error, fixing', self.port)
-			try: self.ser.close()
-			except Exception: pass
-			for attempt in range(1, 21):
-				try:
-					self.ser = Serial(self.port, 9600, timeout=0.1)
-					if self.verbose: print('Error fixed after %i attempt(s)' % attempt)
-					break
-				except SerialException as e:
-					if self.verbose: print('Attempt %i failed: %s' % (attempt, e))
-					sleep(0.5)
-			else:
-				if self.verbose:
-					print('Could not reopen port after 20 attempts: %s' % self.port)
-				mppt_data[self.port] = port_error(self.port)
+			self._reconnect()
+
+	def _reconnect(self, attempts=20):
+		if self.verbose: print('Serial port error, fixing', self.port)
+		self.close()
+		for n in range(1, attempts + 1):
+			try:
+				self.ser = Serial(self.port, 9600, timeout=0.1)
+				if self.verbose: print('Error fixed after %i attempt(s)' % n)
+				return
+			except SerialException as e:
+				if self.verbose: print('Attempt %i failed: %s' % (n, e))
+				sleep(0.5)
+		if self.verbose: print('Could not reopen port after %i attempts: %s' % (attempts, self.port))
+		mppt_data[self.port] = port_error(self.port)
 
 
 # ── Modbus RTU helper (self-contained, pyserial only) ─────────────────────────

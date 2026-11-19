@@ -52,7 +52,6 @@ zeroinput runs directly from the cloned folder `/opt/zeroinput` as user `vzlogge
 | `tools/` | helper scripts |
 | `tests/` | tests that run without hardware |
 | `docs/` | documentation in English and German, screenshots |
-| `v1/` | zeroinput version 1 |
 
 ## An example day in the volkszaehler browser
 - red shows the imported power from the net
@@ -61,15 +60,12 @@ zeroinput runs directly from the cloned folder `/opt/zeroinput` as user `vzlogge
 
 ![basic](https://user-images.githubusercontent.com/110770475/183761064-bd2632d8-4438-4288-b05c-e8126de78463.png)
 
-Version 1 is found here: [zeroinput v1](v1)
+Version 1 is kept under the tag [v1](https://github.com/E-t0m/zeroinput/tree/v1/v1).
 
 ## License
 
-zeroinput is released under [CC0 1.0](LICENSE). This covers the code written for this project.
+zeroinput is released under the [MIT License](LICENSE).
 
-Two parts are derived from other projects. Their repositories state no license, so the rights to these parts remain with their authors:
+The eSmart3 driver in `charger_drivers.py` is an own implementation; its frame layout follows the protocol description in [skagmo/esmart_mppt](https://github.com/skagmo/esmart_mppt).
 
-| Part | Derived from |
-|---|---|
-| class `esmart` in `charger_drivers.py` | [skagmo/esmart_mppt](https://github.com/skagmo/esmart_mppt), skagmo.com |
-| `vebus.py` | [martiby/multiplus2](https://github.com/martiby/multiplus2), Martin Steppuhn |
+`vebus.py` for the Victron MultiPlus-II is not part of the repository and not covered by the MIT License. It is fetched during installation from [martiby/multiplus2](https://github.com/martiby/multiplus2) (Martin Steppuhn).

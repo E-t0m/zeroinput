@@ -40,6 +40,35 @@ def test_esmart_set_port():
 	assert e2.name == '/dev/ttyACM5'
 	ok('esmart.set_port')
 
+# ── 1b. esmart frame parsing ──────────────────────────────────────────────────
+
+def _esmart_frame(cmd, item, payload):
+	f = bytes([0xAA, 0x01, 0x00, cmd, item, len(payload)]) + payload
+	return f + bytes([-sum(f) & 0xFF])
+
+def test_esmart_parse():
+	p = bytearray(30)
+	p[2:4]   = (3).to_bytes(2, 'little')		# CS
+	p[4:6]   = (812).to_bytes(2, 'little')		# VPV 81.2 V
+	p[6:8]   = (531).to_bytes(2, 'little')		# Vbat 53.1 V
+	p[8:10]  = (125).to_bytes(2, 'little')		# Ibat 12.5 A
+	p[16:18] = (664).to_bytes(2, 'little')		# PPV 664 W
+	p[20]    = 251								# ext_temp -5 °C
+	p[22]    = 34								# int_temp 34 °C
+	good  = _esmart_frame(3, 0, bytes(p))
+	other = _esmart_frame(3, 1, bytes(30))		# other block, ignored
+	bad   = bytearray(good); bad[10] ^= 1		# checksum error, discarded
+	cd.mppt_data['/dev/ttyESM'] = {}
+	e = cd.esmart(); e.port = '/dev/ttyESM'
+	stream = b'\x00\x11' + bytes(bad) + other + good
+	for i in range(0, len(stream), 7):			# arrives in pieces
+		e.parse(stream[i:i + 7])
+	d = cd.mppt_data['/dev/ttyESM']
+	assert (d['CS'], d['VPV'], d['Vbat'], d['Ibat'], d['PPV']) == (3, 81.2, 53.1, 12.5, 664), d
+	assert (d['ext_temp'], d['int_temp']) == (-5, 34), d
+	assert cd._ESM_REQUEST.hex() == 'aa010101000300001e32'
+	ok('esmart.parse')
+
 # ── 2. build_chargers: discovery ──────────────────────────────────────────────
 
 def test_build_chargers():
@@ -213,6 +242,7 @@ def test_morningstar():
 
 if __name__ == '__main__':
 	test_esmart_set_port()
+	test_esmart_parse()
 	test_build_chargers()
 	test_combine_charger_data()
 	test_ppv_decay()

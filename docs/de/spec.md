@@ -218,7 +218,7 @@ Pro Port-Eintrag wird ein Modbus-Lader unterstützt (der conf-Schlüssel ist der
 
 ## MultiPlus / VE.Bus-Steuerung (`vebus.py`)
 
-Der MultiPlus wird direkt über das VE.Bus MK2-Protokoll per MK2/MK3-USB-Adapter mit 2400 Baud gesteuert — kein GX-Gerät. `vebus.py` ist von martiby/multiplus2 abgeleitet und an den zeroinput-Stil angepasst.
+Der MultiPlus wird direkt über das VE.Bus MK2-Protokoll per MK2/MK3-USB-Adapter mit 2400 Baud gesteuert — kein GX-Gerät. Das Protokoll spricht `vebus.py` aus [martiby/multiplus2](https://github.com/martiby/multiplus2) (Martin Steppuhn); die Datei ist nicht Teil des Repositorys und wird bei der Installation geladen. Fehlt sie, bleibt der Treiber inaktiv. Mit `-v` gibt `vebus.py` seine Meldungen über das Python-Modul `logging` aus.
 
 Startsequenz pro Gerät: Port öffnen → Versionsabfrage (weich) → `init_address` (das eigentliche Verbindungs-Gate) → `scan_ess_assistant`, das die Assistant-RAM-Records ab ID 128 durchläuft, um den ESS-Assistant zu finden und die Sollwert-RAM-ID automatisch zu ermitteln (robust über Modelle, nicht fest auf 131). Schlägt ein Schritt fehl, bleibt der Treiber inaktiv und der Rest von zeroinput läuft weiter.
 

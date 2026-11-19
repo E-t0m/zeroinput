@@ -20,3 +20,6 @@
 # python
 __pycache__/
 *.pyc
+
+# Victron VE.Bus driver, fetched separately from martiby/multiplus2 (see installation manual)
+vebus.py
