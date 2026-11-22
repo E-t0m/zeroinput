@@ -93,7 +93,7 @@ Die Kurven stammen aus dem Volkszähler. PV-Leistung (gelb) und Einspeisung (gr�
 
 ![viel Verbrauch](https://user-images.githubusercontent.com/110770475/204105529-4d6d03e1-ca13-4224-8272-4995115232d0.png)
 
-Zwei Soyosource. PV-Erzeugung 7,7 kWh, Einspeisung 7,3 kWh. An diesem Tag liefen Backofen, Mikrowelle, Brunnenpumpe und Klimagerät, am Abend war der Akku leer. Morgens und abends folgt die Einspeisung der PV-Kurve. Gegen 17:30 Uhr nimmt die Regelung die Leistung zurück, weil die Akkuspannung fällt.
+PV-Erzeugung 7,7 kWh, Einspeisung 7,3 kWh. An diesem Tag liefen Backofen, Mikrowelle, Brunnenpumpe und Klimagerät, am Abend war der Akku leer. Morgens und abends folgt die Einspeisung der PV-Kurve. Gegen 17:30 Uhr nimmt die Regelung die Leistung zurück, weil die Akkuspannung fällt.
 
 ### Trüber Tag
 
@@ -105,19 +105,19 @@ Solange die PV weniger liefert, als das Haus braucht, geht die gesamte Leistung 
 
 ![Waschmaschine](https://user-images.githubusercontent.com/110770475/204105605-2a70356a-90d3-4a8a-a7a1-fddb570a9e3c.png)
 
-Zwei Soyosource. Die schwarze Kurve ist die saldierte Leistung am Zähler. Oberhalb der Nulllinie ist sie Bezug, unterhalb tatsächliche Einspeisung. In diesem Ausschnitt standen 430 Wh Bezug 12 Wh ungewollte Einspeisung gegenüber. Die Wellen entstehen durch den Trommelmotor, der ständig an- und abläuft: Die Regelung folgt dem Anstieg, und beim plötzlichen Abschalten fließt für einen Moment Leistung ins Netz.
+Die schwarze Kurve ist die saldierte Leistung am Zähler. Oberhalb der Nulllinie ist sie Bezug, unterhalb tatsächliche Einspeisung. In diesem Ausschnitt standen 430 Wh Bezug 12 Wh ungewollte Einspeisung gegenüber. Die Wellen entstehen durch den Trommelmotor, der ständig an- und abläuft: Die Regelung folgt dem Anstieg, und beim plötzlichen Abschalten fließt für einen Moment Leistung ins Netz.
 
 ### Der Backofen taktet den Akku leer
 
 ![leertakten](https://github.com/E-t0m/zeroinput/assets/110770475/59e0d728-b6f5-4dae-9b3c-78c18e5cba8e)
 
-Drei Soyosource. Hier arbeiten vier Teile der Regelung zusammen: die Begrenzung der Entladeleistung, der Rampenmodus bei den Lastsprüngen, der Ausgleich des Spannungsabfalls und das Zurücknehmen der Leistung bei fallender Akkuspannung.
+Hier arbeiten vier Teile der Regelung zusammen: die Begrenzung der Entladeleistung, der Rampenmodus bei den Lastsprüngen, der Ausgleich des Spannungsabfalls und das Zurücknehmen der Leistung bei fallender Akkuspannung.
 
 ### Schwankungen in einer ruhigen Phase
 
 ![Schwankungen](https://github.com/user-attachments/assets/9b7ab215-dbf8-4942-87af-356f95d4f6e5)
 
-Ein Wechselrichter, etwa 150 W Einspeisung. Schwarz ist die Abweichung am Zähler, lila die automatisch verschobene Nulllinie.
+Etwa 150 W Einspeisung. Schwarz ist die Abweichung am Zähler, lila die automatisch verschobene Nulllinie.
 
 ## Genauigkeit und Wirkungsgrad
 
@@ -128,13 +128,12 @@ Im Beispiel oben wurden aus 7,7 kWh PV-Erzeugung 7,3 kWh Einspeisung, das sind e
 ## Hinweise zur Hardware
 
 - Die harten Grenzen für Unter- und Überspannung des Akkus gehören in jeden Laderegler und jeden Wechselrichter. zeroinput arbeitet innerhalb dieser Grenzen und ersetzt sie nicht.
-- Der Soyosource GTN 1200 liefert im Akkubetrieb höchstens 900 W.
 
 ## Rechtliches
 
 Dieser Abschnitt ist eine Einschätzung und keine Rechtsberatung.
 
-Nach meinem Verständnis ist eine Anlage dieser Art in Deutschland in jedem Fall anmeldepflichtig, beim Netzbetreiber und im Marktstammdatenregister. Das gilt unabhängig vom Wechselrichter.
+Nach meinem Verständnis ist eine Anlage dieser Art in Deutschland in jedem Fall anmeldepflichtig im Marktstammdatenregister und je nach Leistung auch beim Netzbetreiber.
 
 Am Stromnetz betrieben werden dürfen nur Wechselrichter mit einem Zertifikat nach VDE-AR-N 4105. Für den Victron MultiPlus-II liegt dieses [Zertifikat](https://www.victronenergy.com/upload/documents/Certificate-VDE-AR-N-4105-2018-11-EZE-MultiPlus-II-%28GX%29-24V-3k%2C-48V-3k-4k5-5k-6k5.pdf) vor, eingestellt auf den Netzcode für Deutschland. Für den Soyosource GTN ist mir kein Zertifikat bekannt. Ob er in Deutschland am Netz betrieben werden darf, ist daher unsicher.
 
@@ -145,4 +144,4 @@ Am Stromnetz betrieben werden dürfen nur Wechselrichter mit einem Zertifikat na
 - [Lastprediktor](predictor_spec.md)
 - dirt_shift: [Kurzübersicht](dirt_shift_about.md), [Installationsanleitung](dirt_shift_installation.md), [Spezifikation](dirt_shift_spec.md)
 - [Screenshots der Weboberfläche](../screenshots.md)
-- Austausch und Fragen: [Akku Doktor Forum](https://akkudoktor.net/t/skalierbare-high-end-cheap-tech-nulleinspeisung-mit-volkszaehler-monitor-und-tibber-integration/5031), [photovoltaikforum](https://www.photovoltaikforum.com/thread/179609-nulleinspeisung-mit-mme-volkszaehler-soyosource-gti-esmart3-laderegler-akku-sald/)
+- Austausch und Fragen: [Akku Doktor Forum](https://akkudoktor.net/t/zeroinput-skalierbare-nulleinspeisung-mit-volkszaehler-monitor/5031), [photovoltaikforum](https://www.photovoltaikforum.com/thread/179609-nulleinspeisung-mit-mme-volkszaehler-soyosource-gti-esmart3-laderegler-akku-sald/)

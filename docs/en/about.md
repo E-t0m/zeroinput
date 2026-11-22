@@ -20,7 +20,7 @@ Only the add-ons that plan discharge times need the internet. They fetch forecas
 
 | Part | What fits |
 |---|---|
-| Electricity meter | Smart meter with an optical reading head, or another meter that vzlogger can read. The meter must provide the value `1-0:16.7.0`, the net power balanced over all three phases. Without this value the control is not possible. |
+| Electricity meter | Modern metering device (moderne Messeinrichtung) with a reading head, or another meter that vzlogger can read. The meter must provide the value `1-0:16.7.0`, the net power balanced over all three phases. Without this value the control is not possible. |
 | Computer | A Linux device with USB |
 | Grid-tie inverters | Soyosource GTN with RS485 limiter port or Victron MultiPlus-II with MK3-USB adapter, in any mix and number |
 | Charge controllers | eSmart3, Victron MPPT, EPever Tracer, Renogy Rover or Morningstar TriStar, in any mix and number |
@@ -93,7 +93,7 @@ The curves come from the volkszähler. PV power (yellow) and feed-in (green) are
 
 ![high consumption](https://user-images.githubusercontent.com/110770475/204105529-4d6d03e1-ca13-4224-8272-4995115232d0.png)
 
-Two Soyosource. PV generation 7.7 kWh, feed-in 7.3 kWh. On this day oven, microwave, well pump and air conditioner were running, in the evening the battery was empty. In the morning and evening the feed-in follows the PV curve. At about 5:30 pm the control reduces the power because the battery voltage drops.
+PV generation 7.7 kWh, feed-in 7.3 kWh. On this day oven, microwave, well pump and air conditioner were running, in the evening the battery was empty. In the morning and evening the feed-in follows the PV curve. At about 5:30 pm the control reduces the power because the battery voltage drops.
 
 ### Cloudy day
 
@@ -105,19 +105,19 @@ As long as the PV delivers less than the house needs, all of its power goes stra
 
 ![washing machine](https://user-images.githubusercontent.com/110770475/204105605-2a70356a-90d3-4a8a-a7a1-fddb570a9e3c.png)
 
-Two Soyosource. The black curve is the net power at the meter. Above the zero line it is import, below it actual export. In this section 430 Wh of import faced 12 Wh of unwanted export. The waves come from the drum motor, which keeps starting and stopping: the control follows the rise, and when the motor stops suddenly, power flows into the grid for a moment.
+The black curve is the net power at the meter. Above the zero line it is import, below it actual export. In this section 430 Wh of import faced 12 Wh of unwanted export. The waves come from the drum motor, which keeps starting and stopping: the control follows the rise, and when the motor stops suddenly, power flows into the grid for a moment.
 
 ### The oven cycles the battery empty
 
 ![cycling empty](https://github.com/E-t0m/zeroinput/assets/110770475/59e0d728-b6f5-4dae-9b3c-78c18e5cba8e)
 
-Three Soyosource. Four parts of the control work together here: the limit of the discharge power, the ramp mode on the load steps, the voltage drop compensation and the power reduction with falling battery voltage.
+Four parts of the control work together here: the limit of the discharge power, the ramp mode on the load steps, the voltage drop compensation and the power reduction with falling battery voltage.
 
 ### Fluctuations in a quiet phase
 
 ![fluctuations](https://github.com/user-attachments/assets/9b7ab215-dbf8-4942-87af-356f95d4f6e5)
 
-One inverter, about 150 W feed-in. Black is the deviation at the meter, purple the automatically shifted zero line.
+About 150 W feed-in. Black is the deviation at the meter, purple the automatically shifted zero line.
 
 ## Accuracy and efficiency
 
@@ -128,15 +128,14 @@ In the example above, 7.7 kWh of PV generation became 7.3 kWh of feed-in, about 
 ## Hardware notes
 
 - The hard limits for battery undervoltage and overvoltage belong in every charge controller and every inverter. zeroinput works within these limits and does not replace them.
-- The Soyosource GTN 1200 delivers at most 900 W in battery mode.
 
 ## Legal
 
 This section is an assessment, not legal advice.
 
-As I understand it, a system of this kind must always be registered in Germany, with the grid operator and in the Marktstammdatenregister. This applies regardless of the inverter.
+As I understand it, a system of this kind must always be registered in Germany in the Marktstammdatenregister and, depending on its power, also with the grid operator.
 
-Only inverters with a certificate according to VDE-AR-N 4105 may be operated on the grid. The Victron MultiPlus-II has this [certificate](https://www.victronenergy.com/upload/documents/Certificate-VDE-AR-N-4105-2018-11-EZE-MultiPlus-II-%28GX%29-24V-3k%2C-48V-3k-4k5-5k-6k5.pdf), set to the grid code for Germany. I know of no certificate for the Soyosource GTN. Whether it may be operated on the grid in Germany is therefore uncertain. Other countries have their own rules.
+Only inverters with a certificate according to VDE-AR-N 4105 may be operated on the grid. The Victron MultiPlus-II has this [certificate](https://www.victronenergy.com/upload/documents/Certificate-VDE-AR-N-4105-2018-11-EZE-MultiPlus-II-%28GX%29-24V-3k%2C-48V-3k-4k5-5k-6k5.pdf), set to the grid code for Germany. I know of no certificate for the Soyosource GTN. Whether it may be operated on the grid in Germany is therefore uncertain.
 
 ## Further reading
 
@@ -145,4 +144,4 @@ Only inverters with a certificate according to VDE-AR-N 4105 may be operated on 
 - [Load predictor](predictor_spec.md)
 - dirt_shift: [overview](dirt_shift_about.md), [installation guide](dirt_shift_installation.md), [specification](dirt_shift_spec.md)
 - [Screenshots of the web interface](../screenshots.md)
-- Discussion and questions (German): [Akku Doktor forum](https://akkudoktor.net/t/skalierbare-high-end-cheap-tech-nulleinspeisung-mit-volkszaehler-monitor-und-tibber-integration/5031), [photovoltaikforum](https://www.photovoltaikforum.com/thread/179609-nulleinspeisung-mit-mme-volkszaehler-soyosource-gti-esmart3-laderegler-akku-sald/)
+- Discussion and questions (German): [Akku Doktor forum](https://akkudoktor.net/t/zeroinput-skalierbare-nulleinspeisung-mit-volkszaehler-monitor/5031), [photovoltaikforum](https://www.photovoltaikforum.com/thread/179609-nulleinspeisung-mit-mme-volkszaehler-soyosource-gti-esmart3-laderegler-akku-sald/)
