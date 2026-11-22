@@ -309,6 +309,8 @@ Neue Konfigurationsschlüssel stehen in `zeroinput.conf.starter`. Die Weboberfl�
 
 Mit `-httpd` erreichbar unter `http://<hostname>:8081/`
 
+**Die Weboberfläche hat keine Anmeldung.** Jeder, der den Port erreicht, kann die Konfiguration ändern und damit Befehle als Benutzer `vzlogger` ausführen (Alarmbefehle, `predictor.py`). Den Port deshalb nur im eigenen Heimnetz erreichbar machen, nie per Portweiterleitung ins Internet freigeben. Für den Fernzugriff ein VPN nutzen (z. B. WireGuard). Anfragen fremder Webseiten weist der Server ab.
+
 Tabs:
 - **zeroinput.conf** — Alle hot-reloadbaren Schlüssel live bearbeiten. Strukturelle Schlüssel (`chargers`, `inverters`) zeigen Neustart-Hinweis.
 - **chargers** — Strukturierter Editor für MPPT-Lader und Temperatursensoren (eSmart3, Victron, Aggregator mit SER#-Tabelle, EPever, Renogy, Morningstar). Modbus-Typen zeigen ein `unit`-Feld (Slave-Adresse). Neustart nach dem Speichern erforderlich.

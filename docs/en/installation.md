@@ -309,6 +309,8 @@ New configuration keys are listed in `zeroinput.conf.starter`. The web interface
 
 With `-httpd`, the web interface is available at `http://<hostname>:8081/`
 
+**The web interface has no login.** Anyone who can reach the port can change the configuration and thereby run commands as user `vzlogger` (alarm commands, `predictor.py`). Keep the port reachable only within your home network and never expose it to the internet via port forwarding. Use a VPN (e.g. WireGuard) for remote access. The server rejects requests from foreign web pages.
+
 Tabs:
 - **zeroinput.conf** — Edit all hot-reloadable keys live. Structural keys (`chargers`, `inverters`) show a restart-required notice.
 - **chargers** — Structured editor for MPPT chargers and temperature sensors (eSmart3, Victron, Aggregator with SER# table, EPever, Renogy, Morningstar). Modbus types show a `unit` (slave address) field. Restart required after saving.

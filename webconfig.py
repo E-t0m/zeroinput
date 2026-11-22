@@ -98,9 +98,8 @@ class WebconfigHandler(BaseHTTPRequestHandler):
 	def _send_json(self, code, data):
 		body = json.dumps(data).encode()
 		self.send_response(code)
-		self.send_header('Content-Type',				'application/json')
-		self.send_header('Content-Length',				len(body))
-		self.send_header('Access-Control-Allow-Origin',	'*')
+		self.send_header('Content-Type',	'application/json')
+		self.send_header('Content-Length',	len(body))
 		self.end_headers()
 		self.wfile.write(body)
 
@@ -111,12 +110,20 @@ class WebconfigHandler(BaseHTTPRequestHandler):
 		self.end_headers()
 		self.wfile.write(body)
 
-	def do_OPTIONS(self):
-		self.send_response(200)
-		self.send_header('Access-Control-Allow-Origin',	'*')
-		self.send_header('Access-Control-Allow-Methods',	'GET, POST, OPTIONS')
-		self.send_header('Access-Control-Allow-Headers',	'Content-Type')
-		self.end_headers()
+	def _same_origin(self):
+		"""Reject requests sent by a page from another origin (CSRF).
+		The web interface is served by this server itself, so a browser always sends
+		an Origin equal to the Host header. Clients without Origin (curl) pass."""
+		origin = self.headers.get('Origin')
+		if origin is None: return True
+		from urllib.parse import urlparse
+		return urlparse(origin).netloc == self.headers.get('Host', '')
+
+	def _json_request(self):
+		"""Only application/json is accepted: a foreign page cannot send it without a
+		CORS preflight, and this server answers no preflight."""
+		ctype = self.headers.get('Content-Type', '').split(';')[0].strip().lower()
+		return ctype == 'application/json'
 
 	def _timer_path(self):
 		raw = _read(join(BASE_DIR, 'zeroinput.conf'))
@@ -188,12 +195,6 @@ class WebconfigHandler(BaseHTTPRequestHandler):
 			self._send_json(200 if content is not None else 500,
 				{'content': content} if content is not None else {'error': 'read failed'})
 
-		elif path == '/api/restart':
-			from urllib.parse import urlparse, parse_qs
-			service = parse_qs(urlparse(self.path).query).get('service', ['zeroinput'])[0]
-			self._restart_service(service)
-			return
-
 		elif path == '/api/timer':
 			content = _read(self._timer_path()) or ''
 			self._send_json(200, {'content': content})
@@ -214,6 +215,13 @@ class WebconfigHandler(BaseHTTPRequestHandler):
 
 	def do_POST(self):
 		path = self.path.split('?')[0]
+
+		if not self._same_origin():
+			self._send_json(403, {'error': 'cross-origin request rejected'})
+			return
+		if not self._json_request():
+			self._send_json(415, {'error': 'Content-Type must be application/json'})
+			return
 
 		if path == '/api/restart':
 			from urllib.parse import urlparse, parse_qs

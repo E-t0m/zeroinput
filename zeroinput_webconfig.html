@@ -293,7 +293,7 @@
 
 <script>
 'use strict';
-const API = 'http://' + location.hostname + ':8081';
+const API = location.origin;	// served by webconfig.py itself, see webconfig_port
 const DEVICE_KEYS = {
 	'':            ['power_demand', 'zero_shift', 'bat_voltage'],
 	'combined':    ['PPV','PVperc','Vbat','Ibat','Pload'],
@@ -887,7 +887,8 @@ async function doRestart(service) {
 	st.style.color = 'var(--muted)';
 	st.textContent = 'Sending restart command to ' + service + '…';
 	try {
-		const r = await fetch(API + '/api/restart?service=' + encodeURIComponent(service), {method:'POST'});
+		const r = await fetch(API + '/api/restart?service=' + encodeURIComponent(service), {
+			method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
 		const d = await r.json();
 		if (d.ok) {
 			st.style.color = 'var(--ok)';
