@@ -70,7 +70,7 @@ try:
 		tibber_personal_token = json_load(fi)['tibber_personal_token']	# get personal token from file
 except:
 	if debug: print('error reading: tibber_personal_token.json - create it from tibber_personal_token.json.starter')
-	syslog.syslog(syslog, "error reading: tibber_personal_token.json")
+	syslog.syslog(syslog.LOG_ERR, "error reading: tibber_personal_token.json")
 	exit(1)
 else:
 	if debug: print('successful read: tibber_personal_token.json')
@@ -84,16 +84,17 @@ else:
 
 if debug: print(tibber_response)
 
-if 'Response \[200\]' in tibber_response:
-	if debug: print('<Response [200]> from tibber server, try again later')
-	syslog.syslog(syslog.LOG_INFO, "<Response [200]> from server")
+if not isinstance(tibber_response, dict) or 'errors' in tibber_response or not tibber_response.get('data'):
+	# keep the last good tibber_prices.json instead of overwriting it with an error response
+	if debug: print('no price data from tibber server, try again later')
+	syslog.syslog(syslog.LOG_INFO, "no price data from tibber server")
 	exit(1)
 
 try:
 	with open(join(dirname(__file__),'tibber_prices.json'),'w') as fo: json_dump(tibber_response,fo)	# write response to file
 except:
 	if debug: print('error writing: tibber_prices.json')
-	syslog.syslog(syslog, "error writing: tibber_prices.json")
+	syslog.syslog(syslog.LOG_ERR, "error writing: tibber_prices.json")
 	exit(1)
 
 if debug: print('prices written. done.')

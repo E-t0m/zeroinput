@@ -7,7 +7,7 @@ Funktionsspezifikation des zeroinput-Lastprediktors (`predictor.py`, VERSION 108
 Der Prediktor liefert einen `offset` (in Watt), den zeroinput zur Bedarfsberechnung addiert. Er verbessert die Nulleinspeise-Regelung für zwei Lastmuster, die der reine Regelkreis schlecht beherrscht:
 
 1. **Zyklische Lasten** (z.B. ein Waschmaschinenmotor oder eine thermostatgetaktete Heizdecke), die zwischen zwei Leistungsniveaus wechseln. Der Prediktor lernt die Niveaus und hält den Wechselrichter auf dem unteren, so dass dieser dem Zyklus nicht hinterherläuft und in die Einspeisung überschießt.
-2. **Wiederkehrende kurze Hochlast-Spitzen** („Peaks"), bei denen die gesetzlich begrenzte Rampengeschwindigkeit des Wechselrichters dazu führt, dass sein Hochregeln mehr Energie einspeist als die Spitze je sparen könnte. Der Prediktor erkennt die Wiederholung und sitzt die Spitzen aus, statt ihnen zu folgen.
+2. **Wiederkehrende kurze Hochlast-Spitzen** („Peaks"), bei denen die begrenzte Rampengeschwindigkeit des Wechselrichters dazu führt, dass sein Hochregeln mehr Energie einspeist als die Spitze je sparen könnte. Der Prediktor erkennt die Wiederholung und sitzt die Spitzen aus, statt ihnen zu folgen.
 
 Im frischen Zustand erhöht der Prediktor nie das Einspeiserisiko: solange nichts gelernt ist (und kein Override aktiv ist), ist der offset 0 und wird nie aktiv angewendet.
 

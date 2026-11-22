@@ -48,15 +48,17 @@ zeroinput fügt sich damit natürlich in eine bestehende Volkszähler-Installati
   - **Victron MultiPlus / MultiPlus-II** (VE.Bus, Mikroprozessor 2. Generation) mit MK2-USB- oder MK3-USB-Adapter — ESS-Assistant muss in VEConfigure konfiguriert sein
 - MPPT-Laderegler: eSmart3 (RS485), Victron MPPT (VE.Direct oder Aggregator), EPever Tracer-AN/-BN, Renogy Rover/Elite/Adventurer oder Morningstar TriStar MPPT (alle RS485/Modbus RTU)
 - RS485-Adapter (USB) — Verdrahtung: **A+ an A+, B- an B-** an allen Geräten
-- Stromzähler mit erweiterter Datenausgabe (PIN beim Netzbetreiber anfordern)
+- Stromzähler mit erweiterter Datenausgabe (PIN beim Messstellenbetreiber anfordern)
   Der OBIS-Datensatz `1-0:16.7.0` (Netz-Wirkleistung) **muss** vorhanden sein
-- Zähler-Schnittstelle kompatibel mit vzlogger (IR-Lesekopf, Shelly 3EM/3PM, Modbus-Zähler, …)
+- Zähler-Schnittstelle kompatibel mit vzlogger (IR-Lesekopf, Shelly 3EM / Pro 3EM, Modbus-Zähler, …)
 
 ### Software
 
 ```bash
 sudo apt install git python3 python3-serial vzlogger
 ```
+
+`vzlogger` liegt ab Debian 13 (trixie) im Paketarchiv. Auf älteren Systemen das Paket aus dem Repository des volkszaehler.org-Projekts installieren, siehe [vzlogger-Installation](https://wiki.volkszaehler.org/software/controller/vzlogger/installation_cpp-version).
 
 Für den Victron MultiPlus-II wird zusätzlich `vebus.py` aus dem Projekt [martiby/multiplus2](https://github.com/martiby/multiplus2) gebraucht. Die Datei ist nicht Teil des Repositorys und wird bei der Installation in den Ordner von zeroinput geladen, festgelegt auf einen geprüften Stand. Sie braucht nur pyserial.
 
@@ -444,7 +446,7 @@ journalctl -u zeroinput -n 100
 Eine alte zeroinput-Instanz läuft noch.
 ```bash
 ps aux | grep zeroinput
-crontab -u vzlogger -e   # @reboot-Zeile entfernen
+crontab -u vzlogger -e   # zeroinput startet über systemd: eine @reboot-Zeile für zeroinput entfernen
 sudo reboot
 ```
 

@@ -71,7 +71,7 @@ Inverters are handled by a generic driver layer (`inverter_drivers.py`). Each ty
 
 - **Growatt** (MIC/MOD/MID PV strings): only a percentage power cap / export limit, no active setpoint. SPH/SPA hybrids do have a watt setpoint but write to EEPROM/flash and react slowly — unsafe at 1 s. Off-grid SPF is island-only.
 - **Hoymiles HM/HMS** (micro): only a relative/absolute power *limit*, requires a DTU, and reacts in 18–90 s — incompatible with the 1 s loop.
-- **APsystems EZ1** (micro): only `setMaxPower` (a cap) over fragile HTTP/WLAN; the manufacturer removed local control in firmware 1.1.2_b.
+- **APsystems EZ1** (micro): only `setMaxPower` (a power cap) over HTTP/WLAN, no active setpoint. The local API must be enabled permanently in the app (firmware 1.7.0 and later); older firmware writes every cap to flash.
 - **Deye / Sunsynk / Sol-Ark** (hybrid, all identical): a real watt setpoint over Modbus RTU, but the setpoint registers are undocumented as RAM vs flash; the only safe field-proven rate is ~1500 writes/day (~1 per minute), ~38× below zeroinput's per-second rate. Integrable only as a deliberately rate-limited slow stage, not as a fast regulating stage.
 
 The common rule: PV-string, micro and off-grid inverters have an uncontrollable source and can only throttle; true watt-setpoint control needs a controllable source behind the inverter (DC battery for Soyosource, ESS battery for MultiPlus).

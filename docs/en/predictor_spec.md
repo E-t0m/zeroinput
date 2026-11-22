@@ -7,7 +7,7 @@ Functional specification of the zeroinput load predictor (`predictor.py`, VERSIO
 The predictor produces an `offset` (in watts) that zeroinput adds to its demand calculation. It improves zero-feed-in control for two load patterns the plain control loop handles poorly:
 
 1. **Cyclic loads** (e.g. a washing-machine motor or a thermostat-cycled heating blanket) that alternate between two power levels. The predictor learns the levels and holds the inverter at the lower one, so it does not chase the cycle and overshoot into feed-in.
-2. **Recurring short high-load surges** ("peaks"), where the inverter's legally limited ramp rate means that ramping up feeds in more energy than the surge could ever save. The predictor recognizes the repetition and sits the surges out instead of following them.
+2. **Recurring short high-load surges** ("peaks"), where the inverter's limited ramp rate means that ramping up feeds in more energy than the surge could ever save. The predictor recognizes the repetition and sits the surges out instead of following them.
 
 In the fresh state the predictor never raises the feed-in risk: as long as nothing has been learned (and no override is active), the offset is 0 and is never actively applied.
 

@@ -71,7 +71,7 @@ Wechselrichter laufen über eine generische Treiberschicht (`inverter_drivers.py
 
 - **Growatt** (MIC/MOD/MID PV-Strings): nur prozentuale Leistungsdeckelung / Export-Limit, kein aktiver Sollwert. SPH/SPA-Hybride haben zwar einen Watt-Sollwert, schreiben aber in EEPROM/Flash und reagieren träge — bei 1 s unsicher. Off-Grid SPF ist Inselbetrieb.
 - **Hoymiles HM/HMS** (Mikro): nur relatives/absolutes Leistungs-*Limit*, braucht eine DTU, reagiert in 18–90 s — mit dem 1-s-Takt unvereinbar.
-- **APsystems EZ1** (Mikro): nur `setMaxPower` (Deckel) über fragiles HTTP/WLAN; der Hersteller hat die lokale Steuerung in Firmware 1.1.2_b entfernt.
+- **APsystems EZ1** (Mikro): nur `setMaxPower` (Leistungsdeckel) über HTTP/WLAN, kein aktiver Sollwert. Die lokale Schnittstelle muss in der App dauerhaft freigeschaltet sein (ab Firmware 1.7.0); ältere Firmware schreibt jeden Deckel in den Flash.
 - **Deye / Sunsynk / Sol-Ark** (Hybrid, baugleich): echter Watt-Sollwert über Modbus RTU, aber die Sollwert-Register sind als RAM oder Flash undokumentiert; die einzige feldbewährte sichere Rate ist ~1500 Schreibvorgänge/Tag (~1/Minute), ~38× unter zeroinputs Sekundentakt. Nur als bewusst schreibratenbegrenzte träge Stufe integrierbar, nicht als schnelle Regelstufe.
 
 Die gemeinsame Regel: PV-String-, Mikro- und Off-Grid-Wechselrichter haben eine unkontrollierbare Quelle und können nur drosseln; echte Watt-Sollwert-Steuerung braucht eine steuerbare Quelle hinter dem Wechselrichter (DC-Batterie bei Soyosource, ESS-Batterie beim MultiPlus).

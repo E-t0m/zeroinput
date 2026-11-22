@@ -48,15 +48,17 @@ zeroinput integrates naturally into an existing Volkszähler setup without repla
   - **Victron MultiPlus / MultiPlus-II** (VE.Bus, 2nd-gen microprocessor) with MK2-USB or MK3-USB adapter — ESS assistant must be configured in VEConfigure
 - MPPT charge controller: eSmart3 (RS485), Victron MPPT (VE.Direct or Aggregator), EPever Tracer-AN/-BN, Renogy Rover/Elite/Adventurer, or Morningstar TriStar MPPT (all RS485/Modbus RTU)
 - RS485 adapter (USB) — wiring: **A+ to A+, B- to B-** on all devices
-- Electricity meter with extended data output (request PIN from your grid operator)
+- Electricity meter with extended data output (request PIN from your metering point operator)
   The OBIS dataset `1-0:16.7.0` (net active power) **must** be available
-- Meter interface compatible with vzlogger (IR read head, Shelly 3EM/3PM, Modbus meter, …)
+- Meter interface compatible with vzlogger (IR read head, Shelly 3EM / Pro 3EM, Modbus meter, …)
 
 ### Software
 
 ```bash
 sudo apt install git python3 python3-serial vzlogger
 ```
+
+`vzlogger` is in the Debian archive from Debian 13 (trixie) on. On older systems, install the package from the volkszaehler.org project repository, see [vzlogger installation](https://wiki.volkszaehler.org/software/controller/vzlogger/installation_cpp-version).
 
 The Victron MultiPlus-II additionally needs `vebus.py` from the project [martiby/multiplus2](https://github.com/martiby/multiplus2). The file is not part of the repository; it is fetched into the zeroinput folder during installation, pinned to a tested version. It only needs pyserial.
 
@@ -444,7 +446,7 @@ journalctl -u zeroinput -n 100
 An old zeroinput instance is still running.
 ```bash
 ps aux | grep zeroinput
-crontab -u vzlogger -e   # remove any @reboot line
+crontab -u vzlogger -e   # zeroinput starts via systemd: remove any @reboot line for zeroinput
 sudo reboot
 ```
 
