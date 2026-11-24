@@ -13,8 +13,8 @@ Die Batterie steuert `dirt_shift` nicht selbst, sondern schreibt die `timer.txt`
 
 ## Datenquellen
 
-- **volkszähler** (HTTP-API, `vz_host_port`, Zeitlimit `VZ_TIMEOUT_S` = 30 s je Abfrage):
-  - **basic_load** — Hausverbrauch je Stunde, `Import + |Inverter| − Auto`, als gewichtetes Mittel über `average_days` Tage (`get_average`, stündlich in `dirt_avg_cache.json`). Jeder Tag ist ein 24-Stunden-Abschnitt, der eine Stunde vor der aktuellen endet (`VZ_WINDOW_LAG_H`), weil volkszähler die gerade abgeschlossene Stunde noch nicht liefert; gezählt werden nur vollständige Abschnitte. Gleiches gilt für die PV-Referenzkurve. Die Formel ist an die eigene Anlage anzupassen: abgezogen werden nur planbare Lasten, die nicht aus der Reserve gedeckt werden sollen (etwa eine gesondert erfasste Wallbox).
+- **[volkszaehler.org](https://volkszaehler.org/)** (HTTP-API, `vz_host_port`, Zeitlimit `VZ_TIMEOUT_S` = 30 s je Abfrage):
+  - **basic_load** — Hausverbrauch je Stunde, `Import + |Inverter| − Auto`, als gewichtetes Mittel über `average_days` Tage (`get_average`, stündlich in `dirt_avg_cache.json`). Jeder Tag ist ein 24-Stunden-Abschnitt, der eine Stunde vor der aktuellen endet (`VZ_WINDOW_LAG_H`), weil volkszaehler.org die gerade abgeschlossene Stunde noch nicht liefert; gezählt werden nur vollständige Abschnitte. Gleiches gilt für die PV-Referenzkurve. Die Formel ist an die eigene Anlage anzupassen: abgezogen werden nur planbare Lasten, die nicht aus der Reserve gedeckt werden sollen (etwa eine gesondert erfasste Wallbox).
   - **Energieinhalt** — rekonstruiert aus PV- und Inverter-Energie seit dem letzten Leerzustand, mit `PV_to_bat_efficiency` und `bat_to_AC_efficiency` (`get_vz_bat_cap`, bei jedem Lauf frisch).
   - **PV-Erzeugung** — Grundlage der PV-Referenzkurve; der Mittelwert der letzten 15 Minuten (`recent_pv_power`) dient dem Energiebudget und der Spannungs-Bedingung der Wallbox.
   - **Batteriespannung** (`Vbat`) — Leer-Anker des Energieinhalts und Spannungs-Bedingung der Wallbox.
@@ -46,7 +46,7 @@ Der Median teilt immer etwa hälftig, auch an durchgehend sauberen oder dreckige
 - Sind Stunden von morgen noch nicht veröffentlicht, gelten dort die heutigen Werte derselben Quelle; morgen wird nicht aus der anderen Quelle ergänzt. Beide Quellen veröffentlichen den Folgetag in der Regel ab etwa 19 Uhr.
 - Abgerufen wird stündlich (`dirt_grid_cache.json`, mit der Quelle); ein Fehlversuch wird erst zur nächsten Stunde wiederholt.
 
-**Ausfall.** Liefern beide Quellen nichts, darf der Cache genau **einen Tag** überbrücken, aber nur, wenn die gestern geholten Daten tatsächlich eine Prognose für heute enthalten (`_substitute_day`); die Werte von gestern selbst werden nie als heute ausgegeben. Danach greift ein **Notmodus** (`emergency_zones`): Aus Solar- und Windprognose und einem festen, normierten Profil der **bundesweiten** Netzlast wird ein relativer Dreckigkeitsverlauf modelliert und wie gewohnt geschnitten. Er ist grob, bezieht aber den Wind ein. Der Notmodus wird in jeder Ausgabe deutlich gekennzeichnet, nicht zwischengespeichert und **nicht** nach volkszähler exportiert. Ist auch das Wetter nicht abrufbar, bricht `dirt_shift` ab (siehe Fehlerverhalten).
+**Ausfall.** Liefern beide Quellen nichts, darf der Cache genau **einen Tag** überbrücken, aber nur, wenn die gestern geholten Daten tatsächlich eine Prognose für heute enthalten (`_substitute_day`); die Werte von gestern selbst werden nie als heute ausgegeben. Danach greift ein **Notmodus** (`emergency_zones`): Aus Solar- und Windprognose und einem festen, normierten Profil der **bundesweiten** Netzlast wird ein relativer Dreckigkeitsverlauf modelliert und wie gewohnt geschnitten. Er ist grob, bezieht aber den Wind ein. Der Notmodus wird in jeder Ausgabe deutlich gekennzeichnet, nicht zwischengespeichert und **nicht** nach volkszaehler.org exportiert. Ist auch das Wetter nicht abrufbar, bricht `dirt_shift` ab (siehe Fehlerverhalten).
 
 ---
 
@@ -222,7 +222,7 @@ Begrenzt, stoppt oder drosselt ein Lauf, folgt 30 Minuten später eine „Alles-
 
 ## Netz-Dreckigkeit exportieren
 
-Ist `vz_dirtiness_uuid` gesetzt, schreibt jeder Lauf den aktuellen `dirt%`-Wert per HTTP-POST in diesen volkszähler-Kanal; beim ersten Lauf einer Stunde zusätzlich den Wert der Vorstunde eine Sekunde vor der Stundengrenze, damit die Kurve eine saubere Stufe bildet (`write_dirtiness_to_vz`). Der Wert folgt der Skala der jeweiligen Quelle: Mit der Stromampel liegt er niedriger als mit SMARD; wechselt die Quelle, entfällt die Stufe zur Vorstunde. Ein Sprung im Verlauf ohne entsprechende Wetteränderung zeigt deshalb einen Quellenwechsel an; welche Quelle gilt, nennen die `-v`-Ausgabe und das Logfile. Im Notmodus wird nichts exportiert. Ein Fehlschlag wird nur mit `-v` gemeldet.
+Ist `vz_dirtiness_uuid` gesetzt, schreibt jeder Lauf den aktuellen `dirt%`-Wert per HTTP-POST in diesen volkszaehler.org-Kanal; beim ersten Lauf einer Stunde zusätzlich den Wert der Vorstunde eine Sekunde vor der Stundengrenze, damit die Kurve eine saubere Stufe bildet (`write_dirtiness_to_vz`). Der Wert folgt der Skala der jeweiligen Quelle: Mit der Stromampel liegt er niedriger als mit SMARD; wechselt die Quelle, entfällt die Stufe zur Vorstunde. Ein Sprung im Verlauf ohne entsprechende Wetteränderung zeigt deshalb einen Quellenwechsel an; welche Quelle gilt, nennen die `-v`-Ausgabe und das Logfile. Im Notmodus wird nichts exportiert. Ein Fehlschlag wird nur mit `-v` gemeldet.
 
 ---
 
@@ -273,9 +273,9 @@ Fehlende Daten lassen so weit wie möglich nur den betroffenen Teil entfallen:
 | Stromampel und SMARD | Cache vom Vortag, sofern er eine Prognose für heute enthält, sonst Notmodus |
 | Strahlungsprognose | unskalierte Referenzkurve |
 | SMARD-Verbrauchsprognose | Profil des letzten verfügbaren Tages |
-| volkszähler nicht erreichbar | gecachte Mittelwerte und PV-Kurve; da der Akkuinhalt fehlt, Batterie frei |
+| volkszaehler.org nicht erreichbar | gecachte Mittelwerte und PV-Kurve; da der Akkuinhalt fehlt, Batterie frei |
 
-Nur wenn für die Mittelung keine vollständigen Tage vorliegen, der volkszähler nicht erreichbar ist und keine gecachten Mittelwerte vorhanden sind, oder weder Netzdaten noch Wetter verfügbar sind, bricht `dirt_shift` ab. Zuvor schreibt es eine „Alles-erlaubt"-Zeile mit aktuellem Datum (`write_free_timer`), außer bei `disable_zeroinput_timer: true`; das Wallbox-Relais bleibt unangetastet. Ist nicht einmal `zeroinput.conf` lesbar, bleibt nur die Fehlermeldung.
+Nur wenn für die Mittelung keine vollständigen Tage vorliegen, volkszaehler.org nicht erreichbar ist und keine gecachten Mittelwerte vorhanden sind, oder weder Netzdaten noch Wetter verfügbar sind, bricht `dirt_shift` ab. Zuvor schreibt es eine „Alles-erlaubt"-Zeile mit aktuellem Datum (`write_free_timer`), außer bei `disable_zeroinput_timer: true`; das Wallbox-Relais bleibt unangetastet. Ist nicht einmal `zeroinput.conf` lesbar, bleibt nur die Fehlermeldung.
 
 ---
 
@@ -294,7 +294,7 @@ In `dirt_shift.conf`:
 | Schlüssel | Bedeutung | Standard |
 |---|---|---|
 | `zeroinput_conf` | Pfad zur `zeroinput.conf` | `../zeroinput.conf` |
-| `vz_host_port`, `vz_chans` | volkszähler-Host und Kanal-UUIDs | — |
+| `vz_host_port`, `vz_chans` | volkszaehler.org-Host und Kanal-UUIDs | — |
 | `vz_dirtiness_uuid` | Kanal für den Dreckigkeits-Export, leer = aus | leer |
 | `average_days` | Tage für das `basic_load`-Mittel | 7 |
 | `day_weights_pct` | Gewichtung je Tag, Index 0 = ältester; bei falscher Länge gleich gewichtet | `[200, 100, 100, 100, 100, 150, 200]` |

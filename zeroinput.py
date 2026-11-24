@@ -147,7 +147,7 @@ def read_meter(vz_in):
 
 
 def write_vz_log(power_demand, zero_shift, bat_voltage, mppt_data, conf):
-	"""Write current values to volkszaehler log file.
+	"""Write current values to the volkszaehler.org log file.
 	Channel mapping is read from conf['vz_channels']."""
 	def device(name):
 		for port, dev in conf.get('chargers', {}).items():
@@ -193,7 +193,7 @@ def write_vzlogger_conf_example(conf):
 		f.write('\t\t\t"device": "/dev/lesekopf",\n')
 		f.write('\t\t\t"channels": [\n')
 		f.write('\t\t\t\t{\n')
-		f.write('\t\t\t\t\t"uuid": "-- create channel in volkszaehler and insert uuid here --",\n')
+		f.write('\t\t\t\t\t"uuid": "-- create channel in volkszaehler.org and insert uuid here --",\n')
 		f.write('\t\t\t\t\t"identifier": "1-0:16.7.0*255",\n')
 		f.write('\t\t\t\t\t"api": "volkszaehler",\n')
 		f.write('\t\t\t\t\t"middleware": "http://localhost/middleware.php"\n')
@@ -209,7 +209,7 @@ def write_vzlogger_conf_example(conf):
 			dev, key, vz_ch, factor = ch
 			comma = ',' if i < len(vz_ch_list) - 1 else ''
 			f.write('\t\t\t\t{\n')
-			f.write('\t\t\t\t\t"uuid": "-- create channel '+ vz_ch +' in volkszaehler and insert uuid here --",\n')
+			f.write('\t\t\t\t\t"uuid": "-- create channel '+ vz_ch +' in volkszaehler.org and insert uuid here --",\n')
 			f.write('\t\t\t\t\t"identifier": "%s",\n' % vz_ch)
 			f.write('\t\t\t\t\t"api": "volkszaehler",\n')
 			f.write('\t\t\t\t\t"middleware": "http://localhost/middleware.php"\n')
@@ -917,7 +917,7 @@ if __name__ =="__main__":
 					print(	'input history', send_history, '\t1:2 {: 4.1f} %\t 3:4 {: 4.1f} %'.format( 
 								round((1-(send_history[-1] / (0.01+send_history[-2])))*100,1), round((1-(send_history[-3] / (0.01+send_history[-4])))*100,1) ) )
 			
-			write_vz_log(power_demand, zero_shift, bat_voltage, mppt_data, conf)												# log to volkszaehler
+			write_vz_log(power_demand, zero_shift, bat_voltage, mppt_data, conf)												# log to volkszaehler.org
 			if verbose and predictor.enabled:
 				print(predictor.status(predictive_offset))
 			if verbose: print_status(Ls_read, power_demand, zero_shift, status_text, last_runtime, send_history)

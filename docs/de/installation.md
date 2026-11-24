@@ -6,11 +6,11 @@
 zeroinput ist ein Python-Skript für PV-Nulleinspeisung (Eigenverbrauchsoptimierung) auf einem Linux-Gerät.
 Es liest den Stromzähler über vzlogger aus und steuert einen oder mehrere Batterie-Netzwechselrichter über RS485 oder USB — je nach Last zwischen Leistungsstufen umschaltend. Unterstützte Wechselrichtertypen: Soyosource-GTN-Limiter-Serie und Victron MultiPlus-II (ESS über MK3-USB-Adapter).
 
-zeroinput nutzt **vzlogger** aus dem [Volkszähler](https://www.volkszaehler.org/)-Projekt auf zwei Arten:
+zeroinput nutzt **vzlogger** aus dem [volkszaehler.org](https://www.volkszaehler.org/)-Projekt auf zwei Arten:
 - als **Zählerdatenquelle** — vzlogger liest den Stromzähler und streamt den Wirkleistungswert (`1-0:16.7.0`) über ein FIFO an zeroinput
-- als **Datenlogger** — zeroinput schreibt eigene Werte (Einspeiseleistung, Batteriespannung, PV-Leistung, …) zurück an vzlogger, der sie zusammen mit den anderen Volkszähler-Kanälen protokolliert
+- als **Datenlogger** — zeroinput schreibt eigene Werte (Einspeiseleistung, Batteriespannung, PV-Leistung, …) zurück an vzlogger, der sie zusammen mit den anderen volkszaehler.org-Kanälen protokolliert
 
-zeroinput fügt sich damit natürlich in eine bestehende Volkszähler-Installation ein.
+zeroinput fügt sich damit natürlich in eine bestehende volkszaehler.org-Installation ein.
 
 **Dateien:**
 
@@ -136,7 +136,7 @@ zeroinput erzeugt beim Start automatisch eine Vorlage `vzlogger.conf.example` in
 
 **Schritte:**
 1. zeroinput einmal starten — `vzlogger.conf.example` wird erstellt
-2. Für jeden Eintrag in der Volkszähler-Oberfläche einen Kanal anlegen und die UUID eintragen
+2. Für jeden Eintrag in der volkszaehler.org-Oberfläche einen Kanal anlegen und die UUID eintragen
 3. `device` (Lesekopf-Pfad) und `middleware`-URL anpassen
 4. `sudo cp /opt/zeroinput/vzlogger.conf.example /etc/vzlogger.conf`
 5. `sudo systemctl restart vzlogger`
@@ -171,7 +171,7 @@ Wichtige Einstellungen:
 | `heat_temp_low` | Hitzeschutz: unterhalb dieser Sensortemperatur (°C) volle Leistung |
 | `heat_temp_high` | Hitzeschutz: ab dieser Sensortemperatur (°C) wird der Wechselrichter abgeschaltet, dazwischen linear. Auslöse-Sensor per `heat_protect`-Markierung an einem Lader in der Weboberfläche. |
 | `webconfig_port` | Webserver-Port (Standard 8081, 0 = deaktiviert) |
-| `vz_channels` | Volkszähler-Kanalzuordnung (in Weboberfläche editierbar) |
+| `vz_channels` | volkszaehler.org-Kanalzuordnung (in Weboberfläche editierbar) |
 | `load_prediction` | Lastprediktor aktivieren (true/false) |
 | `discharge_timer` | Zeitgesteuerte Steuerung aktivieren (true/false) |
 
@@ -318,7 +318,7 @@ Tabs:
 - **chargers** — Strukturierter Editor für MPPT-Lader und Temperatursensoren (eSmart3, Victron, Aggregator mit SER#-Tabelle, EPever, Renogy, Morningstar). Modbus-Typen zeigen ein `unit`-Feld (Slave-Adresse). Neustart nach dem Speichern erforderlich.
 - **inverters** — Strukturierter Editor für Einspeise-Wechselrichter (Typ, Port, Stufen-Checkboxen, parallele Einheiten, max/min-Leistung, ESS-Vorzeichen). Prüft beim Speichern auf Leistungslücken. Neustart erforderlich.
 - **alarms** — Temperaturalarme pro Gerät (eSmart3: int\_hi/int\_lo/ext\_hi/ext\_lo; Temp-Sensor: ext\_hi/ext\_lo). Alarm-Befehle sollten mit `&` enden, damit der Regelzyklus nicht blockiert wird.
-- **vz channels** — Volkszähler-Kanalzuordnung als editierbare Tabelle
+- **vz channels** — volkszaehler.org-Kanalzuordnung als editierbare Tabelle
 - **timer.txt** — Entladeregeln bearbeiten
 - **restart** — Startet zeroinput oder vzlogger neu (`sudo systemctl restart <dienst>`); je ein Button. Erfordert die passenden sudoers-Einträge (siehe Installation).
 - **dirt shift** — `dirt_shift.conf` bearbeiten (nur sichtbar, wenn `dirt_shift/dirt_shift.conf` vorhanden ist)
@@ -371,7 +371,7 @@ conf-Schlüssel sind hot-reloadbar; Konstanten in `predictor.py` werden bei Date
 
 ---
 
-## Volkszähler-Kanäle (vz_channels)
+## volkszaehler.org-Kanäle (vz_channels)
 
 Format pro Eintrag: `[Gerät, Schlüssel, vz_kanal, Faktor]`
 

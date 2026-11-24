@@ -16,8 +16,8 @@ grundsätzlich unangetastet — begrenzt wird nur die Batterieentladung. Direkt 
 
 ## Datengrundlage
 
-Bei jedem Lauf werden zusammengeführt: der **Hausverbrauch** (7-Tage-Mittel aus dem
-volkszähler), der aktuelle **Akkuinhalt** (aus Lade-/Entladeenergie seit dem letzten
+Bei jedem Lauf werden zusammengeführt: der **Hausverbrauch** (7-Tage-Mittel aus
+[volkszaehler.org](https://volkszaehler.org/)), der aktuelle **Akkuinhalt** (aus Lade-/Entladeenergie seit dem letzten
 anhaltenden Leerzustand rekonstruiert, gegen kurze Spannungsausreißer und Sensorfehler
 abgesichert), die **PV-Prognose** (empirische Anlagenkurve, skaliert mit der
 Strahlungsvorhersage von Open-Meteo) und die **Netz-CO₂-Intensität** (Anteil der Erneuerbaren
@@ -65,7 +65,7 @@ eine dauerhaft erhöhte Last ins Netz gedrängt statt in den Akku.
 	<img src="../screenshots/dirt_shift_day.png" alt="dirt_shift an einem Novembertag">
 </picture>
 
-Ein Samstag im November, aufgezeichnet im volkszähler. Lila ist die Netzdreckigkeit (rechte Achse), rot der Netzbezug, gelb die PV-Leistung und grün die Einspeisung der Wechselrichter; PV und Einspeisung sind nach unten aufgetragen. Precharge war mit `round_trip_margin` 1 aktiv.
+Ein Samstag im November, aufgezeichnet in volkszaehler.org. Lila ist die Netzdreckigkeit (rechte Achse), rot der Netzbezug, gelb die PV-Leistung und grün die Einspeisung der Wechselrichter; PV und Einspeisung sind nach unten aufgetragen. Precharge war mit `round_trip_margin` 1 aktiv.
 
 - **Vormittag und Mittag, Dreckigkeit 30–45 %:** Das Netz ist sauber. Die Einspeisung bleibt auf einen kleinen Teil der PV-Leistung gedrosselt (Precharge), der Rest der PV lädt den Akku. Das Haus bezieht seinen Strom in dieser Zeit aus dem Netz.
 - **Ab 15 Uhr, Dreckigkeit 60–68 %:** Das Netz ist am dreckigsten. Der Akku gibt frei ab, die Einspeisung folgt dem Verbrauch, und der Netzbezug liegt bei null.

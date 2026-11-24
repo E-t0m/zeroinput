@@ -12,7 +12,7 @@ Der Name steht für zwei Dinge: null Einspeisung ins Stromnetz und null Daten in
 
 - **Keine Cloud.** Die Regelung läuft vollständig im Haus. Es gibt kein Herstellerkonto, keinen fremden Server und keine App, von der der Betrieb abhängt.
 - **Kabel statt Funk.** Zähler, Wechselrichter und Laderegler hängen an seriellen Leitungen. Im Regelkreis gibt es weder WLAN noch Bluetooth, also auch deren Aussetzer und Verzögerungen nicht.
-- **Kurzer Weg.** Die Werte gehen ohne MQTT, Broker oder Datenbank direkt vom Zähler zur Regelung. Fällt die Datenbank des Volkszählers aus, regelt zeroinput ungestört weiter.
+- **Kurzer Weg.** Die Werte gehen ohne MQTT, Broker oder Datenbank direkt vom Zähler zur Regelung. Fällt die Datenbank von volkszaehler.org aus, regelt zeroinput ungestört weiter.
 
 Das Internet brauchen nur die Zusatzprogramme, die Entladezeiten planen. Sie rufen Prognosen und Preise ab und übertragen dabei keine Messwerte der Anlage. Die Regelung selbst hängt nicht von ihnen ab.
 
@@ -25,7 +25,7 @@ Das Internet brauchen nur die Zusatzprogramme, die Entladezeiten planen. Sie ruf
 | Netzwechselrichter | Soyosource GTN mit RS485-Limiter-Anschluss oder Victron MultiPlus-II mit MK3-USB-Adapter, in beliebiger Mischung und Anzahl |
 | Laderegler | eSmart3, Victron MPPT, EPever Tracer, Renogy Rover oder Morningstar TriStar, in beliebiger Mischung und Anzahl |
 | Akku | LiFePO4, die Zellzahl ist einstellbar (16S, 15S, 8S und andere) |
-| Software | [Volkszähler](https://www.volkszaehler.org/) mit vzlogger für die Zählerdaten und die Aufzeichnung |
+| Software | [volkszaehler.org](https://www.volkszaehler.org/) mit vzlogger für die Zählerdaten und die Aufzeichnung |
 
 Elektrisch entspricht der Aufbau einer Inselanlage: PV-Module, Laderegler und Akku bilden die Gleichstromseite, die Netzwechselrichter hängen am Akku und speisen ins Hausnetz ein.
 
@@ -33,7 +33,7 @@ Es werden nur Wechselrichter unterstützt, die im Sekundentakt einen Leistungswe
 
 ## Wie die Regelung arbeitet
 
-Der Zähler meldet über vzlogger jede Sekunde die saldierte Leistung des Hauses. zeroinput rechnet daraus die Leistung, die fehlt oder zu viel ist, prüft sie gegen alle Grenzen und schickt den neuen Sollwert an die Wechselrichter. Die Laderegler liefern dazu PV-Leistung und Akkuspannung. Alle Werte gehen zusätzlich an den Volkszähler und erscheinen dort als Kurven.
+Der Zähler meldet über vzlogger jede Sekunde die saldierte Leistung des Hauses. zeroinput rechnet daraus die Leistung, die fehlt oder zu viel ist, prüft sie gegen alle Grenzen und schickt den neuen Sollwert an die Wechselrichter. Die Laderegler liefern dazu PV-Leistung und Akkuspannung. Alle Werte gehen zusätzlich an volkszaehler.org und erscheinen dort als Kurven.
 
 Der Zähler saldiert die drei Phasen. Deshalb genügt es, auf einer Phase einzuspeisen, um den Verbrauch auf allen dreien auszugleichen.
 
@@ -67,7 +67,7 @@ Alle Funktionen sind in der [Spezifikation](spec.md) genau beschrieben, der Last
 
 ## Bedienung im Browser
 
-zeroinput bringt eine optionale [Weboberfläche](spec.md#weboberfläche-webconfigpy) mit, die mit `-httpd` startet. Dort lassen sich Laderegler, Wechselrichter, Alarme, Volkszähler-Kanäle, die Timer-Datei und alle übrigen Einstellungen bearbeiten. Die meisten Änderungen wirken sofort, ohne Neustart. Eine Statusseite zeigt die laufenden Werte. zeroinput läuft auch ohne die Weboberfläche, die Einstellungen stehen dann direkt in `zeroinput.conf`.
+zeroinput bringt eine optionale [Weboberfläche](spec.md#weboberfläche-webconfigpy) mit, die mit `-httpd` startet. Dort lassen sich Laderegler, Wechselrichter, Alarme, volkszaehler.org-Kanäle, die Timer-Datei und alle übrigen Einstellungen bearbeiten. Die meisten Änderungen wirken sofort, ohne Neustart. Eine Statusseite zeigt die laufenden Werte. zeroinput läuft auch ohne die Weboberfläche, die Einstellungen stehen dann direkt in `zeroinput.conf`.
 
 ![Statusseite](../screenshots/webconfig_status.png)
 
@@ -87,7 +87,7 @@ Vormittags bei sauberem Netz (lila, rechte Achse) lädt die PV den Akku, und das
 
 ## Beispiele aus dem Betrieb
 
-Die Kurven stammen aus dem Volkszähler. PV-Leistung (gelb) und Einspeisung (grün) sind nach unten aufgetragen, die Akkuspannung ist rot.
+Die Kurven stammen aus volkszaehler.org. PV-Leistung (gelb) und Einspeisung (grün) sind nach unten aufgetragen, die Akkuspannung ist rot.
 
 ### Guter Tag mit hohem Verbrauch
 

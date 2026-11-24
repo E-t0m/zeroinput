@@ -17,7 +17,7 @@ Each cycle (~1 s):
 3. Apply limits (battery, PV, timer, min/max)
 4. Send demand to inverters (twice per cycle, 50 ms apart)
 5. Poll MPPT chargers
-6. Log values to Volkszähler
+6. Log values to [volkszaehler.org](https://volkszaehler.org/)
 
 ---
 
@@ -265,7 +265,7 @@ Each alarm has a `_cmd` (shell command) and `_interval` (repeat interval in seco
 
 ## Data logging
 
-zeroinput writes its own values (feed-in power, zero-shift, battery voltage, PV power, temperatures) back to vzlogger via a file-based channel (`/tmp/vz/output_to_vz.log`). vzlogger picks these up and logs them to the Volkszähler database alongside all other channels, providing a unified view of the installation.
+zeroinput writes its own values (feed-in power, zero-shift, battery voltage, PV power, temperatures) back to vzlogger via a file-based channel (`/tmp/vz/output_to_vz.log`). vzlogger picks these up and logs them to the volkszaehler.org database alongside all other channels, providing a unified view of the installation.
 
 Channel mapping is defined in `vz_channels` (editable in the web interface).
 
@@ -286,7 +286,7 @@ HTTP server started with `-httpd`. Provides:
 - **chargers tab** — structured editor for MPPT chargers and temperature sensors (eSmart3, Victron, Aggregator with SER# table, EPever, Renogy, Morningstar). Modbus types show a `unit` (slave address) field. Restart required on save. PVp field hidden for `type: temp` devices. Per-sensor heat-protection selection (only one valid).
 - **inverters tab** — structured editor for feed-in inverters (type, port, stage checkboxes, count, max/min power, ESS sign). Validates for power coverage gaps before saving. Restart required on save.
 - **alarms tab** — per-device temperature alarms (eSmart3: int\_hi/int\_lo/ext\_hi/ext\_lo; temp\_sensor: ext\_hi/ext\_lo). Device labels use `temp_display` name when set. Cards collapsed on load.
-- **vz channels tab** — table editor for Volkszähler channel mapping
+- **vz channels tab** — table editor for volkszaehler.org channel mapping
 - **timer.txt tab** — text editor for discharge rules; shows notice when timer is disabled in conf
 - **dirt shift tab** — editor for `dirt_shift.conf` (only visible when `dirt_shift/dirt_shift.conf` exists)
 - **dirt shift log tab** — the last 24 hours of the dirt_shift log, read-only (only visible when `logfile` is set in `dirt_shift.conf`); **previous run** / **next run** jump to the start of a run, **latest** to the end

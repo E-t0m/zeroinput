@@ -17,7 +17,7 @@ Jeder Zyklus (~1 s):
 3. Grenzen anwenden (Batterie, PV, Timer, Min/Max)
 4. Anforderung an Wechselrichter senden (zweimal pro Zyklus, 50 ms Abstand)
 5. MPPT-Laderegler abfragen
-6. Werte in Volkszähler schreiben
+6. Werte in [volkszaehler.org](https://volkszaehler.org/) schreiben
 
 ---
 
@@ -264,7 +264,7 @@ Jeder Alarm hat einen `_cmd` (Shell-Befehl) und ein `_interval` (Wiederholungsin
 
 ## Datenprotokollierung
 
-zeroinput schreibt eigene Werte (Einspeiseleistung, Nullverschiebung, Batteriespannung, PV-Leistung, Temperaturen) über einen dateibasierten Kanal (`/tmp/vz/output_to_vz.log`) zurück an vzlogger. vzlogger liest diese aus und protokolliert sie zusammen mit allen anderen Kanälen in die Volkszähler-Datenbank, was eine einheitliche Sicht auf die Anlage ermöglicht.
+zeroinput schreibt eigene Werte (Einspeiseleistung, Nullverschiebung, Batteriespannung, PV-Leistung, Temperaturen) über einen dateibasierten Kanal (`/tmp/vz/output_to_vz.log`) zurück an vzlogger. vzlogger liest diese aus und protokolliert sie zusammen mit allen anderen Kanälen in die volkszaehler.org-Datenbank, was eine einheitliche Sicht auf die Anlage ermöglicht.
 
 Die Kanalzuordnung ist in `vz_channels` definiert (in der Weboberfläche editierbar).
 
@@ -285,7 +285,7 @@ HTTP-Server, gestartet mit `-httpd`. Bietet:
 - **chargers-Tab** — strukturierter Editor für MPPT-Lader und Temperatursensoren (eSmart3, Victron, Aggregator mit SER#-Tabelle, EPever, Renogy, Morningstar). Modbus-Typen zeigen ein `unit`-Feld (Slave-Adresse). Neustart nach dem Speichern erforderlich. PVp-Feld bei `type: temp` ausgeblendet. Pro Sensor wählbare Hitzeschutz-Markierung (nur einer gültig).
 - **inverters-Tab** — strukturierter Editor für Einspeise-Wechselrichter (Typ, Port, Stufen-Checkboxen, count, max/min-Leistung, ESS-Vorzeichen). Prüft beim Speichern auf Leistungslücken. Neustart erforderlich.
 - **alarms-Tab** — Temperaturalarme je Gerät (eSmart3: int\_hi/int\_lo/ext\_hi/ext\_lo; temp\_sensor: ext\_hi/ext\_lo). Gerätebezeichnungen nutzen den Namen aus `temp_display`, falls gesetzt. Die Karten sind beim Laden eingeklappt.
-- **VZ-Kanäle-Tab** — Tabelleneditor für Volkszähler-Kanalzuordnung
+- **VZ-Kanäle-Tab** — Tabelleneditor für volkszaehler.org-Kanalzuordnung
 - **timer.txt-Tab** — Texteditor für Entladeregeln; Hinweis wenn Timer in conf deaktiviert
 - **dirt-shift-Tab** — Editor für `dirt_shift.conf` (nur sichtbar, wenn `dirt_shift/dirt_shift.conf` vorhanden ist)
 - **dirt-shift-log-Tab** — die letzten 24 Stunden des dirt_shift-Logs, nur lesend (nur sichtbar, wenn in `dirt_shift.conf` ein `logfile` gesetzt ist); **previous run** / **next run** springen an den Anfang eines Laufs, **latest** ans Ende

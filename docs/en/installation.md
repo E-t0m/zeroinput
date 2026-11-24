@@ -6,11 +6,11 @@
 zeroinput is a Python script for PV zero feed-in (self-consumption optimisation) on a Linux device.
 It reads the electricity meter via vzlogger and controls one or more battery grid-tie inverters over RS485 or USB — switching between power stages depending on load. Supported inverter types: Soyosource GTN limiter series and Victron MultiPlus-II (ESS via MK3-USB adapter).
 
-zeroinput relies on **vzlogger** from the [Volkszähler](https://www.volkszaehler.org/) project in two ways:
+zeroinput relies on **vzlogger** from the [volkszaehler.org](https://www.volkszaehler.org/) project in two ways:
 - as the **meter data source** — vzlogger reads the electricity meter and streams the active power value (`1-0:16.7.0`) to zeroinput via a FIFO
-- as the **data logger** — zeroinput writes its own values (feed-in power, battery voltage, PV power, …) back to vzlogger, which logs them alongside the other Volkszähler channels
+- as the **data logger** — zeroinput writes its own values (feed-in power, battery voltage, PV power, …) back to vzlogger, which logs them alongside the other volkszaehler.org channels
 
-zeroinput integrates naturally into an existing Volkszähler setup without replacing or duplicating it.
+zeroinput integrates naturally into an existing volkszaehler.org setup without replacing or duplicating it.
 
 **Files:**
 
@@ -136,7 +136,7 @@ zeroinput generates a template `vzlogger.conf.example` in `/opt/zeroinput` on st
 
 **Steps:**
 1. Start zeroinput once — `vzlogger.conf.example` is created
-2. Create a channel in the Volkszähler interface for each entry and insert its UUID
+2. Create a channel in the volkszaehler.org interface for each entry and insert its UUID
 3. Adjust `device` (read head path) and `middleware` URL
 4. `sudo cp /opt/zeroinput/vzlogger.conf.example /etc/vzlogger.conf`
 5. `sudo systemctl restart vzlogger`
@@ -171,7 +171,7 @@ Key settings:
 | `heat_temp_low` | Heat protection: below this sensor temperature (°C), full power |
 | `heat_temp_high` | Heat protection: at/above this sensor temperature (°C) the inverter is switched off, linear in between. Trigger sensor via `heat_protect` flag on a charger in the web interface. |
 | `webconfig_port` | Web server port (default 8081, 0 = disabled) |
-| `vz_channels` | Volkszähler channel mapping (editable in web interface) |
+| `vz_channels` | volkszaehler.org channel mapping (editable in web interface) |
 | `load_prediction` | Enable load predictor (true/false) |
 | `discharge_timer` | Enable timer-based control (true/false) |
 
@@ -318,7 +318,7 @@ Tabs:
 - **chargers** — Structured editor for MPPT chargers and temperature sensors (eSmart3, Victron, Aggregator with SER# table, EPever, Renogy, Morningstar). Modbus types show a `unit` (slave address) field. Restart required after saving.
 - **inverters** — Structured editor for feed-in inverters (type, port, stage checkboxes, parallel units, max/min power, ESS sign). Validates for power coverage gaps before saving. Restart required.
 - **alarms** — Per-device temperature alarms (eSmart3: int\_hi/int\_lo/ext\_hi/ext\_lo; temp sensor: ext\_hi/ext\_lo). Alarm commands should end with `&` to avoid blocking the control loop.
-- **vz channels** — Volkszähler channel mapping as editable table
+- **vz channels** — volkszaehler.org channel mapping as editable table
 - **timer.txt** — Edit discharge timer rules
 - **restart** — Restart zeroinput or vzlogger (`sudo systemctl restart <service>`); one button each. Requires the matching sudoers entries (see Installation).
 - **dirt shift** — Edit `dirt_shift.conf` (only visible when `dirt_shift/dirt_shift.conf` exists)
@@ -371,7 +371,7 @@ conf keys are hot-reloadable; constants in `predictor.py` are applied automatica
 
 ---
 
-## Volkszähler channels (vz_channels)
+## volkszaehler.org channels (vz_channels)
 
 Format per entry: `[device, key, vz_channel, factor]`
 

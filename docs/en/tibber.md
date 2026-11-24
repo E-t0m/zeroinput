@@ -6,7 +6,7 @@ The `-v` (verbose) output looks like this
 
 ```
 
-query volkszähler for 7 day consumption data:
+query volkszaehler.org for 7 day consumption data:
 0 	begin 2025-10-04 14:00:00 1759579200000 	end 2025-10-05 14:00:00 1759665600000 	request duration: 0:00:04.665451 	rows: 26 : 1
 1 	begin 2025-10-03 14:00:00 1759492800000 	end 2025-10-04 14:00:00 1759579200000 	request duration: 0:00:03.184913 	rows: 26 : 2
 2 	begin 2025-10-02 14:00:00 1759406400000 	end 2025-10-03 14:00:00 1759492800000 	request duration: 0:00:04.177833 	rows: 26 : 3
@@ -14,7 +14,7 @@ query volkszähler for 7 day consumption data:
 4 	begin 2025-09-30 14:00:00 1759233600000 	end 2025-10-01 14:00:00 1759320000000 	request duration: 0:00:03.077180 	rows: 26 : 5
 5 	begin 2025-09-29 14:00:00 1759147200000 	end 2025-09-30 14:00:00 1759233600000 	request duration: 0:00:02.924161 	rows: 26 : 6
 6 	begin 2025-09-28 14:00:00 1759060800000 	end 2025-09-29 14:00:00 1759147200000 	request duration: 0:00:02.965961 	rows: 26 : 7
-2025-10-05 14:14 query volkszähler for energy content:
+2025-10-05 14:14 query volkszaehler.org for energy content:
 0 	begin 2025-10-05 00:00:00 1759615200000 	end 2025-10-05 14:14:27 1759666467000 	request duration: 0:00:00.612587 	rows: 30532
 1 	begin 2025-10-04 00:00:00 1759528800000 	end 2025-10-05 14:14:27 1759666467000 	request duration: 0:00:01.465632 	rows: 70291
 	begin 2025-10-04 08:00:22 1759557622000 	end 2025-10-05 14:14:29 1759666469000 	request duration: 0:00:02.609525 	rows: 31
@@ -198,17 +198,17 @@ now                  2025-10-05T14:00 20.82 ¢    0      |                    o
 disabled tasmota timer
 done. 2025-10-05 14:14:31
 ```
-At first the consumption data is taken from volkszähler's database. This gets cached hourly.
+At first the consumption data is taken from [volkszaehler.org](https://volkszaehler.org/)'s database. This gets cached hourly.
 PV power, inverter input, net demand, car, charger, climate is used to calculate a 7 day average profile. (similar to [profiler.py](../../tools/profiler.py))
 
-Then the energy content gets fetched: It searches for the latest empty battery state and calculates the remaining battery content from there. Empty means the voltage stays at or below 3.03125 V per cell (48.5 V at 16S) for at least 2 minutes; shorter dips are ignored, and samples below 2.5 V per cell are discarded as sensor errors. The cell count is read from zeroinput.conf (`zeroinput_conf` in tib_zero_tas.conf). Inverter output always reduces the content, independent of the sign of the volkszähler channel.
+Then the energy content gets fetched: It searches for the latest empty battery state and calculates the remaining battery content from there. Empty means the voltage stays at or below 3.03125 V per cell (48.5 V at 16S) for at least 2 minutes; shorter dips are ignored, and samples below 2.5 V per cell are discarded as sensor errors. The cell count is read from zeroinput.conf (`zeroinput_conf` in tib_zero_tas.conf). Inverter output always reduces the content, independent of the sign of the volkszaehler.org channel.
 
 The tasmota timers are set by price thresholds: every run sets the timer for the start of the next quarter hour. A device with `_on` in its name gets its timer set if that quarter hour's price is below its `max_price`, a device with `_off` in its name if the price is at or above its `max_price`.
 
 The zeroinput timer file is calculated with descending prices as far as tibber allows the foresight.
 The coming, price sorted quarter hours get summed with their 7-day-average energy usage. This is done as long there is energy in the battery.
 The current and the next quarter hour of this plan are written to zeroinput's timer file, which rules the inverter, followed by an unrestricted line 30 minutes later. zeroinput resets its energy counter whenever the last line of the timer file changes; as that line moves forward with every run, the energy limit of a quarter hour applies to that quarter hour alone. If tib_zero_tas stops running, the unrestricted line falls into the past and zeroinput runs without limits.
-If volkszähler or the price file cannot be read, tib_zero_tas writes an unrestricted timer file and stops. Every volkszähler and tasmota request has a timeout.
+If volkszaehler.org or the price file cannot be read, tib_zero_tas writes an unrestricted timer file and stops. Every volkszaehler.org and tasmota request has a timeout.
 
 PVpt is PV pass through, where the PV energy is directly transformed by the inverter, because of the small price gap to the next sheduled hour with input from battery.
 

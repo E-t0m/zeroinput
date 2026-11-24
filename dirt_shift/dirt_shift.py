@@ -16,7 +16,7 @@
 # The installation (PV, consumption, battery content) only determines the AMOUNT
 # of energy available and required overnight.
 #
-# This is a standalone tool. It queries volkszähler for basic_load/PV averages
+# This is a standalone tool. It queries volkszaehler.org for basic_load/PV averages
 # and battery content, derives the hourly CO2-intensity profile from day-ahead
 # grid data (Energy-Charts 'Stromampel', else SMARD), and writes the same timer.txt interface zeroinput reads
 # for discharge control. Optionally it also switches an EV wallbox directly
@@ -80,14 +80,14 @@ SMARD_REGION        = 'DE'		# SMARD region code (see the SMARD API's region para
 SMARD_FILTER_WIND_SOLAR = 5097	# 'Prognostizierte Erzeugung: Wind und Photovoltaik' (day-ahead, combined)
 SMARD_FILTER_LOAD       = 411	# 'Prognostizierter Verbrauch' (day-ahead) — less firmly confirmed than the generation filter, but the fallback below covers a wrong/broken value
 SLOT_MINUTES = 15	# length of one timer slot in minutes — the cadence dirt_shift is meant to run at (cron 0,15,30,45) and the granularity of every quantity below that is 'per slot': the timer line's own timestamp, the energy budget's share of an hour, the wallbox's typical-draw margin and its voltage window. Changing it here changes all of them together; the cron entry has to be changed to match
-VZ_TIMEOUT_S = 30	# HTTP timeout (seconds) on every volkszähler request. Without one, requests.get blocks forever if volkszähler accepts the connection but never answers (overloaded, wedged), and dirt_shift hangs with no error — while cron keeps starting a fresh hung process every 15 minutes. 30 s is generous for a slow answer yet well under the run interval, so a stuck query fails the run cleanly instead of hanging it
+VZ_TIMEOUT_S = 30	# HTTP timeout (seconds) on every volkszaehler.org request. Without one, requests.get blocks forever if volkszaehler.org accepts the connection but never answers (overloaded, wedged), and dirt_shift hangs with no error — while cron keeps starting a fresh hung process every 15 minutes. 30 s is generous for a slow answer yet well under the run interval, so a stuck query fails the run cleanly instead of hanging it
 PV_FORECAST_FILE = 'pv_forecast.json'	# fixed filename (not configurable, no path) for the once-a-day total-PV-forecast side output — see write_daily_pv_forecast. Always resolved relative to dirt_shift.py's own directory
 SLOT_HOURS   = SLOT_MINUTES / 60.0	# same value as a fraction of an hour, for the Wh/W conversions
 
 WALLBOX_V_ON_PER_CELL  = 3.375	# per-cell voltage the battery must not have dropped below over WALLBOX_V_WINDOW_MIN for the voltage path to switch the wallbox ON (54.0 V at 16S) — a full battery under no meaningful discharge load
 WALLBOX_V_OFF_PER_CELL = 3.35	# per-cell voltage the voltage path releases at once engaged (53.6 V at 16S) — the lower half of the hysteresis, bridging measurement noise and brief clouds. Deliberately close to the ON threshold: the band must stay ABOVE the LiFePO4 plateau, or the minimum-over-the-window test can no longer see a real discharge load (such as the wallbox drawing from the battery) and the path would hold for as long as the battery sits anywhere in the plateau, i.e. almost until empty
 WALLBOX_V_WINDOW_MIN   = SLOT_MINUTES	# minutes of battery voltage history the ON/OFF thresholds are checked against (the minimum over that span, not the latest sample): 'never dropped below' captures a full battery AND the absence of a real discharge load in one test, which a momentary reading taken mid-spike would not. One slot, so each run judges the span it is itself deciding for
-VZ_WINDOW_LAG_H = 1	# hours by which every 24-hour volkszähler window of get_average and get_pv_curve ends before the current hour. volkszähler does not yet return the hour that has just closed, so a window ending at the current hour comes back one value short and fails the completeness check — the most recent day, the one day_weights_pct weights as 'yesterday', would never count. Ending one hour earlier keeps every window complete
+VZ_WINDOW_LAG_H = 1	# hours by which every 24-hour volkszaehler.org window of get_average and get_pv_curve ends before the current hour. volkszaehler.org does not yet return the hour that has just closed, so a window ending at the current hour comes back one value short and fails the completeness check — the most recent day, the one day_weights_pct weights as 'yesterday', would never count. Ending one hour earlier keeps every window complete
 STOP_MIN_DIRT_GAP = 10.0	# dirt% points the red hours being reserved for must be dirtier than the current green hour before 'stop' (hold the battery, import for the house now) is worth it; below that the battery simply covers the house ('limit'). Shifting 1 Wh from now to a later hour pays off in proportion to the dirt% difference between them, so holding back across a gap inside forecast noise buys nothing and costs a grid import now. A difference, not a fraction: dirt% is signed and goes negative on windy days, where a fraction of the median would flip its own meaning
 WALLBOX_ENERGY_ON_FACTOR = 2	# multiple of 'margin' (one slot of wallbox_typical_power, SLOT_HOURS) the energy path demands as headroom to switch the wallbox ON, dropped back to a single margin once it is itself holding — the hysteresis of that path. Without it, switching on with only a few Wh to spare is self-defeating: the wallbox draws roughly one margin plus house load per run, so the next run 15 min later finds the check failed and switches straight back off. Expressed as a factor rather than a fixed Wh value so it scales with the actual wallbox power — the flapping period is the run interval, so the headroom that matters is measured in run-lengths of charging.
 PRECHARGE_AC_FLOOR = 20	# lowest ac_% precharge may ever write. A precharge cap only ever reduces pvpt by the watts it diverts, but this is a hard floor regardless: a timer line must never drop the inverter feed so far that zeroinput treats it as no valid feed ('timer.txt enabled but not active'). 20 leaves the inverter clearly feeding while still allowing a strong diversion
@@ -214,11 +214,11 @@ if verbose and html:
 	      'color:#BBBBBB;background-color:#111111;} pre {margin:0px;}</style></head><body><pre>\n')
 
 
-# ── volkszähler queries ─────────────────────────────────────────────────────
+# ── volkszaehler.org queries ─────────────────────────────────────────────────────
 
 def get_average(n_days):
-	"""Hourly weighted average basic_load over n_days days (real home consumption Wh/h) from volkszähler.
-	Returns None if volkszähler cannot be reached or answers with unusable data
+	"""Hourly weighted average basic_load over n_days days (real home consumption Wh/h) from volkszaehler.org.
+	Returns None if volkszaehler.org cannot be reached or answers with unusable data
 	(the caller then keeps the cached averages); aborts via die() if it answers
 	but has no complete day."""
 	hours = {}
@@ -226,7 +226,7 @@ def get_average(n_days):
 	keys = ['Inverter', 'Import', 'Auto']
 	for key in keys: hours[key] = [0.0] * 24
 
-	if verbose: print('query volkszähler for %i day consumption data:' % n_days)
+	if verbose: print('query volkszaehler.org for %i day consumption data:' % n_days)
 	uuid2key = {conf['vz_chans'][k]: k for k in keys}			# O(1) uuid -> channel name
 
 	# per-day weighting (percent), chronological: index 0 = oldest day, -1 = yesterday.
@@ -254,11 +254,11 @@ def get_average(n_days):
 			jresp = get(url=url, timeout=VZ_TIMEOUT_S).json()
 			jresp['data'][0]['rows']
 		except Exception as e:
-			print('dirt_shift: volkszähler consumption query failed: %s' % e)
+			print('dirt_shift: volkszaehler.org consumption query failed: %s' % e)
 			return None
 
 		# a complete day reports 26 rows: 24 hourly values + the average + the
-		# consumption summary row that volkszähler appends per channel.
+		# consumption summary row that volkszaehler.org appends per channel.
 		if jresp['data'][0]['rows'] == 26:				# only complete days
 			counted_days += 1
 			w = weights_pct[n_days - 1 - day] * 0.01	# this day's weight factor
@@ -273,7 +273,7 @@ def get_average(n_days):
 		if verbose: print('rows:', jresp['data'][0]['rows'], ':', counted_days)
 
 	if counted_days == 0:
-		die('no complete days returned by volkszähler', conf['timer.txt'])
+		die('no complete days returned by volkszaehler.org', conf['timer.txt'])
 
 	for i in range(0, 24):
 		for key in keys: hours[key][i] /= weight_sum			# weighted mean over the complete days
@@ -290,16 +290,16 @@ def get_average(n_days):
 def get_pv_curve(n_days):
 	"""Empirical PV reference curve: for each hour of the day, the
 	PV_CURVE_PERCENTILE percentile of that hour's PV power across the last
-	n_days days (hourly volkszähler query, same pattern as get_average but a
+	n_days days (hourly volkszaehler.org query, same pattern as get_average but a
 	single channel, unweighted, and keeping every day's value instead of
 	collapsing them into one mean). Because it is built from the installation's
 	own measured output, it automatically reflects the real roof geometry
 	(several sections with different orientation, seasonal shading) without any
 	panel configuration. Returns a 24-value list, or None if no complete day was
-	available or volkszähler could not be reached (the caller then keeps the
+	available or volkszaehler.org could not be reached (the caller then keeps the
 	previously cached curve)."""
 	daily = []			# one 24-value list per complete day
-	if verbose: print('query volkszähler for %i day PV curve:' % n_days)
+	if verbose: print('query volkszaehler.org for %i day PV curve:' % n_days)
 
 	for day in range(0, n_days):
 		begin = (datetime.today() - timedelta(days=day, hours=24 + VZ_WINDOW_LAG_H)).replace(minute=0, second=0, microsecond=0)
@@ -315,7 +315,7 @@ def get_pv_curve(n_days):
 			row = get(url=url, timeout=VZ_TIMEOUT_S).json()['data'][0]
 			row['rows']
 		except Exception as e:
-			print('dirt_shift: volkszähler PV query failed: %s' % e)
+			print('dirt_shift: volkszaehler.org PV query failed: %s' % e)
 			return None
 
 		if row['rows'] == 26:						# only complete days (24 hours + average + consumption)
@@ -352,7 +352,7 @@ def read_average():
 			vz_in['timestamp'] = 1000000.123456
 	if avgnew or datetime.fromtimestamp(vz_in['timestamp']).strftime('%Y-%m-%d %H') != datetime.now().strftime('%Y-%m-%d %H'):
 		avg = get_average(conf['average_days'])
-		if avg is None:							# volkszähler unreachable: keep the cached averages, retry on the next run
+		if avg is None:							# volkszaehler.org unreachable: keep the cached averages, retry on the next run
 			if 'basic_load' not in vz_in:			# -avgnew skipped the cache read above
 				try:
 					with open(join(dirname(__file__), 'dirt_avg_cache.json'), 'r') as fi:
@@ -360,7 +360,7 @@ def read_average():
 				except Exception:
 					pass
 			if 'basic_load' not in vz_in:
-				die('volkszähler unreachable and no cached averages', conf['timer.txt'])
+				die('volkszaehler.org unreachable and no cached averages', conf['timer.txt'])
 			print('dirt_shift: keeping cached averages from %s'
 			      % datetime.fromtimestamp(vz_in['timestamp']).strftime('%Y-%m-%d %H:%M'))
 			return vz_in
@@ -401,7 +401,7 @@ def read_pv_curve():
 			with open(join(dirname(__file__), 'dirt_pv_curve_cache.json'), 'w') as fo:
 				json_dump(vz_in, fo)
 		elif verbose:
-			print('PV curve refresh failed (no complete days or volkszähler unreachable) — keeping previous curve')
+			print('PV curve refresh failed (no complete days or volkszaehler.org unreachable) — keeping previous curve')
 	elif verbose:
 		print('using cached PV curve from',
 		      datetime.fromtimestamp(last_ts).strftime('%Y-%m-%d %H:%M') if last_ts else 'never')
@@ -942,7 +942,7 @@ def read_grid_zones():
 	ever non-None on the one run per hour that actually triggers a refresh —
 	every later run within the same hour finds the cache already current and
 	so has nothing to backdate. Purely for write_dirtiness_to_vz's backdated
-	point (see main()), letting volkszähler show a flat step up to the hour
+	point (see main()), letting volkszaehler.org show a flat step up to the hour
 	boundary instead of interpolating a ramp between two hourly values; not
 	used anywhere else."""
 	vz_in = {}
@@ -1168,7 +1168,7 @@ def get_vz_bat_cap():
 	caller then frees the battery (it cannot be steered without content) but
 	still runs the wallbox paths that do not depend on content (see main()),
 	rather than aborting the whole run."""
-	if verbose: print(datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 'query volkszähler for energy content:')
+	if verbose: print(datetime.now().strftime('%Y-%m-%d %H:%M:%S'), 'query volkszaehler.org for energy content:')
 	days_back = 0
 	latest_voltage = 0.0					# guard: set on the first (days_back==0) query below
 	end = datetime.today().replace(microsecond=0)
@@ -1192,7 +1192,7 @@ def get_vz_bat_cap():
 		tuples = [(ts, v, s) for ts, v, s in tuples if v >= _impl_v]
 		jresp['data'][0]['tuples'] = tuples
 		if not tuples:
-			print('dirt_shift: no battery voltage data returned by volkszähler'); return None, None
+			print('dirt_shift: no battery voltage data returned by volkszaehler.org'); return None, None
 		if days_back == 0: latest_voltage = tuples[-1][1]
 		anchor_ts = _empty_anchor(tuples, _empty_v)		# deepest point of a real (sustained) empty valley, not a momentary dip
 		if anchor_ts is not None: break
@@ -1268,25 +1268,25 @@ def get_vz_bat_cap():
 
 def write_dirtiness_to_vz(value, ts_ms=None):
 	"""Best-effort: POST the current grid dirtiness value directly to
-	volkszähler's middleware API, once per run — no local file, no vzlogger
+	volkszaehler.org's middleware API, once per run — no local file, no vzlogger
 	meter involved: POST http://{vz_host_port}/data/{vz_dirtiness_uuid}.json
 	with the value and current timestamp. Requires vz_dirtiness_uuid
-	configured (a real channel UUID, created in volkszähler beforehand); the
+	configured (a real channel UUID, created in volkszaehler.org beforehand); the
 	host/port is the same vz_host_port dirt_shift already uses for its other
-	volkszähler queries. Sign convention matches the installation's existing
+	volkszaehler.org queries. Sign convention matches the installation's existing
 	power channels (Import positive = drawing from the grid, Inverter
 	negative = feeding in): positive = renewables cover less than the load,
 	negative = renewable surplus (renewables exceed the load). Checks the
 	HTTP response status (raise_for_status) so a rejected write — wrong or
 	unknown UUID, server error — is caught here rather than passing as silent
 	success. Never raises further: a failed write must not abort the run.
-	Returns True if the value reached volkszähler, False if the write was
+	Returns True if the value reached volkszaehler.org, False if the write was
 	attempted and failed, None if no UUID is configured (nothing attempted).
 	The debug table marks the written hour accordingly (see
-	_hourly_debug_table). ts_ms is the volkszähler timestamp in milliseconds;
+	_hourly_debug_table). ts_ms is the volkszaehler.org timestamp in milliseconds;
 	defaults to the real current time, but main() also calls this with an
 	explicit slot-boundary timestamp (and, once per hour, a second call 1s
-	before the hour boundary with the previous hour's value) so volkszähler
+	before the hour boundary with the previous hour's value) so volkszaehler.org
 	shows a flat step at the hour boundary instead of interpolating a ramp
 	between two hourly values — see read_grid_zones' 'backdate_ratio'."""
 	uuid = conf.get('vz_dirtiness_uuid', '')
@@ -1354,7 +1354,7 @@ def wallbox_switch(ip, output, on):
 
 
 def recent_pv_power(minutes=15):
-	"""Average PV power volkszähler reports over the last 'minutes' (the PV
+	"""Average PV power volkszaehler.org reports over the last 'minutes' (the PV
 	channel already configured in vz_chans). Used by write_timer to net the
 	quarter-hour energy budget against what the array is ACTUALLY producing
 	right now, rather than against expected_pv[hour] — an hourly mean.
@@ -1389,7 +1389,7 @@ def recent_pv_power(minutes=15):
 
 
 def battery_min_voltage(minutes):
-	"""Lowest battery voltage volkszähler reports over the last 'minutes'
+	"""Lowest battery voltage volkszaehler.org reports over the last 'minutes'
 	(the Vbat channel already configured for get_vz_bat_cap). Used only by
 	the wallbox voltage path — a failure returns None rather than dying,
 	since an unavailable reading must only disable that one optional path,
@@ -1961,9 +1961,9 @@ def _hourly_debug_table(now, pv_curve, radiation, expected_pv, basic_load, grid_
 	write_dirtiness_to_vz): 0 at ratio 1 (renewables exactly cover load),
 	negative on a renewable surplus (ratio > 1), rising toward 100 as the
 	renewable share drops toward 0. The current hour is the first row. Its
-	dirt% value carries a second marker for the volkszähler write of that
+	dirt% value carries a second marker for the volkszaehler.org write of that
 	same value (see write_dirtiness_to_vz, whose return value 'dirt_written'
-	is passed here): '*' prefix if it reached volkszähler, '!' if the write
+	is passed here): '*' prefix if it reached volkszaehler.org, '!' if the write
 	failed, no prefix if no UUID is configured and nothing was attempted.
 	The one red hour dirtiest_hour would pick in the window from now up to
 	the next PV-surplus hour (see there) carries a leading '!' on its 'D'
@@ -2043,7 +2043,7 @@ def _hourly_debug_table(now, pv_curve, radiation, expected_pv, basic_load, grid_
 		ratio_h = ratio[h]
 		dirt_s = ('%.0f' % ((1.0 - ratio_h) * 100)) if ratio_h is not None else '-'
 		if h == now.hour and dirt_written is not None:
-			dirt_s = ('*' if dirt_written else '!') + dirt_s	# volkszähler write of this hour's value
+			dirt_s = ('*' if dirt_written else '!') + dirt_s	# volkszaehler.org write of this hour's value
 		if h in grid_stale: dirt_s = '.' + dirt_s				# still today's ratio, no tomorrow value yet
 		print('%2d  %8s %8s %5s %8s %8s %8s %4s %6s %-8s' % (h, pv, rad_s, clr, exp, bl, bal, chg, dirt_s, zones[h]))	# the current hour is always the first row, no marker needed
 	if expected_pv is not None or basic_load is not None or any(r is not None for r in ratio):
@@ -2088,7 +2088,7 @@ def main():
 		die('grid zone data unavailable (Energy-Charts and SMARD failed, no usable cache, weather model unavailable)', conf['timer.txt'])
 	_voltage, content = get_vz_bat_cap()
 	# content is None means the battery energy could not be reconstructed
-	# (volkszähler gap). The battery side genuinely cannot be steered without
+	# (volkszaehler.org gap). The battery side genuinely cannot be steered without
 	# it — reserve, mode and precharge all hinge on content — so it goes free.
 	# But the wallbox side is redundant: its dirt path needs no content, so the
 	# run continues to the wallbox block below rather than aborting, and only
@@ -2107,7 +2107,7 @@ def main():
 	backdate_ratio = grid_data.get('backdate_ratio')
 	if grid_data.get('emergency'):
 		# modelled zones are a relative ranking, not a grid measurement — they
-		# must never enter the volkszähler dirtiness history as if they were
+		# must never enter the volkszaehler.org dirtiness history as if they were
 		dirt_written = None
 	else:
 		if backdate_ratio is not None and now.minute < SLOT_MINUTES:

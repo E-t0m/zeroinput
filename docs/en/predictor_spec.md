@@ -138,6 +138,6 @@ In the fresh state the offset is 0 and is never actively applied until something
 
 ## Log
 
-The predictor log is intended as a diagnostic and analysis interface, not as an operational display: live monitoring of the installation is done via volkszähler, while this log with its high level of detail serves later troubleshooting (e.g. when an excerpt is pulled for analysis). It therefore records every internal state per cycle.
+The predictor log is intended as a diagnostic and analysis interface, not as an operational display: live monitoring of the installation is done via [volkszaehler.org](https://volkszaehler.org/), while this log with its high level of detail serves later troubleshooting (e.g. when an excerpt is pulled for analysis). It therefore records every internal state per cycle.
 
 The predictor appends one tab-separated line per cycle to `LOG_FILE` (default `/tmp/predictor.log`, configurable via `predictor_log`). On opening, a version banner and the column header are written; `# RESET` / `# ENABLE` marker lines record state changes (the `# RESET` line names the predictor version). Columns: timestamp, time, Ls_read, last2_send, est_load, history length, LOW, HIGH, spread, phase, transition counter, offset, override flag, remaining override cycles, in-peak flag, peak age (cycles), number of short peaks.

@@ -3,7 +3,7 @@
 	"zeroinput_conf": "../zeroinput.conf",
 	"zeroinput_conf_help": "path to zeroinput.conf (dirt_shift usually lives in a subfolder of zeroinput). discharge_t_file (the timer path) is read from there.",
 	"vz_host_port": "192.168.1.10:8080",
-	"vz_host_port_help": "volkszähler host:port for the data.json API (dirt_shift uses the HTTP API, separate from zeroinput's vzlogger FIFO).",
+	"vz_host_port_help": "volkszaehler.org host:port for the data.json API (dirt_shift uses the HTTP API, separate from zeroinput's vzlogger FIFO).",
 	"vz_chans": {
 		"Inverter": "00000000-0000-0000-0000-000000000001",
 		"Import": "00000000-0000-0000-0000-000000000002",
@@ -11,9 +11,9 @@
 		"PV": "00000000-0000-0000-0000-000000000006",
 		"Vbat": "00000000-0000-0000-0000-000000000007"
 	},
-	"vz_chans_help": "volkszähler channel UUIDs. basic_load consumption = Import + |Inverter| - Auto (adapt the formula in get_average and this channel set to your own installation). PV feeds the PV reference curve, the battery content and the measured PV of the last quarter hour (energy budget, wallbox voltage path); Vbat feeds the empty-battery anchor of the content and the wallbox voltage path.",
+	"vz_chans_help": "volkszaehler.org channel UUIDs. basic_load consumption = Import + |Inverter| - Auto (adapt the formula in get_average and this channel set to your own installation). PV feeds the PV reference curve, the battery content and the measured PV of the last quarter hour (energy budget, wallbox voltage path); Vbat feeds the empty-battery anchor of the content and the wallbox voltage path.",
 	"vz_dirtiness_uuid": "",
-	"vz_dirtiness_uuid_help": "optional: real volkszähler channel UUID (created in volkszähler beforehand) for the current grid dirtiness value. dirt_shift POSTs the value directly to volkszähler's middleware API once per run — http://{vz_host_port}/data/{this UUID}.json — no vzlogger meter or local file involved. Sign convention matches the installation's existing power channels (Import positive = drawing from the grid, Inverter negative = feeding in): positive = renewables cover less than the load, negative = renewable surplus (renewables exceed the load). Empty disables the write.",
+	"vz_dirtiness_uuid_help": "optional: real volkszaehler.org channel UUID (created in volkszaehler.org beforehand) for the current grid dirtiness value. dirt_shift POSTs the value directly to volkszaehler.org's middleware API once per run — http://{vz_host_port}/data/{this UUID}.json — no vzlogger meter or local file involved. Sign convention matches the installation's existing power channels (Import positive = drawing from the grid, Inverter negative = feeding in): positive = renewables cover less than the load, negative = renewable surplus (renewables exceed the load). Empty disables the write.",
 	"average_days": 7,
 	"average_days_help": "days of history for the hourly basic_load/PV average. 7 = one full week structure. Cached hourly in dirt_avg_cache.json.",
 	"day_weights_pct": [

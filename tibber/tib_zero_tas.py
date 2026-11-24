@@ -14,7 +14,7 @@ if '-h' in sys_argv or '--help' in sys_argv:
 	print(' -v\t\tverbose mode with console output\n','-html\t\tadds html header and footer to the console output\n','-debug\t\tmore output')
 	exit(0)
 
-VZ_TIMEOUT_S			= 30		# HTTP timeout (s) on every volkszähler request: a wedged volkszähler must fail the run, not hang it while cron starts a new process every 15 min
+VZ_TIMEOUT_S			= 30		# HTTP timeout (s) on every volkszaehler.org request: a wedged volkszaehler.org must fail the run, not hang it while cron starts a new process every 15 min
 TASMOTA_TIMEOUT_S		= 10		# HTTP timeout (s) on every tasmota request
 SLOT_MINUTES			= 15		# length of one price / timer slot
 EMPTY_V_PER_CELL		= 3.03125	# 48.5 V at 16S: battery voltage at/below this counts as empty
@@ -77,14 +77,14 @@ def tasmota_switch(dev,action):							# switch tasmota device on / off
 		res = 1
 	return(res)
 
-def get_average(n_days):								# gets hourly averages from volkszähler database, see profiler.py for further statistical usage
+def get_average(n_days):								# gets hourly averages from volkszaehler.org database, see profiler.py for further statistical usage
 	hours = {}
 	counted_days = 0
 	
 	keys = ['Inverter','Import','Auto','Lader','Klima']	# use this channels for calculation
 	for key in keys: hours[key] = [0.0]*24
 	
-	if verbose: print('query volkszähler for %i day consumption data:'%n_days)
+	if verbose: print('query volkszaehler.org for %i day consumption data:'%n_days)
 	uuid2key = {conf['vz_chans'][k]: k for k in keys}	# uuid -> channel name, rows of other uuids are skipped
 	for day in range(0,n_days):
 		begin	= (datetime.today() - timedelta(days=day,hours=24)).replace(minute=0,second=0,microsecond=0)
@@ -99,7 +99,7 @@ def get_average(n_days):								# gets hourly averages from volkszähler databas
 			print(day, '\tbegin',begin,beginstamp,'\tend',end,endstamp,'\t',end='')
 			begin_request = datetime.now()
 		try: jresp = get(url=url, timeout=VZ_TIMEOUT_S).json()
-		except Exception as e: die('volkszähler consumption query failed: %s'%e)
+		except Exception as e: die('volkszaehler.org consumption query failed: %s'%e)
 				
 		if jresp['data'][0]['rows'] == 26:					# only process days with complete dataset
 			counted_days += 1
@@ -120,7 +120,7 @@ def get_average(n_days):								# gets hourly averages from volkszähler databas
 				for key in keys: hourline += '% 8.2f\t'%hours[key][i]
 				if debug: print('%i\t%i\t%s'%(day,i,hourline))
 	
-	if counted_days == 0: die('no complete days returned by volkszähler')
+	if counted_days == 0: die('no complete days returned by volkszaehler.org')
 	
 	for i in range(0,24):								# calculate hourly averages
 		for key in keys: hours[key][i] /= counted_days
@@ -149,12 +149,12 @@ def read_average():										# read cached data or start a query
 			vz_in['timestamp'] = 1000000.123456				# a very old timestamp
 	
 	if avgnew or datetime.fromtimestamp(vz_in['timestamp']).strftime('%Y-%m-%d %H') != datetime.now().strftime('%Y-%m-%d %H'):
-		vz_in['IILAK'] = get_average(conf['average_days'])['IILAK']			# query volkszähler for hourly averages
+		vz_in['IILAK'] = get_average(conf['average_days'])['IILAK']			# query volkszaehler.org for hourly averages
 		vz_in['timestamp'] = datetime.now().timestamp()
 		with open(join(dirname(__file__),'avg_cache.json'),'w') as fo:
 			json_dump(vz_in,fo)							# write current averages to file
 	else:
-		if verbose: print('using cached volkszähler averages from',datetime.fromtimestamp(vz_in['timestamp']).strftime('%Y-%m-%d %H:%M'))
+		if verbose: print('using cached volkszaehler.org averages from',datetime.fromtimestamp(vz_in['timestamp']).strftime('%Y-%m-%d %H:%M'))
 	return(vz_in)
 
 def _empty_anchor(tuples, empty_v):					# timestamp of the deepest voltage inside a run that stays at/below empty_v for EMPTY_MIN_DURATION_S, None if there is none
@@ -173,7 +173,7 @@ def _empty_anchor(tuples, empty_v):					# timestamp of the deepest voltage insid
 	return(best_ts)
 
 def get_vz_bat_cap():									# get battery energy content and voltage
-	if verbose: print(datetime.now().strftime('%Y-%m-%d %H:%M'),'query volkszähler for energy content:')
+	if verbose: print(datetime.now().strftime('%Y-%m-%d %H:%M'),'query volkszaehler.org for energy content:')
 	
 	empty_v		= EMPTY_V_PER_CELL * conf['cell_count']
 	implaus_v	= IMPLAUSIBLE_V_PER_CELL * conf['cell_count']
@@ -195,7 +195,7 @@ def get_vz_bat_cap():									# get battery energy content and voltage
 			tuples = [(ts,v,s) for ts,v,s in jresp['data'][0]['tuples'] if v >= implaus_v]	# drop impossible samples (sensor / read errors)
 		except Exception as e: die('battery voltage data unusable: %s'%e)
 		if verbose: print('request duration:', datetime.now()-begin_request,'\trows:',jresp['data'][0]['rows'])
-		if not tuples: die('no battery voltage data returned by volkszähler')
+		if not tuples: die('no battery voltage data returned by volkszaehler.org')
 		
 		if days_back == 0: latest_voltage = tuples[-1][1]
 		

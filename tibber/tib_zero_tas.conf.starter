@@ -2,9 +2,9 @@
 "timer.txt": "../timer.txt",	"help":"path to zeroinput.py timer file, absolute or relative to this folder",
 "zeroinput_conf": "../zeroinput.conf",	"help":"path to zeroinput.conf, absolute or relative to this folder; cell_count is read from there to scale the battery voltage thresholds",
 
-"vz_host_port": "127.0.0.1:8080",			"help":"host:port of your volkszähler installation",
+"vz_host_port": "127.0.0.1:8080",			"help":"host:port of your volkszaehler.org installation",
 
-"help":"this channels will be used for the x-day average, battery voltage and energy content, the names must not match the names in volkszaehler, the uuid is important",
+"help":"this channels will be used for the x-day average, battery voltage and energy content, the names must not match the names in volkszaehler.org, the uuid is important",
 "vz_chans": 	{	"Inverter":	"your-vz-uuid",
 					"Import":	"your-vz-uuid",
 					"PV":		"your-vz-uuid",

@@ -241,5 +241,5 @@
    -1
   ]
  ],
- "vz_channels_help": "volkszaehler channel mapping: [device, key, vz_channel, factor]. device null = direct variable (power_demand, zero_shift, bat_voltage)"
+ "vz_channels_help": "volkszaehler.org channel mapping: [device, key, vz_channel, factor]. device null = direct variable (power_demand, zero_shift, bat_voltage)"
 }

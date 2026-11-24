@@ -13,8 +13,8 @@ This specification describes **what** `dirt_shift` does; it applies to the versi
 
 ## Data sources
 
-- **volkszähler** (HTTP API, `vz_host_port`, timeout `VZ_TIMEOUT_S` = 30 s per request):
-  - **basic_load** — house consumption per hour, `Import + |Inverter| − Auto`, as a weighted mean over `average_days` days (`get_average`, hourly in `dirt_avg_cache.json`). Each day is a 24-hour window ending one hour before the current one (`VZ_WINDOW_LAG_H`), because volkszähler does not yet return the hour that has just closed; only complete windows count. The same applies to the PV reference curve. The formula must be adapted to the installation: only plannable loads that should not be covered from the reserve are subtracted (such as a separately metered wallbox).
+- **[volkszaehler.org](https://volkszaehler.org/)** (HTTP API, `vz_host_port`, timeout `VZ_TIMEOUT_S` = 30 s per request):
+  - **basic_load** — house consumption per hour, `Import + |Inverter| − Auto`, as a weighted mean over `average_days` days (`get_average`, hourly in `dirt_avg_cache.json`). Each day is a 24-hour window ending one hour before the current one (`VZ_WINDOW_LAG_H`), because volkszaehler.org does not yet return the hour that has just closed; only complete windows count. The same applies to the PV reference curve. The formula must be adapted to the installation: only plannable loads that should not be covered from the reserve are subtracted (such as a separately metered wallbox).
   - **Energy content** — reconstructed from PV and inverter energy since the last empty state, with `PV_to_bat_efficiency` and `bat_to_AC_efficiency` (`get_vz_bat_cap`, fresh every run).
   - **PV generation** — basis of the PV reference curve; the mean over the last 15 minutes (`recent_pv_power`) feeds the energy budget and the wallbox voltage condition.
   - **Battery voltage** (`Vbat`) — empty anchor of the energy content and the wallbox voltage condition.
@@ -46,7 +46,7 @@ A median always splits roughly in half, even on uniformly clean or dirty days. T
 - Hours of tomorrow not yet published use today's values from the same source; tomorrow is not filled in from the other source. Both sources usually publish the next day from about 19:00.
 - Fetched hourly (`dirt_grid_cache.json`, with the source); a failed attempt is only retried the next hour.
 
-**Outage.** If both sources deliver nothing, the cache may bridge exactly **one day**, but only if the data fetched yesterday actually holds a forecast for today (`_substitute_day`); yesterday's own values are never passed off as today. Beyond that an **emergency mode** takes over (`emergency_zones`): a relative dirtiness curve is modelled from solar and wind forecasts and a fixed, normalised **nationwide** grid-load profile, then cut as usual. It is coarse but accounts for wind. The emergency mode is clearly flagged in every output, never cached and **not** exported to volkszähler. If the weather cannot be fetched either, `dirt_shift` aborts (see Error behaviour).
+**Outage.** If both sources deliver nothing, the cache may bridge exactly **one day**, but only if the data fetched yesterday actually holds a forecast for today (`_substitute_day`); yesterday's own values are never passed off as today. Beyond that an **emergency mode** takes over (`emergency_zones`): a relative dirtiness curve is modelled from solar and wind forecasts and a fixed, normalised **nationwide** grid-load profile, then cut as usual. It is coarse but accounts for wind. The emergency mode is clearly flagged in every output, never cached and **not** exported to volkszaehler.org. If the weather cannot be fetched either, `dirt_shift` aborts (see Error behaviour).
 
 ---
 
@@ -222,7 +222,7 @@ If a run caps, stops or throttles, an "all-allowed" line (`100 100 -1`) follows 
 
 ## Exporting grid dirtiness
 
-If `vz_dirtiness_uuid` is set, every run writes the current `dirt%` value to that volkszähler channel via HTTP POST; on the first run of an hour it also writes the previous hour's value one second before the hour boundary, so the curve forms a clean step (`write_dirtiness_to_vz`). The value follows the scale of the source in use: with the power signal it sits lower than with SMARD; when the source changes, the step to the previous hour is skipped. A jump in the curve without a matching change in the weather therefore marks a source change; the `-v` output and the logfile name the source in use. Nothing is exported in emergency mode. A failure is only reported with `-v`.
+If `vz_dirtiness_uuid` is set, every run writes the current `dirt%` value to that volkszaehler.org channel via HTTP POST; on the first run of an hour it also writes the previous hour's value one second before the hour boundary, so the curve forms a clean step (`write_dirtiness_to_vz`). The value follows the scale of the source in use: with the power signal it sits lower than with SMARD; when the source changes, the step to the previous hour is skipped. A jump in the curve without a matching change in the weather therefore marks a source change; the `-v` output and the logfile name the source in use. Nothing is exported in emergency mode. A failure is only reported with `-v`.
 
 ---
 
@@ -273,9 +273,9 @@ Missing data drops only the affected part wherever possible:
 | power signal and SMARD | yesterday's cache if it holds a forecast for today, otherwise emergency mode |
 | radiation forecast | unscaled reference curve |
 | SMARD load forecast | profile of the most recent available day |
-| volkszähler unreachable | cached averages and PV curve; battery free, as the battery content is missing |
+| volkszaehler.org unreachable | cached averages and PV curve; battery free, as the battery content is missing |
 
-Only if there are no complete days for the average, volkszähler is unreachable and no cached averages exist, or neither grid data nor weather is available, does `dirt_shift` abort. Beforehand it writes an "all-allowed" line dated today (`write_free_timer`), except with `disable_zeroinput_timer: true`; the wallbox relay is left untouched. If not even `zeroinput.conf` is readable, only the error message remains.
+Only if there are no complete days for the average, volkszaehler.org is unreachable and no cached averages exist, or neither grid data nor weather is available, does `dirt_shift` abort. Beforehand it writes an "all-allowed" line dated today (`write_free_timer`), except with `disable_zeroinput_timer: true`; the wallbox relay is left untouched. If not even `zeroinput.conf` is readable, only the error message remains.
 
 ---
 
@@ -294,7 +294,7 @@ In `dirt_shift.conf`:
 | Key | Meaning | Default |
 |---|---|---|
 | `zeroinput_conf` | path to `zeroinput.conf` | `../zeroinput.conf` |
-| `vz_host_port`, `vz_chans` | volkszähler host and channel UUIDs | — |
+| `vz_host_port`, `vz_chans` | volkszaehler.org host and channel UUIDs | — |
 | `vz_dirtiness_uuid` | channel for the dirtiness export, empty = off | empty |
 | `average_days` | days for the `basic_load` average | 7 |
 | `day_weights_pct` | weight per day, index 0 = oldest; equal weights on a length mismatch | `[200, 100, 100, 100, 100, 150, 200]` |

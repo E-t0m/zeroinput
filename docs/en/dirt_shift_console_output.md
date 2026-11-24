@@ -7,7 +7,7 @@ using cached PV curve from 2026-09-17 04:00
 using cached radiation forecast from 2026-09-17 10:00, data until 2026-09-18 23:00
 using cached SMARD zones from 2026-09-17 10:00, data until 2026-09-17 23:00
 rolling median ratio 0.46 over 24 covered hours
-2026-09-17 10:15:02 query volkszähler for energy content:
+2026-09-17 10:15:02 query volkszaehler.org for energy content:
 min voltage 47.8 V, latest 52.1 V, battery content 595 Wh
 
 hr  PV_curve  rad_Wm2  clr%   exp_PV basic_ld  balance  chg  dirt% zone    

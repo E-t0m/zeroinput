@@ -34,7 +34,7 @@ def get_average(n_days,day_shift):
 		end		= (datetime.today() - timedelta(days=day+day_shift,hours=0 )).replace(minute=0,second=0,microsecond=0)
 		beginstamp	= str(int(begin.timestamp())).ljust(13,'0')
 		endstamp	= str(int(end.timestamp())).ljust(13,'0')
-		url = 'http://127.0.0.1:8080/data.json?from='+beginstamp+'&to='+endstamp+'&group=hour'	# asumes volkszähler at localhost:8080
+		url = 'http://127.0.0.1:8080/data.json?from='+beginstamp+'&to='+endstamp+'&group=hour'	# asumes volkszaehler.org at localhost:8080
 		for uuid in chans.values(): url += '&uuid[]='+uuid
 	
 		if True: 

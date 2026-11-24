@@ -5,7 +5,7 @@
 
 `dirt_shift` verschiebt die Batterieentladung in die Stunden mit der höchsten Netz-CO₂-Intensität und schreibt dazu die `timer.txt`, die zeroinput für die Entladesteuerung liest; optional schaltet es außerdem eine Wallbox. Es läuft periodisch (viertelstündlich per cron), nicht als Dauerdienst.
 
-Voraussetzung ist eine funktionierende zeroinput-Installation mit aktiviertem Entladetimer und ein erreichbarer volkszähler mit der `data.json`-HTTP-API.
+Voraussetzung ist eine funktionierende zeroinput-Installation mit aktiviertem Entladetimer und eine erreichbare volkszaehler.org-Installation mit der `data.json`-HTTP-API.
 
 Die ausführliche Beschreibung der Funktionsweise steht in der [Spezifikation](dirt_shift_spec.md).
 
@@ -17,7 +17,7 @@ Die ausführliche Beschreibung der Funktionsweise steht in der [Spezifikation](d
 
 - Python 3 mit dem Modul `requests` (`pip3 install requests` oder `apt install python3-requests`)
 - eine laufende zeroinput-Installation
-- volkszähler mit aktivierter `data.json`-API, erreichbar über `http://host:port/`
+- [volkszaehler.org](https://volkszaehler.org/) mit aktivierter `data.json`-API, erreichbar über `http://host:port/`
 
 ### zeroinput-seitig
 
@@ -63,7 +63,7 @@ Die aus der Starter-Datei erstellte `dirt_shift.conf` enthält Platzhalter, die 
 }
 ```
 
-- `vz_host_port` — Host und Port des volkszählers (`data.json`-API)
+- `vz_host_port` — Host und Port von volkszaehler.org (`data.json`-API)
 - `vz_chans` — die Kanal-UUIDs der eigenen Anlage
 - `battery_capacity_wh` — die nutzbare Akkukapazität in Wh (ein grober Wert genügt); sie steuert Überlaufschutz, Precharge, Füllstandsanzeige und die Warnung bei negativem Inhalt
 
@@ -79,7 +79,7 @@ Die übrigen Schlüssel (`reserve_pct`, `limit_discharge_rate`, `latitude`/`long
 
 **`round_trip_margin` (Standard `1.5`):** Stellschraube zwischen Kosten und Sauberkeit für Precharge. Precharge kostet den Rundlaufverlust des Akkuumwegs (aus `PV_to_bat_efficiency` und `bat_to_AC_efficiency`) als zusätzlichen Netzbezug; der rote Block muss um mindestens diesen Verlust × `round_trip_margin` dreckiger sein. `1.0` = so sauber wie möglich (mehr Netzbezug, mehr Ladezyklen), größere Werte = sparsamer, ein sehr großer Wert schaltet Precharge praktisch ab. Werte unter `1.0` gelten als `1.0`. Wirkt nicht auf die Entladeentscheidungen — dort verschiebt `dirt_shift` nur bereits gespeicherte Energie, ohne zusätzlichen Rundlauf. Details und Formeln stehen in der [Spezifikation](dirt_shift_spec.md), Abschnitt „Precharge".
 
-**Netzdaten.** `dirt_shift` bezieht reale Prognosen für heute **und morgen** und leitet daraus die Zonen ab (Median-Schnitt über das rollierende 24-Stunden-Fenster: sauberere Hälfte grün, dreckigere rot). Erste Quelle ist die **Stromampel von Energy-Charts** (Fraunhofer ISE, Lizenz CC BY 4.0), zweite **SMARD** (Bundesnetzagentur); beide sind kostenlos und ohne Anmeldung. Ein Lauf nimmt immer nur eine Quelle, weil die Stromampel alle Erneuerbaren zählt und SMARD nur Wind und Solar. Die Daten für morgen erscheinen bei beiden meist ab etwa 19 Uhr. Liefern beide nichts, überbrückt der Cache genau **einen Tag**, sofern er eine Prognose für heute enthält; danach schaltet `dirt_shift` in einen **Notmodus**, der die Zonen aus der Wetterprognose (Solar plus Wind über Open-Meteo) und einem festen Profil der bundesweiten Netzlast modelliert — deutlich gekennzeichnet, nie mit echten Daten verwechselt. Erst wenn auch das Wetter nicht abrufbar ist, hinterlässt `dirt_shift` einen „Alles-erlaubt"-Timer. Optional kann `vz_dirtiness_uuid` (eine vorher in volkszähler angelegte Kanal-UUID) gesetzt werden, damit `dirt_shift` den aktuellen Dreckigkeitswert bei jedem Lauf per HTTP-POST in volkszähler protokolliert (leer = deaktiviert).
+**Netzdaten.** `dirt_shift` bezieht reale Prognosen für heute **und morgen** und leitet daraus die Zonen ab (Median-Schnitt über das rollierende 24-Stunden-Fenster: sauberere Hälfte grün, dreckigere rot). Erste Quelle ist die **Stromampel von Energy-Charts** (Fraunhofer ISE, Lizenz CC BY 4.0), zweite **SMARD** (Bundesnetzagentur); beide sind kostenlos und ohne Anmeldung. Ein Lauf nimmt immer nur eine Quelle, weil die Stromampel alle Erneuerbaren zählt und SMARD nur Wind und Solar. Die Daten für morgen erscheinen bei beiden meist ab etwa 19 Uhr. Liefern beide nichts, überbrückt der Cache genau **einen Tag**, sofern er eine Prognose für heute enthält; danach schaltet `dirt_shift` in einen **Notmodus**, der die Zonen aus der Wetterprognose (Solar plus Wind über Open-Meteo) und einem festen Profil der bundesweiten Netzlast modelliert — deutlich gekennzeichnet, nie mit echten Daten verwechselt. Erst wenn auch das Wetter nicht abrufbar ist, hinterlässt `dirt_shift` einen „Alles-erlaubt"-Timer. Optional kann `vz_dirtiness_uuid` (eine vorher in volkszaehler.org angelegte Kanal-UUID) gesetzt werden, damit `dirt_shift` den aktuellen Dreckigkeitswert bei jedem Lauf per HTTP-POST in volkszaehler.org protokolliert (leer = deaktiviert).
 
 Die Strahlungsprognose (Open-Meteo, `shortwave_radiation`, kostenlos, ohne Anmeldung) skaliert die empirische PV-Referenzkurve auf das tatsächliche Tageswetter (heute und morgen, kein API-Key nötig). Im selben Aufruf wird `wind_speed_100m` mitgeholt und gecacht, das nur der Notmodus braucht — so entsteht kein zusätzlicher Netzabruf.
 
@@ -142,7 +142,7 @@ sudo crontab -u vzlogger -e
 
 **Warum genau diese Minuten und nicht z. B. `59,14,29,44`:** `dirt_shift` rundet den aktuellen Slot beim Schreiben der Timer-Zeile immer nach **unten** auf den laufenden Slot (`now.minute // SLOT_MINUTES * SLOT_MINUTES`). Ein Lauf eine Minute vor der Marke liegt noch im **alten** Slot und schreibt dessen (veraltete) Policy — der neue Slot bekäme seinen korrekten Eintrag dann erst 14 Minuten nach seinem eigentlichen Beginn. Mit `0,15,30,45` beginnt jeder Lauf exakt am Slot-Anfang, die Verzögerung schrumpft auf reinen Cron-Dispatch-Jitter (Sekunden). Die Slot-Länge steht als Konstante `SLOT_MINUTES` (Standard 15) im Code und bestimmt zugleich das Energiebudget je Slot, die Wallbox-Marge und das Spannungsfenster; wird sie geändert, muss der Cron-Eintrag entsprechend mitgeändert werden.
 
-Bei jedem Lauf wird der frische Energieinhalt abgefragt und die `timer.txt` mit dem aktuellen Slot plus einer 30-Minuten-Ausfallsicherung neu geschrieben, jeweils mit dem echten Kalenderdatum. Die übrigen Caches (7-Tage-Mittel, PV-Kurve, Strahlungsprognose, Netzdaten) werden intern jeweils stündlich bedient und nur bei Bedarf neu geholt — die viertelstündlichen Läufe belasten volkszähler, Open-Meteo, Energy-Charts und SMARD also gering.
+Bei jedem Lauf wird der frische Energieinhalt abgefragt und die `timer.txt` mit dem aktuellen Slot plus einer 30-Minuten-Ausfallsicherung neu geschrieben, jeweils mit dem echten Kalenderdatum. Die übrigen Caches (7-Tage-Mittel, PV-Kurve, Strahlungsprognose, Netzdaten) werden intern jeweils stündlich bedient und nur bei Bedarf neu geholt — die viertelstündlichen Läufe belasten volkszaehler.org, Open-Meteo, Energy-Charts und SMARD also gering.
 
 ---
 
@@ -172,9 +172,9 @@ Gedacht als Nebenausgabe für das Projekt [Ortsnetz-Auslastung](https://github.c
 
 ### Fehlerverhalten
 
-Fehlt der **Akkuenergieinhalt** (volkszähler-Lücke bei der Spannung), lässt sich die Batterie nicht steuern — sie wird freigegeben (Frei-Timer). Die **Wallbox-Steuerung läuft trotzdem weiter**: Ihre drei Pfade sind redundant, ein fehlender Wert lässt nur seinen eigenen Pfad entfallen (ohne Inhalt der Energie-Pfad, ohne Spannungsmessung der Spannungs-Pfad), die übrigen entscheiden normal. Nur wenn **alle** Wallbox-Pfade mangels Daten nicht entscheidbar sind, bleibt das Relais unverändert (kein Ein- oder Ausschalten). Ebenso bei fehlenden Netzdaten: Dort speist der Notmodus die Zonen, und der ganze Lauf inklusive Wallbox läuft normal. Ist der **volkszähler nicht erreichbar**, arbeitet `dirt_shift` mit den gecachten Verbrauchsmittelwerten und der gecachten PV-Kurve weiter; da dann auch der Akkuinhalt fehlt, wird die Batterie freigegeben, und die Wallbox läuft über den Sauberkeits-Pfad weiter. Jeder folgende Lauf versucht den Abruf erneut.
+Fehlt der **Akkuenergieinhalt** (volkszaehler.org-Lücke bei der Spannung), lässt sich die Batterie nicht steuern — sie wird freigegeben (Frei-Timer). Die **Wallbox-Steuerung läuft trotzdem weiter**: Ihre drei Pfade sind redundant, ein fehlender Wert lässt nur seinen eigenen Pfad entfallen (ohne Inhalt der Energie-Pfad, ohne Spannungsmessung der Spannungs-Pfad), die übrigen entscheiden normal. Nur wenn **alle** Wallbox-Pfade mangels Daten nicht entscheidbar sind, bleibt das Relais unverändert (kein Ein- oder Ausschalten). Ebenso bei fehlenden Netzdaten: Dort speist der Notmodus die Zonen, und der ganze Lauf inklusive Wallbox läuft normal. Ist **volkszaehler.org nicht erreichbar**, arbeitet `dirt_shift` mit den gecachten Verbrauchsmittelwerten und der gecachten PV-Kurve weiter; da dann auch der Akkuinhalt fehlt, wird die Batterie freigegeben, und die Wallbox läuft über den Sauberkeits-Pfad weiter. Jeder folgende Lauf versucht den Abruf erneut.
 
-Nur bei einem wirklich harten Fehler (volkszähler liefert keine vollständigen Tage für die Mittelung, volkszähler nicht erreichbar und keine gecachten Mittelwerte, oder weder Netzdaten noch das Wetter-Modell verfügbar) bricht `dirt_shift` ab, schreibt aber zuvor — sofern der Timer-Pfad bekannt ist und `disable_zeroinput_timer` auf `false` steht — eine „Alles-erlaubt"-Zeile mit dem aktuellen Datum, damit zeroinput nicht durch eine veraltete Begrenzung blockiert wird; das Wallbox-Relais bleibt dabei unangetastet:
+Nur bei einem wirklich harten Fehler (volkszaehler.org liefert keine vollständigen Tage für die Mittelung, volkszaehler.org nicht erreichbar und keine gecachten Mittelwerte, oder weder Netzdaten noch das Wetter-Modell verfügbar) bricht `dirt_shift` ab, schreibt aber zuvor — sofern der Timer-Pfad bekannt ist und `disable_zeroinput_timer` auf `false` steht — eine „Alles-erlaubt"-Zeile mit dem aktuellen Datum, damit zeroinput nicht durch eine veraltete Begrenzung blockiert wird; das Wallbox-Relais bleibt dabei unangetastet:
 
 ```
 2026-07-09 00:00:00 100 100 -1
@@ -192,9 +192,9 @@ Ist nicht einmal die `zeroinput.conf` lesbar (Timer-Pfad unbekannt), bleibt nur 
 
 **„cannot read zeroinput.conf".** Der Pfad in `zeroinput_conf` stimmt nicht. Er wird relativ zum Verzeichnis von `dirt_shift.py` aufgelöst.
 
-**„no complete days returned by volkszähler".** Der volkszähler hat für den abgefragten Zeitraum keine vollständigen Tage. Erst nach einigen Betriebstagen liefert die Mittelung sinnvolle Werte. Bis dahin greift der Frei-Timer-Fallback.
+**„no complete days returned by volkszaehler.org".** volkszaehler.org hat für den abgefragten Zeitraum keine vollständigen Tage. Erst nach einigen Betriebstagen liefert die Mittelung sinnvolle Werte. Bis dahin greift der Frei-Timer-Fallback.
 
-**„volkszähler consumption query failed" / „keeping cached averages".** Der volkszähler ist nicht erreichbar oder antwortet nicht verwertbar. `dirt_shift` arbeitet mit den gecachten Werten weiter und gibt die Batterie frei. Prüfen, ob volkszähler läuft und `vz_host_port` stimmt. Steht statt dessen „volkszähler unreachable and no cached averages", gab es noch nie einen erfolgreichen Abruf; dann schreibt `dirt_shift` einen Freigabe-Timer und bricht ab.
+**„volkszaehler.org consumption query failed" / „keeping cached averages".** volkszaehler.org ist nicht erreichbar oder antwortet nicht verwertbar. `dirt_shift` arbeitet mit den gecachten Werten weiter und gibt die Batterie frei. Prüfen, ob volkszaehler.org läuft und `vz_host_port` stimmt. Steht statt dessen „volkszaehler.org unreachable and no cached averages", gab es noch nie einen erfolgreichen Abruf; dann schreibt `dirt_shift` einen Freigabe-Timer und bricht ab.
 
 **„SMARD load forecast for ... unavailable — using profile from ...".** Kein Fehler: SMARD veröffentlicht Erzeugungs- und Verbrauchsprognose unabhängig, und die Verbrauchsprognose hinkt oft einen Tag hinterher. `dirt_shift` verwendet dann das Lastprofil des zuletzt verfügbaren Tages, damit die Zonen überhaupt gebildet werden können — die Erzeugungskurve, die den Tagesgang bestimmt, ist ja aktuell.
 

@@ -12,7 +12,7 @@ The name stands for two things: zero input into the power grid and zero data int
 
 - **No cloud.** The control runs entirely in the house. There is no manufacturer account, no third-party server and no app the operation depends on.
 - **Cables instead of radio.** Meter, inverters and charge controllers are connected by serial lines. The control loop uses neither WiFi nor Bluetooth, and so none of their dropouts and delays.
-- **Short path.** Values go from the meter to the control directly, without MQTT, broker or database. If the volkszähler database fails, zeroinput keeps controlling undisturbed.
+- **Short path.** Values go from the meter to the control directly, without MQTT, broker or database. If the volkszaehler.org database fails, zeroinput keeps controlling undisturbed.
 
 Only the add-ons that plan discharge times need the internet. They fetch forecasts and prices and do not transmit any measurements of the system. The control itself does not depend on them.
 
@@ -25,7 +25,7 @@ Only the add-ons that plan discharge times need the internet. They fetch forecas
 | Grid-tie inverters | Soyosource GTN with RS485 limiter port or Victron MultiPlus-II with MK3-USB adapter, in any mix and number |
 | Charge controllers | eSmart3, Victron MPPT, EPever Tracer, Renogy Rover or Morningstar TriStar, in any mix and number |
 | Battery | LiFePO4, the cell count is configurable (16S, 15S, 8S and others) |
-| Software | [volkszähler](https://www.volkszaehler.org/) with vzlogger for the meter data and the recording |
+| Software | [volkszaehler.org](https://www.volkszaehler.org/) with vzlogger for the meter data and the recording |
 
 Electrically the setup is that of an off-grid system: PV modules, charge controllers and battery form the DC side, the grid-tie inverters are connected to the battery and feed into the house wiring.
 
@@ -33,7 +33,7 @@ Only inverters that accept a power value in watts every second and are supplied 
 
 ## How the control works
 
-Through vzlogger the meter reports the net power of the house every second. zeroinput calculates the power that is missing or too much, checks it against all limits and sends the new setpoint to the inverters. The charge controllers add PV power and battery voltage. All values also go to the volkszähler and appear there as curves.
+Through vzlogger the meter reports the net power of the house every second. zeroinput calculates the power that is missing or too much, checks it against all limits and sends the new setpoint to the inverters. The charge controllers add PV power and battery voltage. All values also go to volkszaehler.org and appear there as curves.
 
 The meter balances the three phases. Feeding in on one phase is therefore enough to offset the consumption on all three.
 
@@ -67,7 +67,7 @@ All functions are described in detail in the [specification](spec.md), the load 
 
 ## Operation in the browser
 
-zeroinput comes with an optional [web interface](spec.md#web-interface-webconfigpy), started with `-httpd`. It edits charge controllers, inverters, alarms, volkszähler channels, the timer file and all other settings. Most changes take effect immediately, without a restart. A status page shows the live values. zeroinput also runs without the web interface; the settings are then edited directly in `zeroinput.conf`.
+zeroinput comes with an optional [web interface](spec.md#web-interface-webconfigpy), started with `-httpd`. It edits charge controllers, inverters, alarms, volkszaehler.org channels, the timer file and all other settings. Most changes take effect immediately, without a restart. A status page shows the live values. zeroinput also runs without the web interface; the settings are then edited directly in `zeroinput.conf`.
 
 ![Status page](../screenshots/webconfig_status.png)
 
@@ -87,7 +87,7 @@ In the morning, with a clean grid (purple, right axis), the PV charges the batte
 
 ## Examples from operation
 
-The curves come from the volkszähler. PV power (yellow) and feed-in (green) are plotted downwards, the battery voltage is red.
+The curves come from volkszaehler.org. PV power (yellow) and feed-in (green) are plotted downwards, the battery voltage is red.
 
 ### Good day with high consumption
 

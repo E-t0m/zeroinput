@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """Unit/scenario tests for dirt_shift's pure decision functions.
 
-dirt_shift.py loads its config and touches volkszähler and the grid sources at import time, so
+dirt_shift.py loads its config and touches volkszaehler.org and the grid sources at import time, so
 this does NOT import it. It extracts the pure functions (the ones that take
 their inputs as arguments and touch nothing external) from the source and runs
 them against a stubbed conf, so regressions in the decision logic are caught

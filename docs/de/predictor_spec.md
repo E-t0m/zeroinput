@@ -138,6 +138,6 @@ Im frischen Zustand ist der offset 0 und wird nie aktiv angewendet, bis etwas ge
 
 ## Log
 
-Das Predictor-Log ist als Diagnose- und Analyse-Schnittstelle gedacht, nicht als Betriebsanzeige: Das laufende Monitoring der Anlage erfolgt über Volkszähler, während dieses Log mit seinem hohen Detailgrad der späteren Fehlersuche dient (etwa wenn ein Auszug zur Analyse herangezogen wird). Daher protokolliert es jeden internen Zustand pro Zyklus.
+Das Predictor-Log ist als Diagnose- und Analyse-Schnittstelle gedacht, nicht als Betriebsanzeige: Das laufende Monitoring der Anlage erfolgt über [volkszaehler.org](https://volkszaehler.org/), während dieses Log mit seinem hohen Detailgrad der späteren Fehlersuche dient (etwa wenn ein Auszug zur Analyse herangezogen wird). Daher protokolliert es jeden internen Zustand pro Zyklus.
 
 Der Prediktor hängt pro Zyklus eine tab-getrennte Zeile an `LOG_FILE` an (standardmäßig `/tmp/predictor.log`, über `predictor_log` konfigurierbar). Beim Öffnen werden ein Versionsbanner und der Spaltenkopf geschrieben; `# RESET` / `# ENABLE`-Markerzeilen halten Zustandswechsel fest (die `# RESET`-Zeile nennt die Predictor-Version). Spalten: Zeitstempel, Zeit, Ls_read, last2_send, est_load, History-Länge, LOW, HIGH, Spread, Phase, Transition-Zähler, offset, Override-Flag, verbleibende Override-Zyklen, In-Peak-Flag, Peak-Alter (Zyklen), Anzahl kurzer Peaks.
