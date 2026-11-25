@@ -52,6 +52,27 @@ zeroinput integrates naturally into an existing volkszaehler.org setup without r
   The OBIS dataset `1-0:16.7.0` (net active power) **must** be available
 - Meter interface compatible with vzlogger (IR read head, Shelly 3EM / Pro 3EM, Modbus meter, …)
 
+#### eSmart3 and eSmart4 under other brands
+
+The eSmart3 (manufacturer Ipandee/I-Panda) is sold under many brands. For these brands, the model name or the manual points to an eSmart3:
+
+| Brand | Model |
+|---|---|
+| Ipandee / I-Panda | eSmart3-20A to eSmart3-60A |
+| unbranded | eSmart3-40A (tested with zeroinput) |
+| ACEHE | eSmart3-40A |
+| Lovsun | ESMART3 Series |
+| MAIXI | eSmart3-40A |
+| PowMr | Esmart3-40A-II, Esmart3-60A-II (other PowMr controllers such as the HHJ-60A are not eSmart3) |
+| SameeHome | Esmart3-40A |
+| SUPOELE | eSmart3-40A, eSmart3-60A, SP-Esmart3 |
+| Temank | eSmart3-60A |
+| VEVOR | 60A MPPT "eSmart 3 Series" (tested with zeroinput) |
+
+According to [Joba_ESmart3](https://github.com/joba-1/Joba_ESmart3), the eSmart4 (model numbers ESF48L50, ESF48L60, ESF48H50, ESF48H60) speaks the same protocol. It is untested with zeroinput; configure it as `mppt_type: eSmart3`. Feedback is welcome. Known brands: Ipandee, AOJIA (Esmart4), ECO-WORTHY (ECOMPPT60A), iSunergy (ESF48L60), Solarepic (ESF48H60), SUPOELE (ESF48L60).
+
+RJ45 socket (eSmart3 and eSmart4): 1 RS485-A, 2 RS485-B, 3 and 4 not connected, 5 and 6 GND, 7 and 8 +5 V.
+
 ### Software
 
 ```bash

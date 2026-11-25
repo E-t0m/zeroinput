@@ -52,6 +52,27 @@ zeroinput fügt sich damit natürlich in eine bestehende volkszaehler.org-Instal
   Der OBIS-Datensatz `1-0:16.7.0` (Netz-Wirkleistung) **muss** vorhanden sein
 - Zähler-Schnittstelle kompatibel mit vzlogger (IR-Lesekopf, Shelly 3EM / Pro 3EM, Modbus-Zähler, …)
 
+#### eSmart3 und eSmart4 unter anderen Marken
+
+Der eSmart3 (Hersteller Ipandee/I-Panda) wird unter vielen Marken verkauft. Typenbezeichnung oder Handbuch weisen bei diesen Marken auf einen eSmart3 hin:
+
+| Marke | Modell |
+|---|---|
+| Ipandee / I-Panda | eSmart3-20A bis eSmart3-60A |
+| ohne Marke | eSmart3-40A (mit zeroinput getestet) |
+| ACEHE | eSmart3-40A |
+| Lovsun | ESMART3 Series |
+| MAIXI | eSmart3-40A |
+| PowMr | Esmart3-40A-II, Esmart3-60A-II (andere PowMr-Regler wie der HHJ-60A sind keine eSmart3) |
+| SameeHome | Esmart3-40A |
+| SUPOELE | eSmart3-40A, eSmart3-60A, SP-Esmart3 |
+| Temank | eSmart3-60A |
+| VEVOR | 60A MPPT „eSmart 3 Series“ (mit zeroinput getestet) |
+
+Der eSmart4 (Modellnummern ESF48L50, ESF48L60, ESF48H50, ESF48H60) spricht laut [Joba_ESmart3](https://github.com/joba-1/Joba_ESmart3) dasselbe Protokoll. Mit zeroinput ist er ungetestet; einzutragen ist er als `mppt_type: eSmart3`. Rückmeldungen sind willkommen. Bekannte Marken: Ipandee, AOJIA (Esmart4), ECO-WORTHY (ECOMPPT60A), iSunergy (ESF48L60), Solarepic (ESF48H60), SUPOELE (ESF48L60).
+
+RJ45-Buchse (eSmart3 und eSmart4): 1 RS485-A, 2 RS485-B, 3 und 4 frei, 5 und 6 GND, 7 und 8 +5 V.
+
 ### Software
 
 ```bash
