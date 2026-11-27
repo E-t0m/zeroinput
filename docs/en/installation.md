@@ -46,32 +46,66 @@ zeroinput integrates naturally into an existing volkszaehler.org setup without r
 - One or more inverters:
   - **Soyosource GTN limiter** (GTN-1000/1200/2000 with RS485 limiter port) — wired via USB RS485 adapter
   - **Victron MultiPlus / MultiPlus-II** (VE.Bus, 2nd-gen microprocessor) with MK2-USB or MK3-USB adapter — ESS assistant must be configured in VEConfigure
-- MPPT charge controller: eSmart3 (RS485), Victron MPPT (VE.Direct or Aggregator), EPever Tracer-AN/-BN, Renogy Rover/Elite/Adventurer, or Morningstar TriStar MPPT (all RS485/Modbus RTU)
-- RS485 adapter (USB) — wiring: **A+ to A+, B- to B-** on all devices
+- MPPT charge controller: eSmart3 (RS485), Victron MPPT (VE.Direct or Aggregator), EPever Tracer-AN/-BN, Renogy Rover/Elite/Adventurer, or Morningstar TriStar MPPT (Modbus RTU over RS485, some models over RS232)
+- RS485 adapter (USB) — wiring: **A+ to A+, B- to B-** on all devices; for charge controllers with an RS232 port a USB RS232 adapter
 - Electricity meter with extended data output (request PIN from your metering point operator)
   The OBIS dataset `1-0:16.7.0` (net active power) **must** be available
 - Meter interface compatible with vzlogger (IR read head, Shelly 3EM / Pro 3EM, Modbus meter, …)
 
 #### eSmart3 and eSmart4 under other brands
 
-The eSmart3 (manufacturer Ipandee/I-Panda) is sold under many brands. For these brands, the model name or the manual points to an eSmart3:
+The eSmart3 (manufacturer Ipandee/I-Panda) is sold under many brands. For these brands, the model name, the manual or the housing points to an eSmart3:
 
 | Brand | Model |
 |---|---|
 | Ipandee / I-Panda | eSmart3-20A to eSmart3-60A |
 | unbranded | eSmart3-40A (tested with zeroinput) |
 | ACEHE | eSmart3-40A |
+| anancooler | Esmart 3-40A |
+| BRCU | Esmart3 (40A) |
+| GT | ESmart3 40A |
+| KR | Esmart3 (40A to 60A) |
+| KRXNY | Esmart3 (40A, 60A) |
 | Lovsun | ESMART3 Series |
 | MAIXI | eSmart3-40A |
 | PowMr | Esmart3-40A-II, Esmart3-60A-II (other PowMr controllers such as the HHJ-60A are not eSmart3) |
+| Ruoxiang | ESmart3 40A, eSmart3-60A |
 | SameeHome | Esmart3-40A |
 | SUPOELE | eSmart3-40A, eSmart3-60A, SP-Esmart3 |
 | Temank | eSmart3-60A |
 | VEVOR | 60A MPPT "eSmart 3 Series" (tested with zeroinput) |
+| Y-SOLAR | Esmart3-60A |
 
 According to [Joba_ESmart3](https://github.com/joba-1/Joba_ESmart3), the eSmart4 (model numbers ESF48L50, ESF48L60, ESF48H50, ESF48H60) speaks the same protocol. It is untested with zeroinput; configure it as `mppt_type: eSmart3`. Feedback is welcome. Known brands: Ipandee, AOJIA (Esmart4), ECO-WORTHY (ECOMPPT60A), iSunergy (ESF48L60), Solarepic (ESF48H60), SUPOELE (ESF48L60).
 
+Possibly identical, but only weakly documented (untested with zeroinput, feedback is welcome): Daweglop (Esmart3-40A), iSunergy (ESF48H80, ESF48H100), ECO-WORTHY (60A MPPT with Bluetooth and WiFi module BW02).
+
 RJ45 socket (eSmart3 and eSmart4): 1 RS485-A, 2 RS485-B, 3 and 4 not connected, 5 and 6 GND, 7 and 8 +5 V.
+
+#### Modbus charge controllers under other brands
+
+The Renogy Rover controllers are made by SRNE, and SRNE controllers are also sold under further brands. The Renogy Commander comes from EPever (EPsolar). For these brands, the model name or the manual points to the same device. They are untested with zeroinput; feedback is welcome.
+
+| Brand | Model | `mppt_type` |
+|---|---|---|
+| SRNE | ML2420, ML2430, ML2440, ML4860 | `renogy` |
+| Rich Solar | ML2420, ML2430, ML2440, ML4830N15, ML4860 | `renogy` |
+| PowMr | ML4860 (the PowMr HHJ-60A is a different device) | `renogy` |
+| Temank | ML4860 | `renogy` |
+| Snaterm | ML4860 | `renogy` |
+| EPsolar | Tracer-AN, Tracer-BN (EPsolar and EPever are the same manufacturer) | `epever` |
+| Renogy | Commander 60A (EPsolar iTracer IT6415ND) | `epever` |
+| Ultisolar | eTracer ET4415BND, ET6415BND | `epever` |
+
+EPever's Modbus description also covers the Tracer-A, XTRA, Triron, iTracer and eTracer series; they are untested with zeroinput.
+
+The Renogy Tracer MPPT (for example CTRL-MPPT20) is a first-generation EPsolar Tracer. It uses a different protocol and is not supported.
+
+No other brands are known for Morningstar.
+
+Possibly identical, but only weakly documented (untested with zeroinput, feedback is welcome): WindyNation TrakMax and Zenith Grape Solar (`renogy`, compatible according to [solarthing](https://github.com/wildmountainfarms/solarthing)), Weize (`renogy`, named as SRNE in a forum post), FANGPUSUN (`victron`, looks like Victron controllers, VE.Direct port according to a forum report).
+
+Some SRNE controllers (for example ML2420, Rich Solar RS-MPPT40) have an RS232 port instead of RS485; the Renogy Rover 60A has both. An RS232 port needs a USB RS232 adapter instead of an RS485 adapter. The manual states which port the controller has.
 
 ### Software
 
@@ -219,7 +253,7 @@ Charger configuration fields:
 | `unit` | Modbus slave address (epever/renogy/morningstar only, default 1) |
 | `temp_display` | Label for the external temperature reading (eSmart3) |
 
-Modbus charger notes: **epever** (Tracer-AN/-BN) runs at 115200 baud; **renogy** (Rover/Elite/Adventurer) and **morningstar** (TriStar MPPT 45/60) at 9600. The Morningstar **EIA-485 port exists only on the TS-MPPT-60/M** — the TS-MPPT-45 is RS-232 only and cannot share an RS485 bus. One Modbus charger per port: running several on one physical bus (multi-drop with distinct `unit` addresses) is not yet supported by the config — give each its own port/adapter.
+Modbus charger notes: **epever** (Tracer-AN/-BN) runs at 115200 baud; **renogy** (Rover/Elite/Adventurer and SRNE controllers) and **morningstar** (TriStar MPPT 45/60) at 9600. The Morningstar **EIA-485 port exists only on the TS-MPPT-60/M** — the TS-MPPT-45 is RS-232 only and cannot share an RS485 bus. One Modbus charger per port: running several on one physical bus (multi-drop with distinct `unit` addresses) is not yet supported by the config — give each its own port/adapter.
 
 **Example inverters block:**
 

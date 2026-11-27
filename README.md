@@ -3,6 +3,8 @@ Zero export (Nulleinspeisung) for PV and battery systems: local control of grid-
 
 eSmart3 charge controllers are supported, also when sold under other brands such as VEVOR, PowMr or Temank; the eSmart4 speaks the same protocol but is untested ([brand list](docs/en/installation.md#esmart3-and-esmart4-under-other-brands)).
 
+SRNE controllers (sold as Renogy Rover and under brands such as Rich Solar, PowMr or Temank) run as `renogy`, the Renogy Commander runs as `epever` ([brand list](docs/en/installation.md#modbus-charge-controllers-under-other-brands)).
+
 | English | Deutsch |
 |----------|---------|
 | [Introduction](docs/en/about.md) | [Vorstellung](docs/de/about.md) |

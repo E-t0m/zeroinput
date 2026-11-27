@@ -46,32 +46,66 @@ zeroinput fügt sich damit natürlich in eine bestehende volkszaehler.org-Instal
 - Ein oder mehrere Wechselrichter:
   - **Soyosource GTN Limiter** (GTN-1000/1200/2000 mit RS485-Limiter-Port) — per USB-RS485-Adapter angebunden
   - **Victron MultiPlus / MultiPlus-II** (VE.Bus, Mikroprozessor 2. Generation) mit MK2-USB- oder MK3-USB-Adapter — ESS-Assistant muss in VEConfigure konfiguriert sein
-- MPPT-Laderegler: eSmart3 (RS485), Victron MPPT (VE.Direct oder Aggregator), EPever Tracer-AN/-BN, Renogy Rover/Elite/Adventurer oder Morningstar TriStar MPPT (alle RS485/Modbus RTU)
-- RS485-Adapter (USB) — Verdrahtung: **A+ an A+, B- an B-** an allen Geräten
+- MPPT-Laderegler: eSmart3 (RS485), Victron MPPT (VE.Direct oder Aggregator), EPever Tracer-AN/-BN, Renogy Rover/Elite/Adventurer oder Morningstar TriStar MPPT (Modbus RTU über RS485, einige Modelle über RS232)
+- RS485-Adapter (USB) — Verdrahtung: **A+ an A+, B- an B-** an allen Geräten; für Laderegler mit RS232-Port ein USB-RS232-Adapter
 - Stromzähler mit erweiterter Datenausgabe (PIN beim Messstellenbetreiber anfordern)
   Der OBIS-Datensatz `1-0:16.7.0` (Netz-Wirkleistung) **muss** vorhanden sein
 - Zähler-Schnittstelle kompatibel mit vzlogger (IR-Lesekopf, Shelly 3EM / Pro 3EM, Modbus-Zähler, …)
 
 #### eSmart3 und eSmart4 unter anderen Marken
 
-Der eSmart3 (Hersteller Ipandee/I-Panda) wird unter vielen Marken verkauft. Typenbezeichnung oder Handbuch weisen bei diesen Marken auf einen eSmart3 hin:
+Der eSmart3 (Hersteller Ipandee/I-Panda) wird unter vielen Marken verkauft. Typenbezeichnung, Handbuch oder Gehäuse weisen bei diesen Marken auf einen eSmart3 hin:
 
 | Marke | Modell |
 |---|---|
 | Ipandee / I-Panda | eSmart3-20A bis eSmart3-60A |
 | ohne Marke | eSmart3-40A (mit zeroinput getestet) |
 | ACEHE | eSmart3-40A |
+| anancooler | Esmart 3-40A |
+| BRCU | Esmart3 (40A) |
+| GT | ESmart3 40A |
+| KR | Esmart3 (40A bis 60A) |
+| KRXNY | Esmart3 (40A, 60A) |
 | Lovsun | ESMART3 Series |
 | MAIXI | eSmart3-40A |
 | PowMr | Esmart3-40A-II, Esmart3-60A-II (andere PowMr-Regler wie der HHJ-60A sind keine eSmart3) |
+| Ruoxiang | ESmart3 40A, eSmart3-60A |
 | SameeHome | Esmart3-40A |
 | SUPOELE | eSmart3-40A, eSmart3-60A, SP-Esmart3 |
 | Temank | eSmart3-60A |
 | VEVOR | 60A MPPT „eSmart 3 Series“ (mit zeroinput getestet) |
+| Y-SOLAR | Esmart3-60A |
 
 Der eSmart4 (Modellnummern ESF48L50, ESF48L60, ESF48H50, ESF48H60) spricht laut [Joba_ESmart3](https://github.com/joba-1/Joba_ESmart3) dasselbe Protokoll. Mit zeroinput ist er ungetestet; einzutragen ist er als `mppt_type: eSmart3`. Rückmeldungen sind willkommen. Bekannte Marken: Ipandee, AOJIA (Esmart4), ECO-WORTHY (ECOMPPT60A), iSunergy (ESF48L60), Solarepic (ESF48H60), SUPOELE (ESF48L60).
 
+Möglicherweise baugleich, aber nur schwach belegt (mit zeroinput ungetestet, Rückmeldungen sind willkommen): Daweglop (Esmart3-40A), iSunergy (ESF48H80, ESF48H100), ECO-WORTHY (60A MPPT mit Bluetooth- und WLAN-Modul BW02).
+
 RJ45-Buchse (eSmart3 und eSmart4): 1 RS485-A, 2 RS485-B, 3 und 4 frei, 5 und 6 GND, 7 und 8 +5 V.
+
+#### Modbus-Laderegler unter anderen Marken
+
+Die Renogy Rover sind Regler von SRNE, und SRNE-Regler werden auch unter weiteren Marken verkauft. Der Renogy Commander stammt von EPever (EPsolar). Typenbezeichnung oder Handbuch weisen bei diesen Marken auf dasselbe Gerät hin. Mit zeroinput sind sie ungetestet; Rückmeldungen sind willkommen.
+
+| Marke | Modell | `mppt_type` |
+|---|---|---|
+| SRNE | ML2420, ML2430, ML2440, ML4860 | `renogy` |
+| Rich Solar | ML2420, ML2430, ML2440, ML4830N15, ML4860 | `renogy` |
+| PowMr | ML4860 (der PowMr HHJ-60A ist ein anderes Gerät) | `renogy` |
+| Temank | ML4860 | `renogy` |
+| Snaterm | ML4860 | `renogy` |
+| EPsolar | Tracer-AN, Tracer-BN (EPsolar und EPever sind derselbe Hersteller) | `epever` |
+| Renogy | Commander 60A (EPsolar iTracer IT6415ND) | `epever` |
+| Ultisolar | eTracer ET4415BND, ET6415BND | `epever` |
+
+Die Modbus-Beschreibung von EPever gilt auch für die Serien Tracer-A, XTRA, Triron, iTracer und eTracer; mit zeroinput sind sie ungetestet.
+
+Der Renogy Tracer MPPT (z. B. CTRL-MPPT20) ist ein EPsolar Tracer der ersten Generation. Er spricht ein anderes Protokoll und wird nicht unterstützt.
+
+Für Morningstar ist keine andere Marke bekannt.
+
+Möglicherweise baugleich, aber nur schwach belegt (mit zeroinput ungetestet, Rückmeldungen sind willkommen): WindyNation TrakMax und Zenith Grape Solar (`renogy`, laut [solarthing](https://github.com/wildmountainfarms/solarthing) kompatibel), Weize (`renogy`, in einem Forenbeitrag als SRNE genannt), FANGPUSUN (`victron`, äußerlich wie Victron-Regler, VE.Direct-Port laut Forenbericht).
+
+Einige SRNE-Regler (z. B. ML2420, Rich Solar RS-MPPT40) haben einen RS232-Port statt RS485, der Renogy Rover 60A hat beide. Ein RS232-Port braucht einen USB-RS232-Adapter statt eines RS485-Adapters. Welche Schnittstelle der Regler hat, steht im Handbuch.
 
 ### Software
 
@@ -219,7 +253,7 @@ Felder im Lader-Eintrag:
 | `unit` | Modbus-Slave-Adresse (nur epever/renogy/morningstar, Standard 1) |
 | `temp_display` | Bezeichnung für den externen Temperaturwert (eSmart3) |
 
-Hinweise zu Modbus-Ladern: **epever** (Tracer-AN/-BN) läuft mit 115200 Baud; **renogy** (Rover/Elite/Adventurer) und **morningstar** (TriStar MPPT 45/60) mit 9600. Der Morningstar **EIA-485-Port existiert nur beim TS-MPPT-60/M** — der TS-MPPT-45 hat nur RS-232 und kann keinen RS485-Bus teilen. Ein Modbus-Lader pro Port: mehrere an einem physischen Bus (Multi-Drop mit unterschiedlichen `unit`-Adressen) werden von der Konfiguration noch nicht unterstützt — jedem einen eigenen Port/Adapter geben.
+Hinweise zu Modbus-Ladern: **epever** (Tracer-AN/-BN) läuft mit 115200 Baud; **renogy** (Rover/Elite/Adventurer und SRNE-Regler) und **morningstar** (TriStar MPPT 45/60) mit 9600. Der Morningstar **EIA-485-Port existiert nur beim TS-MPPT-60/M** — der TS-MPPT-45 hat nur RS-232 und kann keinen RS485-Bus teilen. Ein Modbus-Lader pro Port: mehrere an einem physischen Bus (Multi-Drop mit unterschiedlichen `unit`-Adressen) werden von der Konfiguration noch nicht unterstützt — jedem einen eigenen Port/Adapter geben.
 
 **Beispiel inverters-Block:**
 
